@@ -1,0 +1,270 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# Production builds
+dist/
+build/
+out/
+.next/
+
+# Rust/Anchor build files
+target/
+**/*.rs.bk
+Cargo.lock
+test-ledger/
+.anchor/
+
+# Environment files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+
+# CRITICAL - Wallet/Key files - NEVER COMMIT THESE!
+wallet.json
+*.json.key
+*.key
+*.pem
+id.json
+keypair.json
+*-keypair.json
+cto-wallet.json
+authority-wallet.json
+.wallet/
+wallets/
+keys/
+
+# IDL files (generated)
+target/idl/
+target/types/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.npm/
+*.log.*
+logs-*.tar.gz
+
+# PM2
+.pm2/
+pm2.json
+ecosystem.config.js.bak
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*.bak
+*~
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+*.sublime-project
+
+# Testing
+coverage/
+.nyc_output/
+junit.xml
+*.lcov
+test-results/
+
+# Cache files
+.eslintcache
+.stylelintcache
+.cache/
+.parcel-cache/
+.turbo/
+.vercel/
+.output/
+.nuxt/
+.docusaurus/
+.serverless/
+.fusebox/
+.dynamodb/
+.tern-port
+.vscode-test/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Backup files
+backups/
+*.backup
+*.bak
+*.old
+*.orig
+*_backup
+*_old
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.temp
+.tmp/
+.temp/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation build
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+_book/
+site/
+
+# Monitoring and metrics
+grafana-storage/
+prometheus-data/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraformrc
+terraform.rc
+
+# Deployment specific
+.now/
+.nuxt/
+.output/
+.vercel/
+out/
+.next/
+.contentlayer/
+.docusaurus/
+
+# Custom project files to ignore
+research/
+drafts/
+todo.md
+notes.txt
+NOTES.md
+TODO.md
+scratch/
+
+# Solana specific
+test-ledger/
+.anchor/
+deploy/
+
+# Keep these files
+!.env.example
+!ecosystem.config.js.example
+!wallet.json.example
+
+# Python (if using Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.venv/
+
+# Rust additional
+**/*.rs.bk
+*.pdb
+debug/
+target/
+
+# Yarn Berry
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+.pnp.*
+
+# Security - Additional wallet patterns
+mnemonic.txt
+seed.txt
+seed_phrase.txt
+recovery.txt
+private_key.txt
+secret.txt
+secrets.json
+credentials.json
+*.seed
+*.mnemonic
+ledger/
+
+# MacOS
+.AppleDouble
+.LSOverride
+Icon
+*.icloud
+
+# Windows
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Archives (be careful with these)
+*.zip
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# Monitoring outputs
+metrics/
+stats/
+reports/
+*.csv
+*.xlsx
+
+# Additional Solana/Anchor files
+.anchor_test_ledger/
+migrations/
+.program_logs/

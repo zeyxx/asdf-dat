@@ -1,0 +1,55 @@
+[features]
+seeds = false
+skip-lint = false
+
+[programs.mainnet]
+asdf_dat = "ASDFdatBuybackBurnXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+[programs.devnet]
+asdf_dat = "ASDFdatBuybackBurnXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "mainnet"
+wallet = "./wallet.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+# Mainnet configuration
+[cluster.mainnet]
+url = "https://api.mainnet-beta.solana.com"
+
+# Devnet configuration  
+[cluster.devnet]
+url = "https://api.devnet.solana.com"
+
+# Testnet configuration
+[cluster.testnet]
+url = "https://api.testnet.solana.com"
+
+# Local configuration
+[cluster.localnet]
+url = "http://127.0.0.1:8899"
+
+[test]
+startup_wait = 5000
+
+# Test validator configuration
+[test.validator]
+url = "http://127.0.0.1:8899"
+
+# Genesis configuration for test validator
+[[test.validator.clone]]
+address = "vcGYZbvDid6cRUkCCqcWpBxow73TLpmY6ipmDUtrTF8"
+
+[[test.validator.clone]]
+address = "9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump"
+
+[[test.validator.clone]]
+address = "DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb"
+
+[[test.validator.clone]]
+address = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEa"

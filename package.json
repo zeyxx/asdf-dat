@@ -1,0 +1,76 @@
+{
+  "name": "asdf-dat",
+  "version": "1.0.0",
+  "description": "ASDF DAT - Decentralized Autonomous Token for automated buyback and burn on Solana",
+  "main": "dist/bot.js",
+  "scripts": {
+    "build": "tsc && anchor build",
+    "clean": "rm -rf dist target",
+    "compile": "tsc",
+    "test": "anchor test",
+    "dat:init": "ts-node src/bot.ts init",
+    "dat:check": "ts-node src/bot.ts check",
+    "dat:cycle": "ts-node src/bot.ts cycle",
+    "dat:stats": "ts-node src/bot.ts stats",
+    "dat:pause": "ts-node src/bot.ts pause",
+    "dat:resume": "ts-node src/bot.ts resume",
+    "dat:bot": "ts-node src/bot.ts bot",
+    "deploy": "anchor deploy",
+    "lint": "eslint src/**/*.ts",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "monitor": "node scripts/monitor.js",
+    "install:deps": "npm install && cargo build-bpf",
+    "start": "npm run dat:bot",
+    "dev": "NODE_ENV=development ts-node src/bot.ts bot",
+    "prod": "NODE_ENV=production node dist/bot.js bot"
+  },
+  "keywords": [
+    "solana",
+    "defi",
+    "dat",
+    "buyback",
+    "burn",
+    "asdf",
+    "blockchain",
+    "web3",
+    "anchor"
+  ],
+  "author": "ASDF Community",
+  "license": "MIT",
+  "dependencies": {
+    "@coral-xyz/anchor": "^0.30.1",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.91.0",
+    "axios": "^1.6.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "@types/chai": "^5.2.2",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.5",
+    "@types/node-cron": "^3.0.11",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "chai": "^4.4.1",
+    "eslint": "^8.56.0",
+    "mocha": "^10.2.0",
+    "prettier": "^3.2.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/asdf-dat.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/asdf-dat/issues"
+  },
+  "homepage": "https://github.com/yourusername/asdf-dat#readme"
+}
