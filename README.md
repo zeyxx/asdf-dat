@@ -265,9 +265,9 @@ MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/yourusername/asdf-dat/issues)
-- **Documentation**: [Wiki](https://github.com/yourusername/asdf-dat/wiki)
-- **Community**: [Discord](https://discord.gg/asdf)
+- **Issues**: [GitHub Issues](https://github.com/zeyxx/asdf-dat/issues)
+- **Documentation**: [Wiki](https://github.com/zeyxx/asdf-dat/wiki)
+- **Community**: [Twitter](https://x.com/i/communities/1942343109159051272)
 
 ## Disclaimer
 
