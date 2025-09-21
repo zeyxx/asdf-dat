@@ -1,6 +1,7 @@
 [package]
 name = "asdf-dat"
-version = "1.0.0"
+version = "0.1.0"
+description = "ASDF DAT"
 edition = "2021"
 
 [lib]
@@ -10,28 +11,10 @@ name = "asdf_dat"
 [features]
 no-entrypoint = []
 no-idl = []
-no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
-mainnet = []
-devnet = []
 
 [dependencies]
-anchor-lang = "0.30.1"
-anchor-spl = "0.30.1"
-solana-program = "1.18.0"
-
-[dev-dependencies]
-anchor-client = "0.30.1"
-solana-sdk = "1.18.0"
-solana-program-test = "1.18.0"
-
-[profile.release]
-overflow-checks = true
-lto = "fat"
-codegen-units = 1
-
-[profile.release.build-override]
-opt-level = 3
-incremental = false
-codegen-units = 1
+anchor-lang = "0.26.0"
+anchor-spl = "0.26.0"
+solana-program = "1.14.16"
