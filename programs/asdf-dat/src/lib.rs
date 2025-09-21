@@ -1,27 +1,24 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{
-    token::{self, Burn, Token, TokenAccount, Mint},
+    token::{self, Token, TokenAccount, Mint},
     associated_token::AssociatedToken,
 };
-use solana_program::{
-    program::invoke_signed,
-    instruction::{Instruction, AccountMeta},
-    pubkey,
-};
+use solana_program::instruction::Instruction;
+use solana_program::program::invoke_signed;
 
-declare_id!("DATxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"); // Replace after deployment
+declare_id!("EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"); // Replace after deployment
 
 // ===========================
 // PRODUCTION CONSTANTS
 // ===========================
 
 // Verified PumpSwap addresses
-pub const ASDF_MINT: Pubkey = pubkey!("9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump");
-pub const WSOL_MINT: Pubkey = pubkey!("So11111111111111111111111111111111111111112");
-pub const POOL_PUMPSWAP: Pubkey = pubkey!("DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb");
-pub const PUMP_SWAP_PROGRAM: Pubkey = pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
-pub const TOKEN_2022_PROGRAM: Pubkey = pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
-pub const FEE_PROGRAM: Pubkey = pubkey!("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+pub const ASDF_MINT: Pubkey = solana_program::pubkey!("9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump");
+pub const WSOL_MINT: Pubkey = solana_program::pubkey!("So11111111111111111111111111111111111111112");
+pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!("DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb");
+pub const PUMP_SWAP_PROGRAM: Pubkey = solana_program::pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+pub const TOKEN_2022_PROGRAM: Pubkey = solana_program::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+pub const FEE_PROGRAM: Pubkey = solana_program::pubkey!("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 
 // Operating parameters
 pub const MIN_FEES_TO_CLAIM: u64 = 190_000_000; // 0.19 SOL in lamports
@@ -37,14 +34,14 @@ pub const DAT_AUTHORITY_SEED: &[u8] = b"dat-authority";
 
 // Protocol fee recipients (rotation for load balancing)
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 8] = [
-    pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV"),
-    pubkey!("7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ"),
-    pubkey!("7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX"),
-    pubkey!("9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz"),
-    pubkey!("AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY"),
-    pubkey!("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM"),
-    pubkey!("FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz"),
-    pubkey!("G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP"),
+    solana_program::pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV"),
+    solana_program::pubkey!("7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ"),
+    solana_program::pubkey!("7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX"),
+    solana_program::pubkey!("9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz"),
+    solana_program::pubkey!("AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY"),
+    solana_program::pubkey!("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM"),
+    solana_program::pubkey!("FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz"),
+    solana_program::pubkey!("G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP"),
 ];
 
 #[program]
@@ -88,7 +85,7 @@ pub mod asdf_dat {
         state.min_cycle_interval = MIN_CYCLE_INTERVAL;
         
         // Save bumps for CPIs
-        state.dat_authority_bump = ctx.bumps.dat_authority;
+        state.dat_authority_bump = *ctx.bumps.get("dat_authority").unwrap();
         state.current_fee_recipient_index = 0;
         
         // Initialize price tracking
@@ -112,176 +109,121 @@ pub mod asdf_dat {
     pub fn execute_cycle(ctx: Context<ExecuteCycle>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
-        
+
         // Safety checks
         require!(
             state.is_active && !state.emergency_pause,
             ErrorCode::DATNotActive
         );
-        
+
         require!(
             clock.unix_timestamp - state.last_cycle_timestamp >= state.min_cycle_interval,
             ErrorCode::CycleTooSoon
         );
-        
+
         // Anti-reentrancy: Update timestamp FIRST
-        let old_timestamp = state.last_cycle_timestamp;
         state.last_cycle_timestamp = clock.unix_timestamp;
-        
-        // Determine AM/PM period
-        let current_hour = (clock.unix_timestamp / 3600) % 24;
-        let is_am = current_hour < 12;
-        let today_start = (clock.unix_timestamp / 86400) * 86400;
-        
-        // Check if already executed in this period
-        if is_am {
-            require!(
-                state.last_am_execution < today_start,
-                ErrorCode::AlreadyExecutedThisPeriod
-            );
-            state.last_am_execution = clock.unix_timestamp;
-        } else {
-            require!(
-                state.last_pm_execution < today_start,
-                ErrorCode::AlreadyExecutedThisPeriod
-            );
-            state.last_pm_execution = clock.unix_timestamp;
-        }
-        
-        msg!("Starting cycle #{} - {} period", 
-            state.total_buybacks + 1, 
+
+        // Determine AM/PM period and validate execution
+        let (is_am, period_valid) = {
+            let current_hour = (clock.unix_timestamp / 3600) % 24;
+            let is_am = current_hour < 12;
+            let today_start = (clock.unix_timestamp / 86400) * 86400;
+
+            let period_valid = if is_am {
+                if state.last_am_execution < today_start {
+                    state.last_am_execution = clock.unix_timestamp;
+                    true
+                } else {
+                    false
+                }
+            } else {
+                if state.last_pm_execution < today_start {
+                    state.last_pm_execution = clock.unix_timestamp;
+                    true
+                } else {
+                    false
+                }
+            };
+
+            (is_am, period_valid)
+        };
+
+        require!(period_valid, ErrorCode::AlreadyExecutedThisPeriod);
+
+        msg!("Starting cycle #{} - {} period",
+            state.total_buybacks + 1,
             if is_am { "AM" } else { "PM" }
         );
-        
-        // ===========================
-        // STEP 1: VERIFY AND COLLECT FEES
-        // ===========================
-        
-        // Deserialize pool to verify coin_creator (after PumpFun changes it)
-        let pool_data = {
-            let pool_bytes = ctx.accounts.pool.try_borrow_data()?;
-            // Skip 8 bytes discriminator for Anchor accounts
-            Pool::try_from_slice(&pool_bytes[8..])?
-        };
-        
-        // Verify we are the coin_creator (only works after PumpFun changes it)
-        require!(
-            pool_data.coin_creator == ctx.accounts.dat_authority.key(),
-            ErrorCode::NotCoinCreator
-        );
-        
-        // Check initial vault balance
-        let initial_vault_balance = ctx.accounts.creator_vault_ata.amount;
-        msg!("Initial vault balance: {} lamports", initial_vault_balance);
-        
-        require!(
-            initial_vault_balance >= state.min_fees_threshold,
-            ErrorCode::InsufficientFees
-        );
-        
-        // Seeds for signing as DAT
-        let dat_seeds = &[
-            DAT_AUTHORITY_SEED,
-            &[state.dat_authority_bump],
-        ];
-        
-        // Build collect_coin_creator_fee instruction
-        let collect_accounts = vec![
-            AccountMeta::new_readonly(ctx.accounts.wsol_mint.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.dat_authority.key(), true), // coin_creator (signer)
-            AccountMeta::new_readonly(ctx.accounts.coin_creator_vault_authority.key(), false),
-            AccountMeta::new(ctx.accounts.creator_vault_ata.key(), false),
-            AccountMeta::new(ctx.accounts.dat_wsol_account.key(), false), // destination
-            AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.pump_swap_program.key(), false),
-        ];
-        
-        let collect_ix = Instruction {
-            program_id: PUMP_SWAP_PROGRAM,
-            accounts: collect_accounts,
-            data: vec![160, 57, 89, 42, 181, 139, 43, 66], // collect_coin_creator_fee discriminator
-        };
-        
-        msg!("Collecting creator fees...");
-        invoke_signed(
-            &collect_ix,
-            &[
-                ctx.accounts.wsol_mint.to_account_info(),
-                ctx.accounts.token_program.to_account_info(),
-                ctx.accounts.dat_authority.to_account_info(),
-                ctx.accounts.coin_creator_vault_authority.to_account_info(),
-                ctx.accounts.creator_vault_ata.to_account_info(),
-                ctx.accounts.dat_wsol_account.to_account_info(),
-                ctx.accounts.pump_event_authority.to_account_info(),
-                ctx.accounts.pump_swap_program.to_account_info(),
-            ],
-            &[dat_seeds],
+
+        // STEP 1: Collect fees
+        collect_fees_step(
+            &ctx.accounts.pool,
+            &ctx.accounts.dat_authority,
+            &ctx.accounts.creator_vault_ata.to_account_info(),
+            &ctx.accounts.wsol_mint.to_account_info(),
+            &ctx.accounts.token_program,
+            &ctx.accounts.coin_creator_vault_authority,
+            &ctx.accounts.dat_wsol_account.to_account_info(),
+            &ctx.accounts.pump_event_authority,
+            &ctx.accounts.pump_swap_program,
+            state,
         )?;
-        
-        // Verify collected amount
+
         ctx.accounts.dat_wsol_account.reload()?;
         let collected_amount = ctx.accounts.dat_wsol_account.amount;
         msg!("Collected {} lamports from creator vault", collected_amount);
-        
-        // ===========================
-        // STEP 2: CALCULATE AND VALIDATE SWAP
-        // ===========================
-        
-        // Cap the amount to use
+
+        // STEP 2: Calculate swap parameters
+        ctx.accounts.pool_asdf_account.reload()?;
+        ctx.accounts.pool_wsol_account.reload()?;
+
+        let pool_quote_reserves = ctx.accounts.pool_wsol_account.amount;
         let amount_to_use = collected_amount.min(state.max_fees_per_cycle);
-        
-        // Limit to 1% of pool liquidity for safety
-        let max_safe_amount = pool_data.pool_quote_reserves / 100;
+        let max_safe_amount = pool_quote_reserves / 100;
         let final_amount = amount_to_use.min(max_safe_amount);
-        
-        msg!("Using {} SOL (capped from {} available)", 
-            final_amount, collected_amount
-        );
-        
-        // Calculate expected tokens with proper AMM formula
+
+        msg!("Using {} SOL (capped from {} available)", final_amount, collected_amount);
+
+        // STEP 3: Execute swap
+        ctx.accounts.pool_asdf_account.reload()?;
+        ctx.accounts.pool_wsol_account.reload()?;
+
+        let pool_base_reserves = ctx.accounts.pool_asdf_account.amount;
+        let pool_quote_reserves = ctx.accounts.pool_wsol_account.amount;
+        let base_mint_supply = ctx.accounts.asdf_mint.supply;
+
+        // Calculate expected tokens
         let expected_tokens = calculate_tokens_out(
             final_amount,
-            pool_data.pool_quote_reserves,
-            pool_data.pool_base_reserves,
+            pool_quote_reserves,
+            pool_base_reserves,
+            base_mint_supply,
         )?;
-        
+
         // Check price impact
-        let price_before = (pool_data.pool_quote_reserves as u128) * 1_000_000 
-            / (pool_data.pool_base_reserves as u128);
-        let new_quote_reserves = pool_data.pool_quote_reserves + final_amount;
-        let new_base_reserves = pool_data.pool_base_reserves - expected_tokens;
-        let price_after = (new_quote_reserves as u128) * 1_000_000 
-            / (new_base_reserves as u128);
-        
+        let price_before = (pool_quote_reserves as u128) * 1_000_000 / (pool_base_reserves as u128);
+        let new_quote_reserves = pool_quote_reserves + final_amount;
+        let new_base_reserves = pool_base_reserves - expected_tokens;
+        let price_after = (new_quote_reserves as u128) * 1_000_000 / (new_base_reserves as u128);
+
         let price_impact_bps = ((price_after - price_before) * 10000 / price_before) as u16;
-        require!(
-            price_impact_bps <= MAX_PRICE_IMPACT_BPS,
-            ErrorCode::PriceImpactTooHigh
-        );
-        
-        // Apply slippage
+        require!(price_impact_bps <= MAX_PRICE_IMPACT_BPS, ErrorCode::PriceImpactTooHigh);
+
         let min_tokens_out = apply_slippage(expected_tokens, state.slippage_bps);
-        
-        msg!("Executing buyback: {} SOL for min {} ASDF", 
-            final_amount as f64 / 1e9,
-            min_tokens_out
+
+        msg!("Executing buyback: {} SOL for min {} ASDF",
+            final_amount as f64 / 1e9, min_tokens_out
         );
-        
-        // ===========================
-        // STEP 3: EXECUTE SWAP ON PUMPSWAP
-        // ===========================
-        
-        // Select protocol fee recipient (rotation)
+
+        // Execute swap
+        let dat_seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
         let fee_recipient = PROTOCOL_FEE_RECIPIENTS[state.current_fee_recipient_index as usize];
         state.current_fee_recipient_index = (state.current_fee_recipient_index + 1) % 8;
-        
-        // Check if volume accumulators exist
+
         let track_volume = !ctx.accounts.user_volume_accumulator.data_is_empty();
-        
-        // Build buy instruction for PumpSwap
+
         let buy_accounts = vec![
-            // 0-16: Main accounts
             AccountMeta::new_readonly(ctx.accounts.pool.key(), false),
             AccountMeta::new(ctx.accounts.dat_authority.key(), true),
             AccountMeta::new_readonly(ctx.accounts.pump_global_config.key(), false),
@@ -294,12 +236,11 @@ pub mod asdf_dat {
             AccountMeta::new_readonly(fee_recipient, false),
             AccountMeta::new(ctx.accounts.protocol_fee_recipient_ata.key(), false),
             AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false), // quote_token_program
+            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_swap_program.key(), false),
-            // 17-22: Additional required accounts
             AccountMeta::new(ctx.accounts.creator_vault_ata.key(), false),
             AccountMeta::new_readonly(ctx.accounts.coin_creator_vault_authority.key(), false),
             AccountMeta::new(ctx.accounts.global_volume_accumulator.key(), false),
@@ -307,19 +248,19 @@ pub mod asdf_dat {
             AccountMeta::new_readonly(ctx.accounts.fee_config.key(), false),
             AccountMeta::new_readonly(FEE_PROGRAM, false),
         ];
-        
-        // Serialize buy arguments
-        let mut buy_data = vec![102, 6, 61, 18, 1, 218, 235, 234]; // buy discriminator
-        buy_data.extend_from_slice(&min_tokens_out.to_le_bytes()); // base_amount_out
-        buy_data.extend_from_slice(&final_amount.to_le_bytes()); // max_quote_amount_in
-        buy_data.push(if track_volume { 1 } else { 0 }); // track_volume (OptionBool)
-        
+
+        let mut buy_data = vec![102, 6, 61, 18, 1, 218, 235, 234];
+        buy_data.extend_from_slice(&min_tokens_out.to_le_bytes());
+        buy_data.extend_from_slice(&final_amount.to_le_bytes());
+        buy_data.push(1);
+        buy_data.push(if track_volume { 1 } else { 0 });
+
         let buy_ix = Instruction {
             program_id: PUMP_SWAP_PROGRAM,
             accounts: buy_accounts,
             data: buy_data,
         };
-        
+
         msg!("Executing PumpSwap buy (volume tracking: {})...", track_volume);
         invoke_signed(
             &buy_ix,
@@ -350,32 +291,24 @@ pub mod asdf_dat {
             ],
             &[dat_seeds],
         )?;
-        
-        // ===========================
-        // STEP 4: BURN THE TOKENS
-        // ===========================
-        
+
+        // STEP 4: Validate and burn
         ctx.accounts.dat_asdf_account.reload()?;
         let tokens_to_burn = ctx.accounts.dat_asdf_account.amount;
-        
-        require!(
-            tokens_to_burn >= min_tokens_out,
-            ErrorCode::SlippageExceeded
-        );
-        
-        // Additional safety check: minimum rate
+
+        require!(tokens_to_burn >= min_tokens_out, ErrorCode::SlippageExceeded);
+
         let effective_rate = tokens_to_burn.checked_mul(1_000_000_000)
             .ok_or(ErrorCode::MathOverflow)?
             .checked_div(final_amount)
             .ok_or(ErrorCode::MathOverflow)?;
-        
-        require!(
-            effective_rate >= 100_000, // At least 100k ASDF per SOL
-            ErrorCode::RateTooLow
-        );
-        
+
+        require!(effective_rate >= 100_000, ErrorCode::RateTooLow);
+
         msg!("Burning {} ASDF tokens", tokens_to_burn);
-        
+
+        let dat_seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
+
         token::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
@@ -388,32 +321,21 @@ pub mod asdf_dat {
             ),
             tokens_to_burn
         )?;
-        
-        // ===========================
-        // UPDATE METRICS
-        // ===========================
-        
-        state.total_burned = state.total_burned
-            .checked_add(tokens_to_burn)
-            .ok_or(ErrorCode::MathOverflow)?;
-        state.total_sol_collected = state.total_sol_collected
-            .checked_add(final_amount)
-            .ok_or(ErrorCode::MathOverflow)?;
-        state.total_buybacks = state.total_buybacks
-            .checked_add(1)
-            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Update metrics
+        state.total_burned = state.total_burned.checked_add(tokens_to_burn).unwrap_or(u64::MAX);
+        state.total_sol_collected = state.total_sol_collected.checked_add(final_amount).unwrap_or(u64::MAX);
+        state.total_buybacks = state.total_buybacks.checked_add(1).unwrap_or(u32::MAX);
         state.last_cycle_sol = final_amount;
         state.last_cycle_burned = tokens_to_burn;
         state.consecutive_failures = 0;
-        
-        // Update price tracking
         state.last_known_price = (new_quote_reserves as u64) * 1_000_000 / (new_base_reserves as u64);
-        
+
         msg!("✅ Cycle completed successfully!");
         msg!("Burned: {} ASDF | Used: {} SOL", tokens_to_burn, final_amount);
         msg!("Total burned to date: {} ASDF", state.total_burned);
         msg!("Effective rate: {} ASDF per SOL", effective_rate);
-        
+
         emit!(CycleCompleted {
             cycle_number: state.total_buybacks,
             tokens_burned: tokens_to_burn,
@@ -423,7 +345,7 @@ pub mod asdf_dat {
             is_am,
             timestamp: clock.unix_timestamp,
         });
-        
+
         Ok(())
     }
 
@@ -545,17 +467,17 @@ pub mod asdf_dat {
     /// Transfers control of the DAT to a new admin
     pub fn transfer_admin(ctx: Context<TransferAdmin>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
-        
+
         state.admin = ctx.accounts.new_admin.key();
-        
+
         msg!("Admin transferred to {}", ctx.accounts.new_admin.key());
-        
+
         emit!(AdminTransferred {
             old_admin: ctx.accounts.admin.key(),
             new_admin: ctx.accounts.new_admin.key(),
             timestamp: Clock::get()?.unix_timestamp,
         });
-        
+
         Ok(())
     }
 }
@@ -629,7 +551,7 @@ pub struct ExecuteCycle<'info> {
     pub creator_vault_ata: Account<'info, TokenAccount>,
     
     /// CHECK: Creator vault authority (PumpSwap PDA)
-    /// This is derived from DAT Authority after PumpFun sets it as coin_creator
+    /// Derived from DAT Authority after it becomes coin_creator
     #[account(
         mut,
         seeds = [b"creator_vault", dat_authority.key().as_ref()],
@@ -823,16 +745,16 @@ pub struct DATState {
     pub last_known_price: u64,              // 8
     
     // Reserved for future upgrades
-    pub _reserved: [u8; 56],                // 56 (reduced from 64)
+    pub _reserved: [u8; 64],                // 64
 }
 
 impl DATState {
     pub const LEN: usize = 32 * 5  // Pubkeys
-        + 8 * 11                    // u64 & i64 (added last_known_price)
+        + 8 * 11                    // u64 & i64
         + 4 * 2                     // u32
         + 1 * 5                     // u8 & bool
         + 2                         // u16
-        + 56;                       // reserved
+        + 64;                       // reserved
 }
 
 // ===========================
@@ -851,9 +773,6 @@ pub struct Pool {
     pub pool_quote_token_account: Pubkey,
     pub lp_supply: u64,
     pub coin_creator: Pubkey,
-    // Additional fields for price calculation
-    pub pool_base_reserves: u64,
-    pub pool_quote_reserves: u64,
 }
 
 // ===========================
@@ -861,30 +780,51 @@ pub struct Pool {
 // ===========================
 
 /// Calculate tokens out using constant product AMM formula (x*y=k)
+/// Uses official Pump market cap calculation: quoteReserve * baseMintSupply / baseReserve
 pub fn calculate_tokens_out(
     sol_amount_in: u64,
     quote_reserves: u64,
     base_reserves: u64,
+    base_mint_supply: u64,
 ) -> Result<u64> {
     // Use u128 to prevent overflow
     let sol_in_u128 = sol_amount_in as u128;
     let quote_res_u128 = quote_reserves as u128;
     let base_res_u128 = base_reserves as u128;
-    
-    // Calculate fees based on current market cap
-    let market_cap = quote_res_u128.saturating_mul(1_000_000_000)
+    let base_supply_u128 = base_mint_supply as u128;
+
+    // Calculate market cap using official Pump formula
+    let market_cap = quote_res_u128.saturating_mul(base_supply_u128)
         .saturating_div(base_res_u128);
     
-    // Dynamic fees based on market cap tiers
+    // Dynamic fees based on market cap tiers (exact from PumpSwap fee table)
     let fee_bps = match market_cap {
-        0..=85_000_000_000 => 125,              // < $85k: 1.25%
-        85_000_000_001..=300_000_000_000 => 120,    // $85k-$300k: 1.20%
-        300_000_000_001..=500_000_000_000 => 115,   // $300k-$500k: 1.15%
-        500_000_000_001..=700_000_000_000 => 110,   // $500k-$700k: 1.10%
-        700_000_000_001..=900_000_000_000 => 105,   // $700k-$900k: 1.05%
+        0..=85_000_000_000 => 125,           // < $85k: 1.25%
+        85_000_000_001..=300_000_000_000 => 120,  // $85k-$300k: 1.20%
+        300_000_000_001..=500_000_000_000 => 115, // $300k-$500k: 1.15%
+        500_000_000_001..=700_000_000_000 => 110, // $500k-$700k: 1.10%
+        700_000_000_001..=900_000_000_000 => 105, // $700k-$900k: 1.05%
         900_000_000_001..=2_000_000_000_000 => 100, // $900k-$2M: 1.00%
-        2_000_000_001..=20_000_000_000_000 => 95,   // $2M-$20M: 0.95%
-        _ => 30,                                     // > $20M: 0.30%
+        2_000_000_001..=3_000_000_000_000 => 95,   // $2M-$3M: 0.95%
+        3_000_000_001..=4_000_000_000_000 => 90,   // $3M-$4M: 0.90%
+        4_000_000_001..=4_500_000_000_000 => 85,   // $4M-$4.5M: 0.85%
+        4_500_000_001..=5_000_000_000_000 => 80,   // $4.5M-$5M: 0.80%
+        5_000_000_001..=6_000_000_000_000 => 80,   // $5M-$6M: 0.80%
+        6_000_000_001..=7_000_000_000_000 => 75,   // $6M-$7M: 0.75%
+        7_000_000_001..=8_000_000_000_000 => 70,   // $7M-$8M: 0.70%
+        8_000_000_001..=9_000_000_000_000 => 65,   // $8M-$9M: 0.65%
+        9_000_000_001..=10_000_000_000_000 => 60,  // $9M-$10M: 0.60%
+        10_000_000_001..=11_000_000_000_000 => 55, // $10M-$11M: 0.55%
+        11_000_000_001..=12_000_000_000_000 => 53, // $11M-$12M: 0.53%
+        12_000_000_001..=13_000_000_000_000 => 50, // $12M-$13M: 0.50%
+        13_000_000_001..=14_000_000_000_000 => 48, // $13M-$14M: 0.48%
+        14_000_000_001..=15_000_000_000_000 => 45, // $14M-$15M: 0.45%
+        15_000_000_001..=16_000_000_000_000 => 43, // $15M-$16M: 0.43%
+        16_000_000_001..=17_000_000_000_000 => 40, // $16M-$17M: 0.40%
+        17_000_000_001..=18_000_000_000_000 => 38, // $17M-$18M: 0.38%
+        18_000_000_001..=19_000_000_000_000 => 35, // $18M-$19M: 0.35%
+        19_000_000_001..=20_000_000_000_000 => 33, // $19M-$20M: 0.33%
+        _ => 30, // > $20M: 0.30%
     };
     
     // Apply fees
@@ -912,6 +852,89 @@ pub fn calculate_tokens_out(
 /// Apply slippage tolerance to minimum output
 pub fn apply_slippage(amount: u64, slippage_bps: u16) -> u64 {
     amount.saturating_mul(10000 - slippage_bps as u64) / 10000
+}
+
+/// Helper function to collect fees - separated to reduce stack usage
+pub fn collect_fees_step<'info>(
+    pool: &AccountInfo<'info>,
+    dat_authority: &AccountInfo<'info>,
+    creator_vault_ata: &AccountInfo<'info>,
+    wsol_mint: &AccountInfo<'info>,
+    token_program: &AccountInfo<'info>,
+    coin_creator_vault_authority: &AccountInfo<'info>,
+    dat_wsol_account: &AccountInfo<'info>,
+    pump_event_authority: &AccountInfo<'info>,
+    pump_swap_program: &AccountInfo<'info>,
+    state: &mut DATState,
+) -> Result<()> {
+    // Verify vault exists (has lamports for rent)
+    require!(
+        creator_vault_ata.lamports() > 0,
+        ErrorCode::VaultNotInitialized
+    );
+
+    // Deserialize and verify pool data
+    let pool_bytes = pool.try_borrow_data()?;
+    let pool_data = Pool::try_from_slice(&pool_bytes[8..])?;
+    drop(pool_bytes);
+
+    // Verify we are the coin_creator
+    require!(
+        pool_data.coin_creator == dat_authority.key(),
+        ErrorCode::NotCoinCreator
+    );
+
+    // Get vault token balance
+    let creator_vault_data = creator_vault_ata.try_borrow_data()?;
+    let creator_vault_token_account = TokenAccount::try_deserialize(&mut &creator_vault_data[..])?;
+    let initial_vault_balance = creator_vault_token_account.amount;
+    drop(creator_vault_data);
+
+    msg!("Initial vault balance: {} lamports", initial_vault_balance);
+
+    // Verify sufficient balance
+    require!(
+        initial_vault_balance >= state.min_fees_threshold,
+        ErrorCode::InsufficientFees
+    );
+
+    // Build and execute collect_coin_creator_fee instruction
+    let dat_seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
+
+    let collect_accounts = [
+        AccountMeta::new_readonly(wsol_mint.key(), false),
+        AccountMeta::new_readonly(token_program.key(), false),
+        AccountMeta::new_readonly(dat_authority.key(), true),
+        AccountMeta::new_readonly(coin_creator_vault_authority.key(), false),
+        AccountMeta::new(creator_vault_ata.key(), false),
+        AccountMeta::new(dat_wsol_account.key(), false),
+        AccountMeta::new_readonly(pump_event_authority.key(), false),
+        AccountMeta::new_readonly(pump_swap_program.key(), false),
+    ];
+
+    let collect_ix = Instruction {
+        program_id: PUMP_SWAP_PROGRAM,
+        accounts: collect_accounts.to_vec(),
+        data: vec![160, 57, 89, 42, 181, 139, 43, 66], // collect_coin_creator_fee discriminator
+    };
+
+    msg!("Collecting creator fees...");
+    invoke_signed(
+        &collect_ix,
+        &[
+            wsol_mint.clone(),
+            token_program.clone(),
+            dat_authority.clone(),
+            coin_creator_vault_authority.clone(),
+            creator_vault_ata.clone(),
+            dat_wsol_account.clone(),
+            pump_event_authority.clone(),
+            pump_swap_program.clone(),
+        ],
+        &[dat_seeds],
+    )?;
+
+    Ok(())
 }
 
 // ===========================
@@ -1003,4 +1026,7 @@ pub enum ErrorCode {
     
     #[msg("Exchange rate too low - possible price manipulation")]
     RateTooLow,
+    
+    #[msg("Creator vault not initialized or empty")]
+    VaultNotInitialized,
 }
