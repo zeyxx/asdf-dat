@@ -297,7 +297,7 @@ The ASDF DAT protocol proves that great ideas can come from anywhere in the comm
 - **Developer**: [@jeanterre13](https://twitter.com/jeanterre13) - Protocol developer and maintainer
 - **Community Proposals**: Join $ASDFASDFA discussion channels to propose new features
 - **GitHub Issues**: [Report bugs or technical issues](https://github.com/asdf-community/asdf-dat/issues)
-- **Discord**: [Join community discussions](https://discord.gg/asdf)
+- **Twitter**: [Join community discussions](https://x.com/i/communities/1942343109159051272)
 - **Documentation**: [Read the docs](https://docs.asdf-dat.com)
 
 ## License
