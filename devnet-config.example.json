@@ -1,0 +1,115 @@
+{
+  "network": "devnet",
+  "description": "Configuration devnet pour ASDF DAT Protocol - Template à personnaliser",
+
+  "comment_1": "=== ADRESSES À REMPLACER AVEC VOS VRAIES ADRESSES DEVNET ===",
+
+  "token": {
+    "mint": "VOTRE_TOKEN_MINT_DEVNET_ICI",
+    "name": "ASDF Test",
+    "symbol": "ASDFT",
+    "decimals": 6
+  },
+
+  "pool": {
+    "address": "VOTRE_POOL_PUMPSWAP_DEVNET_ICI",
+    "dex": "PumpSwap"
+  },
+
+  "programs": {
+    "asdf_dat": "VOTRE_PROGRAM_ID_APRES_DEPLOY",
+    "pump_swap": "PUMP_SWAP_PROGRAM_DEVNET_ICI",
+    "fee_program": "FEE_PROGRAM_DEVNET_ICI",
+    "wsol_mint": "So11111111111111111111111111111111111111112",
+    "token_2022": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+  },
+
+  "comment_2": "=== PARAMÈTRES DEVNET (ajustés pour faciliter les tests) ===",
+
+  "operating_parameters": {
+    "min_fees_to_claim_sol": 0.01,
+    "max_fees_per_cycle_sol": 1,
+    "initial_slippage_bps": 100,
+    "max_slippage_bps": 300,
+    "min_cycle_interval_seconds": 60,
+    "max_price_impact_bps": 300
+  },
+
+  "comment_3": "=== PROTOCOL FEE RECIPIENTS (peut utiliser votre wallet devnet) ===",
+
+  "protocol_fee_recipients": [
+    "VOTRE_WALLET_DEVNET_1",
+    "VOTRE_WALLET_DEVNET_2",
+    "VOTRE_WALLET_DEVNET_3",
+    "VOTRE_WALLET_DEVNET_4",
+    "VOTRE_WALLET_DEVNET_5",
+    "VOTRE_WALLET_DEVNET_6",
+    "VOTRE_WALLET_DEVNET_7",
+    "VOTRE_WALLET_DEVNET_8"
+  ],
+
+  "comment_4": "=== WALLET & RPC ===",
+
+  "wallet": {
+    "path": "./devnet-wallet.json",
+    "public_key": "VOTRE_WALLET_PUBKEY"
+  },
+
+  "rpc": {
+    "cluster": "devnet",
+    "url": "https://api.devnet.solana.com",
+    "commitment": "confirmed"
+  },
+
+  "comment_5": "=== ÉTAPES DE DÉPLOIEMENT ===",
+
+  "deployment_steps": [
+    "1. Créer un token sur PumpFun devnet (voir PUMPFUN_DEVNET_GUIDE.md)",
+    "2. Noter toutes les adresses (token, pool, etc.)",
+    "3. Mettre à jour ce fichier avec vos adresses",
+    "4. Copier en devnet-config.json",
+    "5. Mettre à jour lib.rs avec les constantes",
+    "6. Build et déployer : anchor deploy --provider.cluster devnet",
+    "7. Mettre à jour le program_id dans ce fichier",
+    "8. Initialiser : ts-node scripts/devnet-init.ts",
+    "9. Transférer le creator au DAT Authority",
+    "10. Générer des trades pour accumuler des frais",
+    "11. Exécuter un cycle de test : ts-node scripts/devnet-execute-cycle.ts",
+    "12. Vérifier les résultats : ts-node scripts/devnet-status.ts"
+  ],
+
+  "comment_6": "=== VÉRIFICATIONS AVANT MAINNET ===",
+
+  "mainnet_readiness_checklist": {
+    "deployment": [
+      "Programme déployé sans erreur",
+      "Initialisation réussie",
+      "PDAs correctement dérivés"
+    ],
+    "functionality": [
+      "Cycles s'exécutent avec succès",
+      "Tokens correctement burn",
+      "Frais collectés de la creator vault",
+      "Système AM/PM fonctionne",
+      "Slippage protection fonctionne",
+      "Price impact protection fonctionne"
+    ],
+    "admin": [
+      "Emergency pause fonctionne",
+      "Resume fonctionne",
+      "Update parameters fonctionne",
+      "Transfer admin fonctionne"
+    ],
+    "monitoring": [
+      "Événements correctement émis",
+      "Métriques correctement trackées",
+      "Scripts de monitoring fonctionnent"
+    ],
+    "security": [
+      "Pas d'overflow ou erreurs de stack",
+      "Validations de sécurité effectives",
+      "Rate limits respectés",
+      "Aucune vulnérabilité détectée"
+    ]
+  }
+}
