@@ -118,6 +118,72 @@ anchor build
 anchor test
 ```
 
+### Testing on Devnet (Recommended Before Mainnet)
+
+**⚠️ IMPORTANT**: Always test on devnet before deploying to mainnet!
+
+#### Quick Start (5 minutes)
+
+```bash
+# 1. Configure Solana for devnet
+solana config set --url https://api.devnet.solana.com
+solana airdrop 2 && solana airdrop 2
+
+# 2. Run automated setup wizard
+ts-node scripts/devnet-full-setup.ts
+```
+
+The wizard automatically:
+- ✅ Creates a test token on PumpFun devnet
+- ✅ Configures the program with devnet addresses
+- ✅ Builds and deploys to devnet
+- ✅ Initializes the protocol
+- ✅ Sets up all necessary accounts
+
+#### Manual Setup (Alternative)
+
+```bash
+# 1. Create token on PumpFun devnet
+ts-node scripts/devnet-create-token.ts
+
+# 2. Apply configuration to code
+ts-node scripts/devnet-apply-config.ts
+
+# 3. Build and deploy
+anchor build
+anchor deploy --provider.cluster devnet
+
+# 4. Initialize protocol
+ts-node scripts/devnet-init.ts
+
+# 5. Monitor status
+ts-node scripts/devnet-status.ts
+```
+
+#### Running Test Cycles
+
+```bash
+# Execute a buyback/burn cycle
+ts-node scripts/devnet-execute-cycle.ts
+
+# Monitor protocol status
+ts-node scripts/devnet-status.ts
+```
+
+#### Devnet Testing Resources
+
+- **Quick Start Guide**: [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) - 5-minute setup
+- **Complete Guide**: [DEVNET_DEPLOYMENT.md](DEVNET_DEPLOYMENT.md) - Detailed walkthrough
+- **PumpFun Addresses**: [PUMP_ADDRESSES.md](PUMP_ADDRESSES.md) - Official program addresses
+- **Mainnet Readiness**: [MAINNET_READINESS.md](MAINNET_READINESS.md) - Pre-deployment checklist
+- **Script Documentation**: [scripts/README.md](scripts/README.md) - All available scripts
+
+**Validation Requirements Before Mainnet**:
+- ✅ Minimum 5 successful cycles on devnet
+- ✅ All security features tested
+- ✅ Admin functions verified
+- ✅ Complete MAINNET_READINESS.md checklist
+
 ### Deployment
 
 ```bash
