@@ -106,21 +106,30 @@ async function createTokenWithSDK(
     console.log("📍 Generated Mint:", mintKeypair.publicKey.toString());
     console.log();
 
-    // Prepare metadata with file as File object if provided
-    let fileBlob: Blob | undefined;
+    // Prepare metadata with file as File object (REQUIRED by SDK)
+    let fileBlob: Blob;
     if (metadata.file && fs.existsSync(metadata.file)) {
       const fileBuffer = fs.readFileSync(metadata.file);
       const fileName = path.basename(metadata.file);
-      // Use File class instead of Blob (required by SDK)
       fileBlob = new File([fileBuffer], fileName, { type: 'image/png' });
       console.log("  Image loaded:", metadata.file);
+    } else {
+      // Create a minimal 1x1 pixel PNG as placeholder (PumpFun requires an image)
+      // This is a base64 encoded 1x1 transparent PNG (67 bytes)
+      const placeholderPNG = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        'base64'
+      );
+      fileBlob = new File([placeholderPNG], 'placeholder.png', { type: 'image/png' });
+      console.log("  ⚠️  No image provided - using placeholder");
+      console.log("     For better results, add an image: file: './path/to/image.png'");
     }
 
     const tokenMetadata = {
       name: metadata.name,
       symbol: metadata.symbol,
       description: metadata.description,
-      ...(fileBlob && { file: fileBlob }),
+      file: fileBlob,
       showName: true,
       ...(metadata.twitter && { twitter: metadata.twitter }),
       ...(metadata.telegram && { telegram: metadata.telegram }),
