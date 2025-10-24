@@ -106,11 +106,13 @@ async function createTokenWithSDK(
     console.log("📍 Generated Mint:", mintKeypair.publicKey.toString());
     console.log();
 
-    // Prepare metadata with file as Blob if provided
+    // Prepare metadata with file as File object if provided
     let fileBlob: Blob | undefined;
     if (metadata.file && fs.existsSync(metadata.file)) {
       const fileBuffer = fs.readFileSync(metadata.file);
-      fileBlob = new Blob([fileBuffer]);
+      const fileName = path.basename(metadata.file);
+      // Use File class instead of Blob (required by SDK)
+      fileBlob = new File([fileBuffer], fileName, { type: 'image/png' });
       console.log("  Image loaded:", metadata.file);
     }
 
@@ -118,7 +120,7 @@ async function createTokenWithSDK(
       name: metadata.name,
       symbol: metadata.symbol,
       description: metadata.description,
-      file: fileBlob!,
+      ...(fileBlob && { file: fileBlob }),
       showName: true,
       ...(metadata.twitter && { twitter: metadata.twitter }),
       ...(metadata.telegram && { telegram: metadata.telegram }),
