@@ -4,14 +4,14 @@ import {
   PublicKey
 } from "@solana/web3.js";
 import { PumpFunSDK } from "pumpdotfun-sdk";
-import { AnchorProvider, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider } from "@coral-xyz/anchor";
 import NodeWallet from "@coral-xyz/anchor/dist/cjs/nodewallet";
 import * as fs from "fs";
 import * as path from "path";
 
 /**
  * Script pour créer un token sur PumpFun en utilisant le SDK officiel
- * Fonctionne sur devnet ET mainnet
+ * Utilise la vraie API du SDK pumpdotfun-sdk
  */
 
 interface TokenMetadata {
@@ -26,27 +26,24 @@ interface TokenMetadata {
 
 interface CreatedTokenInfo {
   mint: string;
-  metadataUri: string;
   creator: string;
-  bondingCurve?: string;
-  associatedBondingCurve?: string;
   timestamp: string;
-  signature?: string;
+  signature: string;
   metadata: TokenMetadata;
   network: string;
 }
 
 async function createTokenWithSDK(
   metadata: TokenMetadata,
-  buyAmount?: number
+  buyAmountSol?: number
 ): Promise<CreatedTokenInfo> {
   console.log("🚀 Creating Token on PumpFun using Official SDK\n");
   console.log("Configuration:");
   console.log("  Name:", metadata.name);
   console.log("  Symbol:", metadata.symbol);
   console.log("  Description:", metadata.description);
-  if (buyAmount) {
-    console.log("  Initial Buy:", buyAmount, "SOL");
+  if (buyAmountSol) {
+    console.log("  Initial Buy:", buyAmountSol, "SOL");
   }
   console.log();
 
@@ -83,7 +80,7 @@ async function createTokenWithSDK(
   const balance = await connection.getBalance(walletKeypair.publicKey);
   console.log("Balance:", (balance / 1e9).toFixed(4), "SOL");
 
-  const minimumRequired = buyAmount ? buyAmount + 0.01 : 0.01;
+  const minimumRequired = buyAmountSol ? buyAmountSol + 0.02 : 0.02;
   if (balance < minimumRequired * 1e9) {
     console.error(`❌ Insufficient balance. Need at least ${minimumRequired} SOL`);
     if (network === "devnet") {
@@ -109,102 +106,71 @@ async function createTokenWithSDK(
     console.log("📍 Generated Mint:", mintKeypair.publicKey.toString());
     console.log();
 
-    // Prepare metadata
-    console.log("⏳ Uploading metadata to IPFS...");
-
-    let imageBuffer: Buffer | undefined;
+    // Prepare metadata with file as Blob if provided
+    let fileBlob: Blob | undefined;
     if (metadata.file && fs.existsSync(metadata.file)) {
-      imageBuffer = fs.readFileSync(metadata.file);
+      const fileBuffer = fs.readFileSync(metadata.file);
+      fileBlob = new Blob([fileBuffer]);
       console.log("  Image loaded:", metadata.file);
     }
 
-    // Create token metadata URI
-    const metadataResponse = await sdk.createTokenMetadata({
+    const tokenMetadata = {
       name: metadata.name,
       symbol: metadata.symbol,
       description: metadata.description,
-      file: imageBuffer,
-      twitter: metadata.twitter,
-      telegram: metadata.telegram,
-      website: metadata.website,
-    });
-
-    const metadataUri = metadataResponse.metadataUri;
-    console.log("✅ Metadata URI:", metadataUri);
-    console.log();
+      file: fileBlob!,
+      showName: true,
+      ...(metadata.twitter && { twitter: metadata.twitter }),
+      ...(metadata.telegram && { telegram: metadata.telegram }),
+      ...(metadata.website && { website: metadata.website }),
+    };
 
     // Create token (and optionally buy)
-    if (buyAmount && buyAmount > 0) {
-      console.log(`⏳ Creating token and buying ${buyAmount} SOL worth...`);
+    if (buyAmountSol && buyAmountSol > 0) {
+      console.log(`⏳ Creating token and buying ${buyAmountSol} SOL worth...`);
 
-      const createAndBuyResult = await sdk.createAndBuy(
-        walletKeypair.publicKey,
+      const buyAmountLamports = BigInt(Math.floor(buyAmountSol * 1e9));
+      const slippageBasisPoints = 500n; // 5% slippage
+
+      const priorityFees = {
+        unitLimit: 250_000,
+        unitPrice: 250_000,
+      };
+
+      const result = await sdk.createAndBuy(
+        walletKeypair,
         mintKeypair,
-        {
-          name: metadata.name,
-          symbol: metadata.symbol,
-          uri: metadataUri,
-        },
-        BigInt(Math.floor(buyAmount * 1e9)), // SOL amount in lamports
-        {
-          unitLimit: 250_000,
-          unitPrice: 250_000,
-        }
+        tokenMetadata,
+        buyAmountLamports,
+        slippageBasisPoints,
+        priorityFees
       );
 
       console.log("✅ Token created and initial buy completed!");
       console.log();
       console.log("📝 Transaction Details:");
-      console.log("  Signature:", createAndBuyResult.signature);
-      console.log("  Explorer:", `https://explorer.solana.com/tx/${createAndBuyResult.signature}?cluster=${network}`);
+      console.log("  Signature:", result.signature);
+      console.log("  Success:", result.success);
+      console.log("  Explorer:", `https://explorer.solana.com/tx/${result.signature}?cluster=${network}`);
       console.log();
+
+      if (result.results) {
+        console.log("📊 Results:");
+        console.log(JSON.stringify(result.results, null, 2));
+      }
 
       const tokenInfo: CreatedTokenInfo = {
         mint: mintKeypair.publicKey.toString(),
-        metadataUri,
         creator: walletKeypair.publicKey.toString(),
         timestamp: new Date().toISOString(),
-        signature: createAndBuyResult.signature,
+        signature: result.signature,
         metadata,
         network,
       };
 
       return tokenInfo;
     } else {
-      console.log("⏳ Creating token (no initial buy)...");
-
-      const createResult = await sdk.create(
-        walletKeypair.publicKey,
-        mintKeypair,
-        {
-          name: metadata.name,
-          symbol: metadata.symbol,
-          uri: metadataUri,
-        },
-        {
-          unitLimit: 250_000,
-          unitPrice: 250_000,
-        }
-      );
-
-      console.log("✅ Token created!");
-      console.log();
-      console.log("📝 Transaction Details:");
-      console.log("  Signature:", createResult.signature);
-      console.log("  Explorer:", `https://explorer.solana.com/tx/${createResult.signature}?cluster=${network}`);
-      console.log();
-
-      const tokenInfo: CreatedTokenInfo = {
-        mint: mintKeypair.publicKey.toString(),
-        metadataUri,
-        creator: walletKeypair.publicKey.toString(),
-        timestamp: new Date().toISOString(),
-        signature: createResult.signature,
-        metadata,
-        network,
-      };
-
-      return tokenInfo;
+      throw new Error("SDK requires initial buy. Set buyAmountSol > 0");
     }
   } catch (error: any) {
     console.error("❌ Failed to create token:", error);
@@ -235,6 +201,8 @@ function generateDevnetConfig(tokenInfo: CreatedTokenInfo) {
 
   console.log("⚙️  Generating configuration...");
 
+  // Derive bonding curve from mint
+  // Note: The actual bonding curve address should be derived from the transaction
   const config = {
     network: tokenInfo.network,
     timestamp: new Date().toISOString(),
@@ -243,12 +211,11 @@ function generateDevnetConfig(tokenInfo: CreatedTokenInfo) {
       name: tokenInfo.metadata.name,
       symbol: tokenInfo.metadata.symbol,
       description: tokenInfo.metadata.description,
-      metadataUri: tokenInfo.metadataUri,
       creator: tokenInfo.creator,
     },
     pumpfun: {
-      bondingCurve: tokenInfo.bondingCurve || "Will be derived from mint",
-      metadataUri: tokenInfo.metadataUri,
+      bondingCurve: "Check transaction for bonding curve address",
+      note: "Look at the transaction on Explorer to find the bonding curve PDA",
     },
     programs: {
       pumpProgram: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
@@ -259,11 +226,13 @@ function generateDevnetConfig(tokenInfo: CreatedTokenInfo) {
       explorer: `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`,
     },
     nextSteps: [
-      "1. Update lib.rs with the token mint address",
-      "2. Find the bonding curve address from the transaction",
-      "3. Update POOL_PUMPSWAP with the bonding curve address",
-      "4. Deploy the DAT protocol",
-      "5. Initialize and test",
+      "1. Check the transaction on Explorer to find bonding curve address",
+      "2. Update lib.rs with:",
+      `   ASDF_MINT = "${tokenInfo.mint}"`,
+      "   POOL_PUMPSWAP = \"[BONDING_CURVE_FROM_TX]\"",
+      "3. Run: npm run devnet:apply-config",
+      "4. Build and deploy: anchor build && anchor deploy",
+      "5. Initialize: npm run devnet:init",
     ],
   };
 
@@ -277,22 +246,23 @@ async function main() {
   const metadata: TokenMetadata = {
     name: "ASDF Test Token",
     symbol: "ASDFT",
-    description: "Test token for ASDF DAT protocol on devnet",
+    description: "Test token for ASDF DAT protocol created via PumpFun SDK",
     // file: "./assets/token-image.png",  // Optional: path to image
     twitter: "https://twitter.com/asdf",
     telegram: "https://t.me/asdf",
     website: "https://asdf.com",
   };
 
-  // Optional: initial buy amount in SOL
-  const initialBuyAmount = 0.1; // 0.1 SOL
+  // Initial buy amount in SOL (REQUIRED by SDK)
+  const initialBuyAmount = 0.01; // Minimum buy amount
 
   console.log("================================");
-  console.log("PUMPFUN TOKEN CREATOR");
+  console.log("PUMPFUN TOKEN CREATOR (SDK)");
   console.log("================================\n");
 
   console.log("ℹ️  Using Official PumpFun SDK");
-  console.log("   Package: pumpdotfun-sdk");
+  console.log("   Package: pumpdotfun-sdk v1.4.2");
+  console.log("   Note: SDK requires an initial buy amount");
   console.log();
 
   try {
@@ -315,13 +285,13 @@ async function main() {
     console.log("  Symbol:", tokenInfo.metadata.symbol);
     console.log("  Name:", tokenInfo.metadata.name);
     console.log("  Creator:", tokenInfo.creator);
-    console.log("  Metadata URI:", tokenInfo.metadataUri);
     console.log();
 
     console.log("🔗 Links:");
     console.log("  Token:", `https://explorer.solana.com/address/${tokenInfo.mint}?cluster=${tokenInfo.network}`);
-    if (tokenInfo.signature) {
-      console.log("  Transaction:", `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`);
+    console.log("  Transaction:", `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`);
+    if (tokenInfo.network === "mainnet") {
+      console.log("  PumpFun:", `https://pump.fun/${tokenInfo.mint}`);
     }
     console.log();
 
@@ -332,25 +302,29 @@ async function main() {
 
     console.log("🎯 Next Steps:");
     console.log("================================");
-    console.log("1. Find the bonding curve address from the transaction");
+    console.log("1. Open the transaction in Explorer (link above)");
+    console.log("2. Find the 'bonding curve' account in the transaction");
+    console.log("3. Update the bonding curve address in devnet-config.json");
+    console.log("4. Run: npm run devnet:apply-config");
+    console.log("5. Build and deploy: anchor build && anchor deploy --provider.cluster", tokenInfo.network);
     console.log();
-    console.log("2. Update lib.rs:");
-    console.log(`   pub const ASDF_MINT: Pubkey = solana_program::pubkey!("${tokenInfo.mint}");`);
-    console.log("   pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!(\"[BONDING_CURVE]\");");
-    console.log();
-    console.log("3. Or run auto-config:");
-    console.log("   npm run devnet:apply-config");
-    console.log();
-    console.log("4. Deploy the protocol:");
-    console.log("   anchor build && anchor deploy --provider.cluster", tokenInfo.network);
+
+    console.log("💡 Tip: The bonding curve is a PDA derived from the mint");
     console.log();
 
   } catch (error: any) {
     console.error("\n❌ Failed to create token:", error.message);
 
     if (error.message?.includes("pumpdotfun-sdk")) {
-      console.log("\n💡 Install the SDK:");
+      console.log("\n💡 Make sure the SDK is installed:");
       console.log("   npm install pumpdotfun-sdk");
+    }
+
+    if (error.message?.includes("wallet")) {
+      console.log("\n💡 Create a wallet first:");
+      console.log("   solana-keygen new --outfile devnet-wallet.json");
+      console.log("   solana config set --keypair devnet-wallet.json");
+      console.log("   solana airdrop 2");
     }
 
     process.exit(1);
