@@ -44,8 +44,8 @@ const SETUP_STEPS: SetupStep[] = [
   },
   {
     name: "Create Token on PumpFun",
-    description: "Create test token using PumpFun program",
-    script: "ts-node scripts/devnet-create-token.ts",
+    description: "Create test token using PumpFun SDK",
+    script: "ts-node scripts/devnet-create-token-pumpfun-sdk.ts",
   },
   {
     name: "Apply Configuration",
