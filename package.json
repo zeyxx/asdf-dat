@@ -9,8 +9,9 @@
     "compile": "tsc",
     "test": "anchor test",
     "devnet:setup": "ts-node scripts/devnet-full-setup.ts",
-    "devnet:create-token": "ts-node scripts/devnet-create-token-simple.ts",
-    "devnet:create-token-pumpfun": "ts-node scripts/devnet-create-token.ts",
+    "devnet:create-token": "ts-node scripts/devnet-create-token-pumpfun-sdk.ts",
+    "devnet:create-token-simple": "ts-node scripts/devnet-create-token-simple.ts",
+    "devnet:create-token-old": "ts-node scripts/devnet-create-token.ts",
     "devnet:apply-config": "ts-node scripts/devnet-apply-config.ts",
     "devnet:init": "ts-node scripts/devnet-init.ts",
     "devnet:status": "ts-node scripts/devnet-status.ts",
@@ -22,7 +23,8 @@
     "@pump-fun/pump-swap-sdk": "^1.7.7",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
-    "dotenv": "^16.4.1"
+    "dotenv": "^16.4.1",
+    "pumpdotfun-sdk": "^1.4.2"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
