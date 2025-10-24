@@ -28,7 +28,7 @@ interface CreatedTokenInfo {
   mint: string;
   creator: string;
   timestamp: string;
-  signature: string;
+  signature?: string;
   metadata: TokenMetadata;
   network: string;
 }
@@ -221,9 +221,11 @@ function generateDevnetConfig(tokenInfo: CreatedTokenInfo) {
       pumpProgram: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
       wsol: "So11111111111111111111111111111111111111112",
     },
-    transaction: {
+    transaction: tokenInfo.signature ? {
       signature: tokenInfo.signature,
       explorer: `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`,
+    } : {
+      note: "Transaction signature not available",
     },
     nextSteps: [
       "1. Check the transaction on Explorer to find bonding curve address",
@@ -289,7 +291,9 @@ async function main() {
 
     console.log("🔗 Links:");
     console.log("  Token:", `https://explorer.solana.com/address/${tokenInfo.mint}?cluster=${tokenInfo.network}`);
-    console.log("  Transaction:", `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`);
+    if (tokenInfo.signature) {
+      console.log("  Transaction:", `https://explorer.solana.com/tx/${tokenInfo.signature}?cluster=${tokenInfo.network}`);
+    }
     if (tokenInfo.network === "mainnet") {
       console.log("  PumpFun:", `https://pump.fun/${tokenInfo.mint}`);
     }
