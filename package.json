@@ -7,7 +7,14 @@
     "build": "tsc && anchor build",
     "clean": "rm -rf dist target",
     "compile": "tsc",
-    "test": "anchor test"
+    "test": "anchor test",
+    "devnet:setup": "ts-node scripts/devnet-full-setup.ts",
+    "devnet:create-token": "ts-node scripts/devnet-create-token.ts",
+    "devnet:apply-config": "ts-node scripts/devnet-apply-config.ts",
+    "devnet:init": "ts-node scripts/devnet-init.ts",
+    "devnet:status": "ts-node scripts/devnet-status.ts",
+    "devnet:execute": "ts-node scripts/devnet-execute-cycle.ts",
+    "devnet:setup-accounts": "ts-node scripts/devnet-setup-accounts.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
