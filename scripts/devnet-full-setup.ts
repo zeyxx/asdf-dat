@@ -116,7 +116,7 @@ function executeCommand(command: string, description: string): boolean {
     console.log(output);
     console.log("✅ Success\n");
     return true;
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Failed");
     console.error(error.stdout || error.message);
     console.log();
@@ -134,7 +134,7 @@ function executeScript(script: string, description: string): boolean {
 /**
  * Prompt for manual step
  */
-function promptManualStep(step: SetupStep): boolean {
+function promptManualStep(step: SetupStep): Promise<boolean> {
   console.log(`\n🔧 MANUAL STEP REQUIRED`);
   console.log(`================================`);
   console.log(`Step: ${step.name}`);
