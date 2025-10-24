@@ -152,7 +152,7 @@ async function getStatus() {
       }
 
       console.log();
-    } catch (error) {
+    } catch (error: any) {
       console.log("⚠️  Could not fetch token accounts");
       console.log();
     }
@@ -196,7 +196,7 @@ async function getStatus() {
     console.log("DAT Authority:", `https://explorer.solana.com/address/${datAuthority}?cluster=devnet`);
     console.log();
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Error fetching protocol state:");
 
     if (error.message?.includes("Account does not exist")) {

@@ -244,7 +244,7 @@ async function executeCycle() {
     console.log("🎉 Success! The protocol is working correctly on devnet.");
     console.log();
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Cycle execution failed:");
     console.error(error);
 

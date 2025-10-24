@@ -188,12 +188,12 @@ async function createToken(config: TokenConfig): Promise<CreatedTokenInfo> {
     };
 
     return tokenInfo;
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Transaction failed:", error);
 
     if (error.logs) {
       console.log("\n📋 Program Logs:");
-      error.logs.forEach(log => console.log("  ", log));
+      error.logs.forEach((log: any) => console.log("  ", log));
     }
 
     throw error;
@@ -342,7 +342,7 @@ async function main() {
     console.log("💡 Tip: Keep devnet-token-info.json for reference!");
     console.log();
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("\n❌ Failed to create token:", error.message);
     process.exit(1);
   }
