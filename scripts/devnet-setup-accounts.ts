@@ -143,7 +143,7 @@ async function setupAccounts() {
       console.log(`     Explorer: https://explorer.solana.com/tx/${signature}?cluster=devnet`);
       console.log();
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(`  ❌ Failed to create ${account.name} ATA:`, error);
       console.log();
     }

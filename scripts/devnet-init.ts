@@ -49,7 +49,7 @@ async function initialize() {
     console.log();
     console.log("Skipping initialization...");
     return;
-  } catch (error) {
+  } catch (error: any) {
     // Pas encore initialisé, continuer
     console.log("✓ Protocol not yet initialized, proceeding...\n");
   }
@@ -125,7 +125,7 @@ async function initialize() {
     console.log("   ts-node scripts/devnet-execute-cycle.ts");
     console.log();
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("❌ Initialization failed:");
     console.error(error);
 

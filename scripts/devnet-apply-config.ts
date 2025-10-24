@@ -286,7 +286,7 @@ async function main() {
     // Display next steps
     displayNextSteps(config);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("\n❌ Failed to apply configuration:", error.message);
     process.exit(1);
   }
