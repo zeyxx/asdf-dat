@@ -180,14 +180,18 @@ async function createTokenWithOfficialSDK(
       );
 
       if (bondingCurveAccountInfo) {
+        // bondingCurve is the decoded BondingCurve object with the data
+        // bondingCurveAccountInfo is just the raw AccountInfo
+        const decodedBondingCurve = sdk.decodeBondingCurve(bondingCurveAccountInfo);
+
         console.log("✅ Bonding curve successfully created!");
         console.log("   Address:", bondingCurve.toString());
         console.log();
         console.log("📊 Bonding Curve State:");
-        console.log("   Virtual Token Reserves:", bondingCurveAccountInfo.virtualTokenReserves?.toString());
-        console.log("   Virtual SOL Reserves:", bondingCurveAccountInfo.virtualSolReserves?.toString());
-        console.log("   Real Token Reserves:", bondingCurveAccountInfo.realTokenReserves?.toString());
-        console.log("   Real SOL Reserves:", bondingCurveAccountInfo.realSolReserves?.toString());
+        console.log("   Virtual Token Reserves:", decodedBondingCurve.virtualTokenReserves?.toString());
+        console.log("   Virtual SOL Reserves:", decodedBondingCurve.virtualSolReserves?.toString());
+        console.log("   Real Token Reserves:", decodedBondingCurve.realTokenReserves?.toString());
+        console.log("   Real SOL Reserves:", decodedBondingCurve.realSolReserves?.toString());
         console.log();
 
         // Save full config
@@ -203,11 +207,11 @@ async function createTokenWithOfficialSDK(
           },
           bondingCurve: bondingCurve.toString(),
           bondingCurveStats: {
-            virtualTokenReserves: bondingCurveAccountInfo.virtualTokenReserves?.toString(),
-            virtualSolReserves: bondingCurveAccountInfo.virtualSolReserves?.toString(),
-            realTokenReserves: bondingCurveAccountInfo.realTokenReserves?.toString(),
-            realSolReserves: bondingCurveAccountInfo.realSolReserves?.toString(),
-            complete: bondingCurveAccountInfo.complete,
+            virtualTokenReserves: decodedBondingCurve.virtualTokenReserves?.toString(),
+            virtualSolReserves: decodedBondingCurve.virtualSolReserves?.toString(),
+            realTokenReserves: decodedBondingCurve.realTokenReserves?.toString(),
+            realSolReserves: decodedBondingCurve.realSolReserves?.toString(),
+            complete: decodedBondingCurve.complete,
           },
           programs: {
             pumpProgram: "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
