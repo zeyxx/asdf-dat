@@ -110,10 +110,22 @@
   resolved "https://registry.npmjs.org/@noble/hashes/-/hashes-1.8.0.tgz"
   integrity sha512-jCs9ldd7NwzpgXDIf6P3+NrHh9/sD6CQdxHyjQI+h/6rDNo88ypBxxz45UDuZHz9r3tNz7N/VInSVoVdtXEI4A==
 
-"@pump-fun/pump-swap-sdk@^1.7.7":
-  version "1.7.7"
-  resolved "https://registry.npmjs.org/@pump-fun/pump-swap-sdk/-/pump-swap-sdk-1.7.7.tgz"
-  integrity sha512-uU4DK/SFvp3Ih/BQ0Y3uOagK0HY5WrlI8pZz/4vG+S/laQsGkAWGwh/Br4C3AD9uBfF8UOFaP6goFcZhUMUIjQ==
+"@pump-fun/pump-sdk@^1.19.0":
+  version "1.19.0"
+  resolved "https://registry.npmjs.org/@pump-fun/pump-sdk/-/pump-sdk-1.19.0.tgz"
+  integrity sha512-B33mpdJ38yASgOWZGEqErYx4evI5mP9sdNm7tRM+cQPePF4RNUiqDHS3g/ZWITFmPO5rgn1NmCzgvMATumy+pw==
+  dependencies:
+    "@coral-xyz/anchor" "^0.31.1"
+    "@pump-fun/pump-swap-sdk" "^1.7.9"
+    "@solana/spl-token" "^0.4.13"
+    "@solana/web3.js" "^1.98.2"
+    bn.js "^5.2.2"
+    undici-types "^6.20.0"
+
+"@pump-fun/pump-swap-sdk@^1.7.7", "@pump-fun/pump-swap-sdk@^1.7.9":
+  version "1.8.0"
+  resolved "https://registry.npmjs.org/@pump-fun/pump-swap-sdk/-/pump-swap-sdk-1.8.0.tgz"
+  integrity sha512-EFrmG8PEl+wY+YK31lY7c9Ao+uHFHzgJOPbT3NfRhVPiWqDIygb34S2crstP0e+UhixM8wMZ4WH89SgZPxQtjQ==
   dependencies:
     "@coral-xyz/anchor" "^0.31.1"
     "@solana/spl-token" "^0.4.9"
@@ -322,7 +334,7 @@
   dependencies:
     "@solana/codecs" "2.0.0-rc.1"
 
-"@solana/spl-token@^0.4.0", "@solana/spl-token@^0.4.9":
+"@solana/spl-token@^0.4.0", "@solana/spl-token@^0.4.13", "@solana/spl-token@^0.4.9":
   version "0.4.14"
   resolved "https://registry.npmjs.org/@solana/spl-token/-/spl-token-0.4.14.tgz"
   integrity sha512-u09zr96UBpX4U685MnvQsNzlvw9TiY005hk1vJmJr7gMJldoPG1eYU5/wNEyOA5lkMLiR/gOi9SFD4MefOYEsA==
@@ -854,7 +866,7 @@ typescript@^5.3.3, typescript@>=2.7, typescript@>=5, typescript@>=5.3.3:
   resolved "https://registry.npmjs.org/typescript/-/typescript-5.9.2.tgz"
   integrity sha512-CWBzXQrc/qOkhidw1OzBTQuYRbfyxDXJMVJ1XNwUHGROVmuaeiEm3OslpZ1RV96d7SKKjZKrSJu3+t/xlw3R9A==
 
-undici-types@~6.21.0:
+undici-types@^6.20.0, undici-types@~6.21.0:
   version "6.21.0"
   resolved "https://registry.npmjs.org/undici-types/-/undici-types-6.21.0.tgz"
   integrity sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==
