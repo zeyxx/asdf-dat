@@ -11,8 +11,15 @@ interface DevnetConfig {
     mint: string;
     creator: string;
   };
-  pump: {
+  bondingCurve?: string;  // Added by bonding curve finder
+  bondingCurveATA?: string;
+  pumpfun?: {
     bondingCurve: string;
+  };
+  pump?: {
+    bondingCurve: string;
+  };
+  programs: {
     pumpProgram: string;
   };
 }
@@ -105,18 +112,28 @@ function updateLibRs(config: DevnetConfig) {
   }
 
   // 2. Update POOL_PUMPSWAP (utilise le bonding curve comme pool)
-  const oldPoolMatch = content.match(
-    /pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!\("([^"]+)"\);/
-  );
-  if (oldPoolMatch) {
-    const oldPool = oldPoolMatch[1];
-    content = content.replace(
-      /pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!\("([^"]+)"\);/,
-      `pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!("${config.pump.bondingCurve}");`
+  // Check multiple possible locations for bonding curve
+  const bondingCurve = config.bondingCurve ||
+                       config.pump?.bondingCurve ||
+                       config.pumpfun?.bondingCurve;
+
+  if (bondingCurve && bondingCurve !== "Check transaction for bonding curve address") {
+    const oldPoolMatch = content.match(
+      /pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!\("([^"]+)"\);/
     );
-    console.log("  ✅ POOL_PUMPSWAP updated (bonding curve)");
-    console.log("     Old:", oldPool);
-    console.log("     New:", config.pump.bondingCurve);
+    if (oldPoolMatch) {
+      const oldPool = oldPoolMatch[1];
+      content = content.replace(
+        /pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!\("([^"]+)"\);/,
+        `pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!("${bondingCurve}");`
+      );
+      console.log("  ✅ POOL_PUMPSWAP updated (bonding curve)");
+      console.log("     Old:", oldPool);
+      console.log("     New:", bondingCurve);
+    }
+  } else {
+    console.log("  ⚠️  No bonding curve address found in config");
+    console.log("     Run: npm run devnet:find-bonding-curve");
   }
 
   // 3. Ajuster les paramètres pour devnet (plus faciles à tester)
@@ -218,10 +235,15 @@ function displayNextSteps(config: DevnetConfig) {
   console.log("CONFIGURATION APPLIED");
   console.log("================================\n");
 
+  const bondingCurve = config.bondingCurve ||
+                       config.pump?.bondingCurve ||
+                       config.pumpfun?.bondingCurve ||
+                       "Not set";
+
   console.log("📍 Devnet Addresses Configured:");
   console.log("  Token Mint:", config.token.mint);
-  console.log("  Pool (Bonding Curve):", config.pump.bondingCurve);
-  console.log("  Pump Program:", config.pump.pumpProgram);
+  console.log("  Pool (Bonding Curve):", bondingCurve);
+  console.log("  Pump Program:", config.programs.pumpProgram);
   console.log();
 
   console.log("📝 Files Modified:");
