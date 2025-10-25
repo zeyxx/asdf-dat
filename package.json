@@ -13,6 +13,7 @@
     "devnet:create-token-simple": "ts-node scripts/devnet-create-token-simple.ts",
     "devnet:create-token-old": "ts-node scripts/devnet-create-token.ts",
     "devnet:find-bonding-curve": "ts-node scripts/devnet-find-bonding-curve.ts",
+    "devnet:buy-init-curve": "ts-node scripts/devnet-buy-initialize-bonding-curve.ts",
     "devnet:apply-config": "ts-node scripts/devnet-apply-config.ts",
     "devnet:init": "ts-node scripts/devnet-init.ts",
     "devnet:status": "ts-node scripts/devnet-status.ts",
