@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::instruction::Instruction;
+use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{
     token::{self, Token, TokenAccount, Mint},
     associated_token::AssociatedToken,
 };
-use solana_program::instruction::Instruction;
-use solana_program::program::invoke_signed;
 
 declare_id!("EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"); // Replace after deployment
 
