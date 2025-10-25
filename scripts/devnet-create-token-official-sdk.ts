@@ -1,5 +1,5 @@
 import { Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
-import { PumpSdk, getBuyTokenAmountFromSolAmount } from "@pump-fun/pump-sdk";
+import { PumpSdk, OnlinePumpSdk, getBuyTokenAmountFromSolAmount } from "@pump-fun/pump-sdk";
 import * as fs from "fs";
 import * as path from "path";
 import BN from "bn.js";
@@ -40,7 +40,12 @@ async function createTokenWithOfficialSDK(
   console.log();
 
   const connection = new Connection(rpcUrl, "confirmed");
-  const sdk = new PumpSdk(connection);
+
+  // Use OnlinePumpSdk for fetching data from blockchain
+  const onlineSdk = new OnlinePumpSdk(connection);
+
+  // Use PumpSdk for creating instructions (offline)
+  const sdk = new PumpSdk();
 
   // 2. Load wallet
   const walletPath = path.join(__dirname, "..", "devnet-wallet.json");
@@ -84,16 +89,24 @@ async function createTokenWithOfficialSDK(
   console.log();
 
   try {
-    // 5. Fetch global state
+    // 5. Fetch global state and fee config (using OnlinePumpSdk)
     console.log("⏳ Fetching global state...");
-    const global = await sdk.fetchGlobal();
+    const global = await onlineSdk.fetchGlobal();
+    const feeConfig = await onlineSdk.fetchFeeConfig();
     console.log("✅ Global state fetched");
     console.log("   Fee Recipient:", global.feeRecipient.toString());
     console.log();
 
     // 6. Prepare buy amount
     const solAmount = new BN(buyAmountSol * 1e9);
-    const tokenAmount = getBuyTokenAmountFromSolAmount(global, null, solAmount);
+    // For a new token, mintSupply and bondingCurve are null
+    const tokenAmount = getBuyTokenAmountFromSolAmount({
+      global,
+      feeConfig,
+      mintSupply: null,
+      bondingCurve: null,
+      amount: solAmount,
+    });
 
     console.log("💳 Buy Parameters:");
     console.log("   SOL Amount:", buyAmountSol, "SOL");
@@ -127,7 +140,7 @@ async function createTokenWithOfficialSDK(
     transaction.feePayer = walletKeypair.publicKey;
 
     // Add all instructions
-    instructions.forEach(ix => transaction.add(ix));
+    instructions.forEach((ix: any) => transaction.add(ix));
 
     console.log("✅ Transaction built");
     console.log();
@@ -161,7 +174,7 @@ async function createTokenWithOfficialSDK(
     // 11. Verify bonding curve was created
     console.log("🔍 Verifying bonding curve...");
     try {
-      const { bondingCurve, bondingCurveAccountInfo } = await sdk.fetchBuyState(
+      const { bondingCurve, bondingCurveAccountInfo } = await onlineSdk.fetchBuyState(
         mintKeypair.publicKey,
         walletKeypair.publicKey
       );
