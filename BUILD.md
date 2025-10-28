@@ -11,19 +11,19 @@ This document explains how to build the ASDF DAT Solana program and resolves com
 ## The Problem
 
 The ASDF DAT program uses Anchor 0.31.1, which requires Rust 1.76 or higher. However:
-- Some transitive dependencies (solana-program@2.3.0, indexmap@2.12.0) require Rust 1.79+
+- Some transitive dependencies (solana-program@2.3.0 requires 1.79+, indexmap@2.12.0 requires 1.82+)
 - Rust 1.79+ generates Cargo.lock files in version 4 format
 - Solana's `cargo build-sbf` tool is incompatible with Cargo.lock v4
 
 ## The Solution
 
-Use Rust 1.79.0 with a two-step process:
-1. **Generate Cargo.lock**: Use Rust 1.79.0 to satisfy all dependency requirements
+Use Rust 1.82.0 with a two-step process:
+1. **Generate Cargo.lock**: Use Rust 1.82.0 to satisfy all dependency requirements
 2. **Convert to v3**: Automatically downgrade the Cargo.lock from v4 to v3 format
 3. **Build**: Use cargo build-sbf with the compatible v3 lockfile
 
 This approach:
-- Satisfies all dependency requirements (>= 1.79.0)
+- Satisfies all dependency requirements (>= 1.82.0)
 - Maintains compatibility with Solana build tools (v3 lockfile)
 - Is fully automated in the build script
 
@@ -38,7 +38,7 @@ Simply run the automated build script:
 ```
 
 This script will:
-1. Install Rust 1.79.0 if not already installed
+1. Install Rust 1.82.0 if not already installed
 2. Set it as the project override
 3. Clean old Cargo.lock files
 4. Generate a new Cargo.lock (v4 format)
@@ -50,15 +50,15 @@ This script will:
 If you prefer to build manually:
 
 ```powershell
-# 1. Install Rust 1.79.0
-rustup toolchain install 1.79.0
+# 1. Install Rust 1.82.0
+rustup toolchain install 1.82.0
 
 # 2. Set project override
-rustup override set 1.79.0
+rustup override set 1.82.0
 
 # 3. Verify version
 rustc --version
-# Should show: rustc 1.79.0
+# Should show: rustc 1.82.0
 
 # 4. Clean old lockfiles
 Remove-Item Cargo.lock -ErrorAction SilentlyContinue
@@ -96,17 +96,17 @@ $content = $content -replace 'version = 4', 'version = 3'
 Set-Content -Path "programs/asdf-dat/Cargo.lock" -Value $content -NoNewline
 ```
 
-### Error: "rustc 1.79.0 is not supported by the following packages"
+### Error: "rustc 1.82.0 is not supported by the following packages"
 
 **Cause:** Newer dependency versions require a higher Rust version.
 
-**Solution:** The build script now uses Rust 1.79.0 which satisfies all current dependencies. If you see this error with a version higher than 1.79, update the build script to use that version.
+**Solution:** The build script now uses Rust 1.82.0 which satisfies all current dependencies (indexmap@2.12.0 requires 1.82). If you see this error with a version higher than 1.82, update the build script to use that version.
 
 ### Error: "requires rustc 1.76 or newer, while the currently active rustc version is 1.75.0-dev"
 
 **Cause:** Solana CLI is trying to use its own obsolete Rust toolchain.
 
-**Solution:** The build.ps1 script automatically handles this by setting the override to 1.79.0
+**Solution:** The build.ps1 script automatically handles this by setting the override to 1.82.0
 
 ### Error: "anchor-lang version(0.26.0) and the current CLI version(0.31.1) don't match"
 
@@ -164,15 +164,15 @@ The project includes a PumpFun token on devnet for testing:
 ## Version History
 
 - **v0.1.0** - Initial version with Anchor 0.31.1
-- Rust 1.79.0 specified for dependency compatibility
+- Rust 1.82.0 specified for dependency compatibility (indexmap@2.12.0 requirement)
 - Cargo.lock v4 → v3 conversion for Solana build tools
 - Automated build script with all compatibility fixes
 
 ## Need Help?
 
 If you encounter issues not covered here:
-1. Check that `rustc --version` shows 1.79.0
+1. Check that `rustc --version` shows 1.82.0
 2. Delete Cargo.lock files and regenerate with `cargo check`
 3. Verify the Cargo.lock conversion: `Select-String "version = " programs/asdf-dat/Cargo.lock`
-4. Try running `rustup override set 1.79.0` again
+4. Try running `rustup override set 1.82.0` again
 5. Verify Solana CLI is updated: `solana --version`
