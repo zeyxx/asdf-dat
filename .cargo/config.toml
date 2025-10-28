@@ -1,3 +1,9 @@
-# Force Cargo to not use experimental lockfile v4
-# This ensures compatibility with Cargo 1.90.0
-[unstable]
+# Force Cargo to use compatible configuration for Solana builds
+# Prevents lockfile v4 generation and ensures compatibility
+
+[build]
+# Use stable Rust toolchain from system
+rustc = "rustc"
+
+[term]
+verbose = false
