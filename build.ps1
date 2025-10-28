@@ -4,24 +4,24 @@
 Write-Host "=== ASDF DAT Build Script ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Step 1: Check if Rust 1.79.0 is installed
-Write-Host "Step 1: Checking Rust 1.79.0 toolchain..." -ForegroundColor Yellow
+# Step 1: Check if Rust 1.82.0 is installed
+Write-Host "Step 1: Checking Rust 1.82.0 toolchain..." -ForegroundColor Yellow
 $rustToolchains = rustup toolchain list
-if ($rustToolchains -notmatch "1.79.0") {
-    Write-Host "Installing Rust 1.79.0 toolchain (required by dependencies)..." -ForegroundColor Yellow
-    rustup toolchain install 1.79.0
+if ($rustToolchains -notmatch "1.82.0") {
+    Write-Host "Installing Rust 1.82.0 toolchain (required by dependencies)..." -ForegroundColor Yellow
+    rustup toolchain install 1.82.0
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install Rust 1.79.0" -ForegroundColor Red
+        Write-Host "Failed to install Rust 1.82.0" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "Rust 1.79.0 already installed" -ForegroundColor Green
+    Write-Host "Rust 1.82.0 already installed" -ForegroundColor Green
 }
 
-# Step 2: Set rustup override to use 1.79.0 for this project
+# Step 2: Set rustup override to use 1.82.0 for this project
 Write-Host ""
-Write-Host "Step 2: Setting Rust 1.79.0 as project override..." -ForegroundColor Yellow
-rustup override set 1.79.0
+Write-Host "Step 2: Setting Rust 1.82.0 as project override..." -ForegroundColor Yellow
+rustup override set 1.82.0
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to set rustup override" -ForegroundColor Red
     exit 1
@@ -47,9 +47,9 @@ if (Test-Path "programs/asdf-dat/Cargo.lock") {
     Write-Host "Removed program Cargo.lock" -ForegroundColor Green
 }
 
-# Step 5: Generate new Cargo.lock (will be v4 with Cargo 1.79.0)
+# Step 5: Generate new Cargo.lock (will be v4 with Cargo 1.82.0)
 Write-Host ""
-Write-Host "Step 5: Generating Cargo.lock with Cargo 1.79.0..." -ForegroundColor Yellow
+Write-Host "Step 5: Generating Cargo.lock with Cargo 1.82.0..." -ForegroundColor Yellow
 Push-Location programs/asdf-dat
 cargo check --target-dir ../../target
 $checkResult = $LASTEXITCODE
