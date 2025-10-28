@@ -15,7 +15,8 @@ out/
 # Rust/Anchor build files
 target/
 **/*.rs.bk
-Cargo.lock
+# Ignore root Cargo.lock but allow program Cargo.lock for reproducible builds
+/Cargo.lock
 test-ledger/
 .anchor/
 
