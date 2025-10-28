@@ -4,24 +4,24 @@
 Write-Host "=== ASDF DAT Build Script ===" -ForegroundColor Cyan
 Write-Host ""
 
-# Step 1: Check if Rust 1.78.0 is installed
-Write-Host "Step 1: Checking Rust 1.78.0 toolchain..." -ForegroundColor Yellow
+# Step 1: Check if Rust 1.79.0 is installed
+Write-Host "Step 1: Checking Rust 1.79.0 toolchain..." -ForegroundColor Yellow
 $rustToolchains = rustup toolchain list
-if ($rustToolchains -notmatch "1.78.0") {
-    Write-Host "Installing Rust 1.78.0 toolchain (this generates v3 Cargo.lock files)..." -ForegroundColor Yellow
-    rustup toolchain install 1.78.0
+if ($rustToolchains -notmatch "1.79.0") {
+    Write-Host "Installing Rust 1.79.0 toolchain (required by dependencies)..." -ForegroundColor Yellow
+    rustup toolchain install 1.79.0
     if ($LASTEXITCODE -ne 0) {
-        Write-Host "Failed to install Rust 1.78.0" -ForegroundColor Red
+        Write-Host "Failed to install Rust 1.79.0" -ForegroundColor Red
         exit 1
     }
 } else {
-    Write-Host "Rust 1.78.0 already installed" -ForegroundColor Green
+    Write-Host "Rust 1.79.0 already installed" -ForegroundColor Green
 }
 
-# Step 2: Set rustup override to use 1.78.0 for this project
+# Step 2: Set rustup override to use 1.79.0 for this project
 Write-Host ""
-Write-Host "Step 2: Setting Rust 1.78.0 as project override..." -ForegroundColor Yellow
-rustup override set 1.78.0
+Write-Host "Step 2: Setting Rust 1.79.0 as project override..." -ForegroundColor Yellow
+rustup override set 1.79.0
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Failed to set rustup override" -ForegroundColor Red
     exit 1
@@ -47,9 +47,9 @@ if (Test-Path "programs/asdf-dat/Cargo.lock") {
     Write-Host "Removed program Cargo.lock" -ForegroundColor Green
 }
 
-# Step 5: Generate new Cargo.lock with v3 format
+# Step 5: Generate new Cargo.lock (will be v4 with Cargo 1.79.0)
 Write-Host ""
-Write-Host "Step 5: Generating Cargo.lock (v3 format with Cargo 1.78.0)..." -ForegroundColor Yellow
+Write-Host "Step 5: Generating Cargo.lock with Cargo 1.79.0..." -ForegroundColor Yellow
 Push-Location programs/asdf-dat
 cargo check --target-dir ../../target
 $checkResult = $LASTEXITCODE
@@ -60,21 +60,30 @@ if ($checkResult -ne 0) {
     exit 1
 }
 
-# Verify Cargo.lock was created and check version
-if (Test-Path "programs/asdf-dat/Cargo.lock") {
-    $lockContent = Get-Content "programs/asdf-dat/Cargo.lock" -Raw
-    if ($lockContent -match 'version = (\d+)') {
-        $lockVersion = $matches[1]
-        Write-Host "Generated Cargo.lock version: $lockVersion" -ForegroundColor Green
-
-        if ($lockVersion -eq "4") {
-            Write-Host "WARNING: Cargo.lock is v4. This shouldn't happen with Cargo 1.78.0!" -ForegroundColor Red
-            exit 1
-        }
-    }
-} else {
+# Verify Cargo.lock was created
+if (-not (Test-Path "programs/asdf-dat/Cargo.lock")) {
     Write-Host "ERROR: Cargo.lock was not generated" -ForegroundColor Red
     exit 1
+}
+
+# Step 5b: Downgrade Cargo.lock from v4 to v3 for compatibility with cargo build-sbf
+Write-Host ""
+Write-Host "Step 5b: Converting Cargo.lock from v4 to v3 format..." -ForegroundColor Yellow
+$lockContent = Get-Content "programs/asdf-dat/Cargo.lock" -Raw
+if ($lockContent -match 'version = (\d+)') {
+    $lockVersion = $matches[1]
+    Write-Host "Current Cargo.lock version: $lockVersion" -ForegroundColor Cyan
+
+    if ($lockVersion -eq "4") {
+        Write-Host "Converting v4 to v3 for cargo build-sbf compatibility..." -ForegroundColor Yellow
+        $lockContent = $lockContent -replace 'version = 4', 'version = 3'
+        Set-Content -Path "programs/asdf-dat/Cargo.lock" -Value $lockContent -NoNewline
+        Write-Host "Successfully converted Cargo.lock to v3" -ForegroundColor Green
+    } else {
+        Write-Host "Cargo.lock is already v3, no conversion needed" -ForegroundColor Green
+    }
+} else {
+    Write-Host "WARNING: Could not detect Cargo.lock version" -ForegroundColor Yellow
 }
 
 # Step 6: Build the program
