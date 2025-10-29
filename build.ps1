@@ -54,13 +54,13 @@ Write-Host "Step 5: Generating Cargo.lock with Cargo 1.82.0..." -ForegroundColor
 # Change to program directory
 Set-Location programs\asdf-dat
 
-# Try cargo update which should create Cargo.lock
-Write-Host "Running cargo update..." -ForegroundColor Cyan
-cargo update 2>&1 | Out-Null
-$updateResult = $LASTEXITCODE
+# Run cargo check which will create Cargo.lock as a side effect
+Write-Host "Running cargo check to generate Cargo.lock..." -ForegroundColor Cyan
+cargo check 2>&1 | Write-Host
+$checkResult = $LASTEXITCODE
 
-if ($updateResult -ne 0) {
-    Write-Host "cargo update failed with exit code $updateResult" -ForegroundColor Red
+if ($checkResult -ne 0) {
+    Write-Host "cargo check failed with exit code $checkResult" -ForegroundColor Red
     Set-Location ..\..
     exit 1
 }
