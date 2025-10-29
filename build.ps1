@@ -107,8 +107,17 @@ if ($LASTEXITCODE -eq 0) {
 Write-Host ""
 Write-Host "Step 6: Building Solana program with Anchor..." -ForegroundColor Yellow
 
-# Use anchor build which respects the system Rust toolchain better
-Write-Host "Using Rust 1.82.0 with Anchor build" -ForegroundColor Cyan
+# Ensure solana toolchain link exists right before build
+Write-Host "Ensuring 'solana' toolchain link exists..." -ForegroundColor Cyan
+$sysroot = rustc +1.82.0 --print sysroot
+rustup toolchain link solana $sysroot 2>&1 | Out-Null
+
+# Force use of specific toolchain and skip toolchain management
+$env:RUSTUP_TOOLCHAIN = "1.82.0-x86_64-pc-windows-msvc"
+$env:CARGO_BUILD_RUSTC = (Get-Command rustc).Path
+Write-Host "Using Rust 1.82.0 (forced via RUSTUP_TOOLCHAIN)" -ForegroundColor Cyan
+Write-Host "RUSTUP_TOOLCHAIN=$env:RUSTUP_TOOLCHAIN" -ForegroundColor Cyan
+
 anchor build
 
 if ($LASTEXITCODE -ne 0) {
