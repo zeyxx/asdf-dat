@@ -50,27 +50,34 @@ if (Test-Path "programs/asdf-dat/Cargo.lock") {
 # Step 5: Generate new Cargo.lock (will be v4 with Cargo 1.82.0)
 Write-Host ""
 Write-Host "Step 5: Generating Cargo.lock with Cargo 1.82.0..." -ForegroundColor Yellow
-Push-Location programs/asdf-dat
 
-# Explicitly generate lockfile
-cargo generate-lockfile
-$lockfileResult = $LASTEXITCODE
+# Change to program directory
+Set-Location programs\asdf-dat
 
-if ($lockfileResult -ne 0) {
-    Write-Host "Failed to generate Cargo.lock" -ForegroundColor Red
-    Pop-Location
+# Try cargo update which should create Cargo.lock
+Write-Host "Running cargo update..." -ForegroundColor Cyan
+cargo update 2>&1 | Out-Null
+$updateResult = $LASTEXITCODE
+
+if ($updateResult -ne 0) {
+    Write-Host "cargo update failed with exit code $updateResult" -ForegroundColor Red
+    Set-Location ..\..
     exit 1
 }
 
-# Verify it was created
-if (-not (Test-Path "Cargo.lock")) {
-    Write-Host "ERROR: Cargo.lock was not generated" -ForegroundColor Red
-    Pop-Location
+# Verify Cargo.lock was created
+if (Test-Path ".\Cargo.lock") {
+    Write-Host "Successfully generated Cargo.lock" -ForegroundColor Green
+} else {
+    Write-Host "ERROR: Cargo.lock was not created in $(Get-Location)" -ForegroundColor Red
+    Write-Host "Directory contents:" -ForegroundColor Yellow
+    Get-ChildItem | Select-Object Name
+    Set-Location ..\..
     exit 1
 }
 
-Write-Host "Successfully generated Cargo.lock" -ForegroundColor Green
-Pop-Location
+# Return to project root
+Set-Location ..\..
 
 # Step 5b: Downgrade Cargo.lock from v4 to v3 for compatibility with cargo build-sbf
 Write-Host ""
