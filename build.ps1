@@ -73,7 +73,7 @@ if (Test-Path ".\Cargo.lock") {
     exit 1
 }
 
-# Step 5b: Downgrade Cargo.lock from v4 to v3 for compatibility with cargo build-sbf
+# Step 5b: Converting Cargo.lock from v4 to v3 format...
 Write-Host ""
 Write-Host "Step 5b: Converting Cargo.lock from v4 to v3 format..." -ForegroundColor Yellow
 $lockContent = Get-Content "programs/asdf-dat/Cargo.lock" -Raw
@@ -91,6 +91,16 @@ if ($lockContent -match 'version = (\d+)') {
     }
 } else {
     Write-Host "WARNING: Could not detect Cargo.lock version" -ForegroundColor Yellow
+}
+
+# Step 5c: Create 'solana' toolchain link pointing to 1.82.0
+Write-Host ""
+Write-Host "Step 5c: Creating 'solana' toolchain link to Rust 1.82.0..." -ForegroundColor Yellow
+rustup toolchain link solana (rustc +1.82.0 --print sysroot)
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "Successfully linked 'solana' toolchain to Rust 1.82.0" -ForegroundColor Green
+} else {
+    Write-Host "Note: solana toolchain link may already exist" -ForegroundColor Yellow
 }
 
 # Step 6: Build the program
