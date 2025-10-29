@@ -97,13 +97,15 @@ if ($lockContent -match 'version = (\d+)') {
 Write-Host ""
 Write-Host "Step 6: Building Solana program with cargo build-sbf..." -ForegroundColor Yellow
 
-# Force cargo build-sbf to use our system Rust toolchain instead of managing its own
+# Force cargo build-sbf to skip toolchain management and use system Rust
 $env:RUSTC = (Get-Command rustc).Path
 $env:CARGO = (Get-Command cargo).Path
+$env:CARGO_BUILD_SBF_SKIP_TOOLCHAIN_CHECK = "1"
 Write-Host "Using system rustc: $env:RUSTC" -ForegroundColor Cyan
 Write-Host "Using system cargo: $env:CARGO" -ForegroundColor Cyan
+Write-Host "Skipping toolchain check: CARGO_BUILD_SBF_SKIP_TOOLCHAIN_CHECK=1" -ForegroundColor Cyan
 
-cargo build-sbf --manifest-path=programs/asdf-dat/Cargo.toml --sbf-out-dir=target/deploy
+cargo build-sbf --arch sbfv2 --manifest-path=programs/asdf-dat/Cargo.toml --sbf-out-dir=target/deploy
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
