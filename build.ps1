@@ -51,33 +51,27 @@ if (Test-Path "programs/asdf-dat/Cargo.lock") {
 Write-Host ""
 Write-Host "Step 5: Generating Cargo.lock with Cargo 1.82.0..." -ForegroundColor Yellow
 
-# Change to program directory
-Set-Location programs\asdf-dat
-
-# Run cargo check which will create Cargo.lock as a side effect
+# Run cargo check from workspace root - this creates Cargo.lock at workspace root
 Write-Host "Running cargo check to generate Cargo.lock..." -ForegroundColor Cyan
 cargo check 2>&1 | Write-Host
 $checkResult = $LASTEXITCODE
 
 if ($checkResult -ne 0) {
     Write-Host "cargo check failed with exit code $checkResult" -ForegroundColor Red
-    Set-Location ..\..
     exit 1
 }
 
-# Verify Cargo.lock was created
+# Cargo.lock is created at workspace root due to workspace configuration
 if (Test-Path ".\Cargo.lock") {
-    Write-Host "Successfully generated Cargo.lock" -ForegroundColor Green
+    Write-Host "Successfully generated Cargo.lock at workspace root" -ForegroundColor Green
+
+    # Copy to program directory for cargo build-sbf
+    Copy-Item ".\Cargo.lock" ".\programs\asdf-dat\Cargo.lock" -Force
+    Write-Host "Copied Cargo.lock to program directory" -ForegroundColor Green
 } else {
-    Write-Host "ERROR: Cargo.lock was not created in $(Get-Location)" -ForegroundColor Red
-    Write-Host "Directory contents:" -ForegroundColor Yellow
-    Get-ChildItem | Select-Object Name
-    Set-Location ..\..
+    Write-Host "ERROR: Cargo.lock was not created" -ForegroundColor Red
     exit 1
 }
-
-# Return to project root
-Set-Location ..\..
 
 # Step 5b: Downgrade Cargo.lock from v4 to v3 for compatibility with cargo build-sbf
 Write-Host ""
