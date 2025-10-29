@@ -13,12 +13,12 @@ declare_id!("EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"); // Replace after de
 // ===========================
 
 // Verified PumpSwap addresses
-pub const ASDF_MINT: Pubkey = solana_program::pubkey!("9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump");
-pub const WSOL_MINT: Pubkey = solana_program::pubkey!("So11111111111111111111111111111111111111112");
-pub const POOL_PUMPSWAP: Pubkey = solana_program::pubkey!("DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb");
-pub const PUMP_SWAP_PROGRAM: Pubkey = solana_program::pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
-pub const TOKEN_2022_PROGRAM: Pubkey = solana_program::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
-pub const FEE_PROGRAM: Pubkey = solana_program::pubkey!("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+pub const ASDF_MINT: Pubkey = anchor_lang::solana_program::pubkey!("9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump");
+pub const WSOL_MINT: Pubkey = anchor_lang::solana_program::pubkey!("So11111111111111111111111111111111111111112");
+pub const POOL_PUMPSWAP: Pubkey = anchor_lang::solana_program::pubkey!("DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb");
+pub const PUMP_SWAP_PROGRAM: Pubkey = anchor_lang::solana_program::pubkey!("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+pub const TOKEN_2022_PROGRAM: Pubkey = anchor_lang::solana_program::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+pub const FEE_PROGRAM: Pubkey = anchor_lang::solana_program::pubkey!("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 
 // Operating parameters
 pub const MIN_FEES_TO_CLAIM: u64 = 190_000_000; // 0.19 SOL in lamports
@@ -34,14 +34,14 @@ pub const DAT_AUTHORITY_SEED: &[u8] = b"dat-authority";
 
 // Protocol fee recipients (rotation for load balancing)
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 8] = [
-    solana_program::pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV"),
-    solana_program::pubkey!("7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ"),
-    solana_program::pubkey!("7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX"),
-    solana_program::pubkey!("9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz"),
-    solana_program::pubkey!("AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY"),
-    solana_program::pubkey!("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM"),
-    solana_program::pubkey!("FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz"),
-    solana_program::pubkey!("G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP"),
+    anchor_lang::solana_program::pubkey!("62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV"),
+    anchor_lang::solana_program::pubkey!("7VtfL8fvgNfhz17qKRMjzQEXgbdpnHHHQRh54R9jP2RJ"),
+    anchor_lang::solana_program::pubkey!("7hTckgnGnLQR6sdH7YkqFTAA7VwTfYFaZ6EhEsU3saCX"),
+    anchor_lang::solana_program::pubkey!("9rPYyANsfQZw3DnDmKE3YCQF5E8oD89UXoHn9JFEhJUz"),
+    anchor_lang::solana_program::pubkey!("AVmoTthdrX6tKt4nDjco2D775W2YK3sDhxPcMmzUAmTY"),
+    anchor_lang::solana_program::pubkey!("CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM"),
+    anchor_lang::solana_program::pubkey!("FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz"),
+    anchor_lang::solana_program::pubkey!("G5UZAVbAf46s7cKWoyKu8kYTip9DGTpbLZ2qa9Aq69dP"),
 ];
 
 #[program]
@@ -85,7 +85,7 @@ pub mod asdf_dat {
         state.min_cycle_interval = MIN_CYCLE_INTERVAL;
         
         // Save bumps for CPIs
-        state.dat_authority_bump = *ctx.bumps.get("dat_authority").unwrap();
+        state.dat_authority_bump = ctx.bumps.dat_authority;
         state.current_fee_recipient_index = 0;
         
         // Initialize price tracking
