@@ -95,17 +95,11 @@ if ($lockContent -match 'version = (\d+)') {
 
 # Step 6: Build the program
 Write-Host ""
-Write-Host "Step 6: Building Solana program with cargo build-sbf..." -ForegroundColor Yellow
+Write-Host "Step 6: Building Solana program with Anchor..." -ForegroundColor Yellow
 
-# Force cargo build-sbf to skip toolchain management and use system Rust
-$env:RUSTC = (Get-Command rustc).Path
-$env:CARGO = (Get-Command cargo).Path
-$env:CARGO_BUILD_SBF_SKIP_TOOLCHAIN_CHECK = "1"
-Write-Host "Using system rustc: $env:RUSTC" -ForegroundColor Cyan
-Write-Host "Using system cargo: $env:CARGO" -ForegroundColor Cyan
-Write-Host "Skipping toolchain check: CARGO_BUILD_SBF_SKIP_TOOLCHAIN_CHECK=1" -ForegroundColor Cyan
-
-cargo build-sbf --arch sbfv2 --manifest-path=programs/asdf-dat/Cargo.toml --sbf-out-dir=target/deploy
+# Use anchor build which respects the system Rust toolchain better
+Write-Host "Using Rust 1.82.0 with Anchor build" -ForegroundColor Cyan
+anchor build
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host ""
