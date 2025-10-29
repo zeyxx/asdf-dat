@@ -107,16 +107,22 @@ if ($LASTEXITCODE -eq 0) {
 Write-Host ""
 Write-Host "Step 6: Building Solana program with Anchor..." -ForegroundColor Yellow
 
-# Ensure solana toolchain link exists right before build
-Write-Host "Ensuring 'solana' toolchain link exists..." -ForegroundColor Cyan
-$sysroot = rustc +1.82.0 --print sysroot
-rustup toolchain link solana $sysroot 2>&1 | Out-Null
+# Get Rust 1.82.0 bin directory and put it FIRST in PATH
+$rust1820Path = Split-Path -Parent (Get-Command rustc).Path
+$env:PATH = "$rust1820Path;$env:PATH"
+Write-Host "Prepended Rust 1.82.0 to PATH: $rust1820Path" -ForegroundColor Cyan
 
-# Force use of specific toolchain and skip toolchain management
+# Force all Rust/Cargo environment variables
 $env:RUSTUP_TOOLCHAIN = "1.82.0-x86_64-pc-windows-msvc"
-$env:CARGO_BUILD_RUSTC = (Get-Command rustc).Path
-Write-Host "Using Rust 1.82.0 (forced via RUSTUP_TOOLCHAIN)" -ForegroundColor Cyan
-Write-Host "RUSTUP_TOOLCHAIN=$env:RUSTUP_TOOLCHAIN" -ForegroundColor Cyan
+$env:RUSTC = (Get-Command rustc).Path
+$env:CARGO = (Get-Command cargo).Path
+$env:RUSTC_WRAPPER = ""
+$env:RUSTC_WORKSPACE_WRAPPER = ""
+
+Write-Host "Environment configured:" -ForegroundColor Cyan
+Write-Host "  RUSTUP_TOOLCHAIN=$env:RUSTUP_TOOLCHAIN" -ForegroundColor Cyan
+Write-Host "  RUSTC=$env:RUSTC" -ForegroundColor Cyan
+Write-Host "  First rustc in PATH: $(Get-Command rustc | Select-Object -ExpandProperty Source)" -ForegroundColor Cyan
 
 anchor build
 
