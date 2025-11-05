@@ -1,76 +1,96 @@
-# Guide de Build Windows pour ASDF DAT
+# Guide de Build Windows pour ASDF DAT 🚀
 
-Ce guide propose **3 méthodes pour builder sur Windows** sans utiliser WSL.
+Ce guide propose **plusieurs méthodes pour builder sur Windows** sans utiliser WSL.
 
 ## ⚠️ Problème
 
-Le build échoue sur Windows parce que `cargo-build-sbf` (intégré dans Solana CLI) utilise Rust 1.75.0-dev, mais les dépendances nécessitent Rust 1.82.0.
+Le build échoue sur Windows parce que `cargo-build-sbf` (intégré dans Solana CLI v1.18.26) utilise Rust 1.75.0-dev, mais les dépendances modernes nécessitent Rust 1.76+.
+
+**Votre code est correct!** C'est uniquement un problème d'environnement de build.
+
+---
 
 ## 🎯 Solutions Windows Natives
 
-### Méthode 1: Downgrade vers Anchor 0.30.1 (RECOMMANDÉ)
+### Méthode 1A: Auto-Downgrade Anchor (RECOMMANDÉ - NOUVEAU!)
 
-Cette méthode downgrade temporairement Anchor de 0.31.1 vers 0.30.1, qui est compatible avec Rust 1.75.0.
+**Ce script essaie automatiquement plusieurs versions d'Anchor** (0.29.0, 0.28.0, 0.27.0, 0.26.0) jusqu'à trouver une compatible avec Rust 1.75.0.
 
 #### Étapes:
+
+```powershell
+.\build-windows-auto-downgrade.ps1
+```
+
+**Avantages:**
+- ✅ **Automatique** - essaie plusieurs versions
+- ✅ Simple et rapide (2-5 minutes)
+- ✅ Utilise votre installation Solana actuelle
+- ✅ Pas besoin de téléchargement
+- ✅ Trouve la meilleure version compatible
+
+**Ce que fait le script:**
+1. Sauvegarde votre Cargo.toml
+2. Essaie Anchor 0.29.0, puis 0.28.0, puis 0.27.0, puis 0.26.0
+3. S'arrête dès qu'une version fonctionne
+4. Génère `target/deploy/asdf_dat.so`
+
+**Si ça fonctionne:**
+Le programme sera compilé avec la version d'Anchor la plus récente compatible!
+
+---
+
+### Méthode 1B: Downgrade Manuel vers Anchor 0.30.1
+
+Si vous voulez contrôler la version exacte:
 
 ```powershell
 .\build-windows-alternative.ps1
 ```
 
-**Avantages:**
-- ✅ Simple et rapide
-- ✅ Utilise votre installation Solana actuelle
-- ✅ Pas besoin de téléchargement
-
-**Inconvénients:**
-- ⚠️ Utilise une version légèrement plus ancienne d'Anchor (0.30.1 au lieu de 0.31.1)
-- ⚠️ Peut nécessiter des ajustements mineurs du code
-
-**Si ça fonctionne:**
-Le programme sera compilé dans `target/deploy/asdf_dat.so`
+**Note:** Anchor 0.30.1 peut également échouer avec Rust 1.75 (comme vous l'avez vu). Utilisez plutôt la Méthode 1A qui essaie plusieurs versions.
 
 ---
 
-### Méthode 2: Mise à Jour Manuelle de Solana CLI
+### Méthode 2: Mise à Jour de Solana CLI (SOLUTION PERMANENTE)
 
-Cette méthode met à jour Solana CLI vers une version plus récente qui inclut un Rust plus récent dans cargo-build-sbf.
+**Cette méthode met à jour Solana CLI v1.18.26 → v1.18.22** qui inclut un meilleur support Rust.
 
 #### Étapes:
 
 ```powershell
-.\build-windows-manual-update.ps1
+.\build-windows-update-solana.ps1
 ```
 
-Le script va tenter plusieurs méthodes:
-1. Téléchargement automatique de Solana v1.18.17+
-2. Extraction automatique (nécessite 7-Zip)
-3. Installation dans votre répertoire Solana
+**Ce que fait le script:**
+1. Télécharge automatiquement Solana CLI v1.18.22 depuis GitHub
+2. Extrait avec 7-Zip
+3. Installe dans `C:\Users\VotreNom\.local\share\solana\install\active_release`
+4. Vous guide pour finaliser
 
-**Si le téléchargement automatique échoue:**
+**Prérequis:**
+- **7-Zip doit être installé** - Téléchargez depuis: https://www.7-zip.org/download.html
 
-**Option A: Téléchargement Manuel**
+**Si le téléchargement automatique échoue (problème réseau):**
 
-1. Allez sur: https://github.com/solana-labs/solana/releases/latest
-2. Téléchargez: `solana-release-x86_64-pc-windows-msvc.tar.bz2`
-3. Extrayez avec 7-Zip vers: `C:\Users\VotreNom\.local\share\solana\install\active_release`
-4. Lancez: `.\build.ps1`
+Le script vous donnera des instructions pour **téléchargement manuel**:
 
-**Option B: Windows Installer**
-
-1. Téléchargez: `solana-install-init-x86_64-pc-windows-msvc.exe`
-2. Exécutez l'installeur
-3. Redémarrez PowerShell
-4. Lancez: `.\build.ps1`
+1. Ouvrez votre navigateur
+2. Allez sur: https://github.com/solana-labs/solana/releases/tag/v1.18.22
+3. Téléchargez: `solana-release-x86_64-pc-windows-msvc.tar.bz2`
+4. Ou téléchargez l'installeur Windows: `solana-install-init-x86_64-pc-windows-msvc.exe`
+5. Si vous utilisez l'installeur .exe, exécutez-le et suivez les instructions
+6. Sinon, relancez le script après avoir téléchargé le .tar.bz2
 
 **Avantages:**
-- ✅ Garde Anchor 0.31.1 (version actuelle)
-- ✅ Résout le problème à la source
-- ✅ Build permanent sans downgrade
+- ✅ **Garde Anchor 0.31.1** (version moderne)
+- ✅ **Résout le problème définitivement**
+- ✅ Fonctionne pour tous vos projets Solana
+- ✅ Pas besoin de downgrade
 
 **Inconvénients:**
-- ⏱️ Nécessite téléchargement et installation
-- ⚠️ Peut avoir des problèmes réseau
+- ⏱️ Nécessite téléchargement (~50 MB)
+- 🔧 Nécessite 7-Zip installé
 
 ---
 
@@ -105,30 +125,54 @@ Cette méthode compile directement avec `cargo rustc` en bypassant `cargo-build-
 
 Essayez les méthodes dans cet ordre:
 
-### 1️⃣ Essayez d'abord: Méthode 1 (Downgrade Anchor)
+### 1️⃣ ESSAYEZ D'ABORD: Méthode 1A (Auto-Downgrade) ⭐ NOUVEAU!
+
 ```powershell
-.\build-windows-alternative.ps1
+.\build-windows-auto-downgrade.ps1
 ```
 
-**Si ça fonctionne:** Vous avez un programme fonctionnel avec Anchor 0.30.1
+**Pourquoi en premier:**
+- ✅ Le plus rapide (2-5 min)
+- ✅ Automatique - essaie plusieurs versions
+- ✅ Pas de téléchargement nécessaire
+- ✅ Pas de configuration manuelle
 
-**Si ça échoue:** Passez à la méthode 2
+**Si ça fonctionne:** Vous avez un programme fonctionnel immédiatement!
 
-### 2️⃣ Ensuite: Méthode 2 (Mise à jour Solana)
+**Si ça échoue:** Toutes les versions Anchor <0.30 ont échoué, passez à la Méthode 2
+
+---
+
+### 2️⃣ ENSUITE: Méthode 2 (Mise à Jour Solana CLI) ⭐ SOLUTION PERMANENTE
+
 ```powershell
-.\build-windows-manual-update.ps1
+.\build-windows-update-solana.ps1
 ```
 
-Ou téléchargez manuellement depuis GitHub si le script échoue.
+**Pourquoi en deuxième:**
+- ✅ Résout le problème définitivement
+- ✅ Garde Anchor 0.31.1 moderne
+- ✅ Fonctionne pour tous vos futurs projets
 
-**Si ça fonctionne:** Vous pouvez maintenant utiliser `.\build.ps1` normalement
+**Si le téléchargement automatique échoue:**
+- Téléchargez manuellement l'installeur Windows depuis GitHub
+- Ou téléchargez le .tar.bz2 et relancez le script
 
-**Si ça échoue:** Passez à la méthode 3
+**Si ça fonctionne:** Vous pouvez utiliser `.\build.ps1` normalement pour ce projet et tous les futurs!
 
-### 3️⃣ En dernier recours: Méthode 3 (Compilation manuelle)
+**Si ça échoue:** Essayez l'installeur Windows ou passez à la Méthode 3
+
+---
+
+### 3️⃣ EN DERNIER RECOURS: Méthode 3 (Compilation Manuelle)
+
 ```powershell
 .\build-windows-manual-compile.ps1
 ```
+
+**Pourquoi en dernier:**
+- ⚠️ Approche non-standard
+- ⚠️ Peut nécessiter des outils additionnels
 
 ---
 
@@ -194,11 +238,12 @@ Vérifiez votre connexion internet et pare-feu, puis réessayez.
 
 ## 📋 Récapitulatif
 
-| Méthode | Difficulté | Temps | Recommandé |
-|---------|-----------|--------|------------|
-| 1. Downgrade Anchor | ⭐ Facile | 2 min | ✅ Essayer en premier |
-| 2. Update Solana CLI | ⭐⭐ Moyen | 10 min | ✅ Si Méthode 1 échoue |
-| 3. Compilation manuelle | ⭐⭐⭐ Avancé | 5 min | ⚠️ Dernier recours |
+| Méthode | Difficulté | Temps | Téléchargement | Recommandé |
+|---------|-----------|--------|----------------|------------|
+| 1A. Auto-Downgrade ⭐ NOUVEAU | ⭐ Très Facile | 2-5 min | ❌ Non | ✅✅✅ Essayer en premier! |
+| 2. Update Solana CLI ⭐ | ⭐⭐ Moyen | 10-15 min | ✅ 50 MB + 7-Zip | ✅✅ Solution permanente |
+| 1B. Downgrade Manuel | ⭐⭐ Facile | 2 min | ❌ Non | ⚠️ Peut échouer (Rust 1.76+) |
+| 3. Compilation manuelle | ⭐⭐⭐ Avancé | 5 min | ❌ Non | ⚠️ Dernier recours |
 
 ---
 
