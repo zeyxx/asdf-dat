@@ -107,12 +107,19 @@ jobs:
           anchor --version
           echo "==========================="
 
-          # Double-check: Verify no Cargo.lock exists before build
-          echo "=== Checking for Cargo.lock before build ==="
-          find . -name "Cargo.lock" -type f -ls || echo "No Cargo.lock found - good!"
+          # ABSOLUTE PATH: Remove Cargo.lock right before build
+          echo "=== Removing Cargo.lock with absolute path ==="
+          rm -fv /home/runner/work/asdf-dat/asdf-dat/Cargo.lock
+          rm -fv "$PWD/Cargo.lock"
 
-          # Build with Anchor (use CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS to allow older dependencies)
-          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback anchor build
+          # Also remove from all subdirectories
+          find "$PWD" -type f -name "Cargo.lock" -exec rm -fv {} \;
+
+          echo "=== Listing directory to verify ==="
+          ls -la | grep -i cargo || echo "No Cargo files found"
+
+          # Build with Anchor
+          anchor build
 
       - name: List built artifacts
         run: |
