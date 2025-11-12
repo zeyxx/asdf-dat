@@ -12,7 +12,7 @@ dotenv.config();
 
 // Export main components
 export { AsdfDATBot } from './bot';
-export { server as DashboardServer } from './dashboard';
+export { default as DashboardServer } from './dashboard';
 
 /**
  * Main execution based on command line arguments

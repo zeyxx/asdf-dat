@@ -118,7 +118,11 @@ function executeCommand(command: string, description: string): boolean {
     return true;
   } catch (error) {
     console.error("❌ Failed");
-    console.error(error.stdout || error.message);
+    if (error && typeof error === 'object') {
+      console.error(('stdout' in error ? error.stdout : null) || (error instanceof Error ? error.message : String(error)));
+    } else {
+      console.error(String(error));
+    }
     console.log();
     return false;
   }
@@ -134,7 +138,7 @@ function executeScript(script: string, description: string): boolean {
 /**
  * Prompt for manual step
  */
-function promptManualStep(step: SetupStep): boolean {
+function promptManualStep(step: SetupStep): Promise<boolean> {
   console.log(`\n🔧 MANUAL STEP REQUIRED`);
   console.log(`================================`);
   console.log(`Step: ${step.name}`);
