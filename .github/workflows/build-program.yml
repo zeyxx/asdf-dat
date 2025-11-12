@@ -58,15 +58,17 @@ jobs:
 
       - name: Install Anchor CLI via cargo
         run: |
-          # Clear any cargo cache that might have old metadata
-          rm -rf ~/.cargo/registry/cache/*
-          rm -rf ~/.cargo/git/db/*
+          # NUCLEAR OPTION: Clear ENTIRE cargo home except bin
+          # This removes ALL cached metadata from previous Rust versions
+          rm -rf ~/.cargo/registry
+          rm -rf ~/.cargo/git
+          mkdir -p ~/.cargo/bin
 
-          # RUSTUP_TOOLCHAIN=1.82.0 is already set at job level
           # Verify we're using correct Rust version
           rustc --version
+          echo "RUSTUP_TOOLCHAIN is set to: $RUSTUP_TOOLCHAIN"
 
-          # Install Anchor CLI from source
+          # Install Anchor CLI from source with completely clean cargo
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked --force
 
           # Verify installation
@@ -77,8 +79,18 @@ jobs:
       - name: Build Solana Program
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
+
+          # Debug: Show all rust-related environment and versions
+          echo "=== Rust Environment Debug ==="
+          echo "RUSTUP_TOOLCHAIN: $RUSTUP_TOOLCHAIN"
+          echo "PATH: $PATH"
+          which rustc
+          which cargo
           rustc --version
+          cargo --version
+          rustup show
           anchor --version
+          echo "==========================="
 
           # Build with Anchor
           anchor build
