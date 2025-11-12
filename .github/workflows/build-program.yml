@@ -74,6 +74,8 @@ jobs:
           anchor --version
 
       - name: Build Solana Program
+        env:
+          RUSTUP_TOOLCHAIN: 1.82.0
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
           rustup default 1.82.0
