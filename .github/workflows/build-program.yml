@@ -48,7 +48,21 @@ jobs:
 
       - name: Install Solana CLI
         run: |
-          sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)"
+          # Update CA certificates
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl
+
+          # Install Solana with retry logic
+          MAX_RETRIES=3
+          RETRY=0
+          until [ $RETRY -ge $MAX_RETRIES ]
+          do
+            sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)" && break
+            RETRY=$((RETRY+1))
+            echo "Retry $RETRY/$MAX_RETRIES failed, waiting 5s..."
+            sleep 5
+          done
+
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
