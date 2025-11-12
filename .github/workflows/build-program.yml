@@ -68,8 +68,10 @@ jobs:
           rustc --version
           echo "RUSTUP_TOOLCHAIN is set to: $RUSTUP_TOOLCHAIN"
 
-          # Install Anchor CLI from source with completely clean cargo
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked --force
+          # Install Anchor CLI from source WITHOUT --locked flag
+          # This allows cargo to resolve dependencies for Rust 1.82.0
+          # instead of using Anchor's Cargo.lock which may have 1.75.0-dev metadata
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --force
 
           # Verify installation
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
