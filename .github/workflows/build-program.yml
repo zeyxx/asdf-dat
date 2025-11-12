@@ -22,8 +22,12 @@ jobs:
           profile: minimal
           override: true
 
-      - name: Add wasm32 target
-        run: rustup target add wasm32-unknown-unknown
+      - name: Verify and configure Rust
+        run: |
+          rustup default 1.82.0
+          rustup target add wasm32-unknown-unknown
+          rustc --version
+          cargo --version
 
       - name: Cache Cargo registry
         uses: actions/cache@v4
@@ -72,6 +76,8 @@ jobs:
       - name: Build Solana Program
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
+          rustup default 1.82.0
+          rustc --version
           anchor build
 
       - name: List built artifacts
