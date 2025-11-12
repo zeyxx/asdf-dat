@@ -58,6 +58,10 @@ jobs:
 
       - name: Install Anchor CLI via cargo
         run: |
+          # Install system dependencies required by Anchor CLI
+          sudo apt-get update
+          sudo apt-get install -y libudev-dev pkg-config
+
           # NUCLEAR OPTION: Clear ENTIRE cargo home except bin
           # This removes ALL cached metadata from previous Rust versions
           rm -rf ~/.cargo/registry
@@ -69,7 +73,7 @@ jobs:
           echo "RUSTUP_TOOLCHAIN is set to: $RUSTUP_TOOLCHAIN"
 
           # Install Anchor CLI from source WITHOUT --locked flag
-          # This allows cargo to resolve dependencies for Rust 1.82.0
+          # This allows cargo to resolve dependencies for Rust 1.83.0
           # instead of using Anchor's Cargo.lock which may have 1.75.0-dev metadata
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --force
 
