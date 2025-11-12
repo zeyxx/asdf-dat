@@ -129,7 +129,7 @@ async function executeCycle() {
 
   try {
     // Vérifier l'état avant exécution
-    const stateBefore = await program.account.datState.fetch(datState);
+    const stateBefore = await (program.account as any).datState.fetch(datState);
 
     console.log("📊 State Before Cycle:");
     console.log("  Is Active:", stateBefore.isActive);
@@ -221,7 +221,7 @@ async function executeCycle() {
     console.log();
 
     // Récupérer l'état après exécution
-    const stateAfter = await program.account.datState.fetch(datState);
+    const stateAfter = await (program.account as any).datState.fetch(datState);
 
     console.log("📊 Cycle Results:");
     console.log("================================");
@@ -248,9 +248,9 @@ async function executeCycle() {
     console.error("❌ Cycle execution failed:");
     console.error(error);
 
-    if (error.logs) {
+    if (error && typeof error === 'object' && 'logs' in error) {
       console.log("\n📋 Program Logs:");
-      error.logs.forEach(log => console.log("  ", log));
+      (error.logs as string[]).forEach((log: string) => console.log("  ", log));
     }
 
     // Try to record the failure

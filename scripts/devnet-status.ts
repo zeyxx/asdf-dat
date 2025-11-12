@@ -34,7 +34,7 @@ async function getStatus() {
 
   try {
     // Récupérer l'état
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
 
     console.log("================================");
     console.log("PROTOCOL STATE");
@@ -199,7 +199,7 @@ async function getStatus() {
   } catch (error) {
     console.error("❌ Error fetching protocol state:");
 
-    if (error.message?.includes("Account does not exist")) {
+    if (error instanceof Error && error.message?.includes("Account does not exist")) {
       console.log("\n⚠️  Protocol has not been initialized yet.");
       console.log("   Run: ts-node scripts/devnet-init.ts");
     } else {
