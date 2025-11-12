@@ -24,6 +24,8 @@ src/**/*.d.ts.map
 
 # Rust/Anchor build files
 target/
+!target/idl/
+!target/types/
 **/*.rs.bk
 Cargo.lock
 test-ledger/
