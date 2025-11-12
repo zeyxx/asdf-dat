@@ -56,16 +56,21 @@ jobs:
           # Verify installation
           solana --version
 
-      - name: Install Anchor CLI
+      - name: Install Anchor CLI via cargo
         run: |
-          # Download precompiled Anchor CLI binary from GitHub releases
-          mkdir -p ~/.cargo/bin
-          cd ~/.cargo/bin
-          ANCHOR_VERSION=0.31.1
-          wget -q https://github.com/coral-xyz/anchor/releases/download/v${ANCHOR_VERSION}/anchor-${ANCHOR_VERSION}-x86_64-unknown-linux-gnu -O anchor
-          chmod +x anchor
+          # Force all cargo operations to use Rust 1.82.0
+          export RUSTUP_TOOLCHAIN=1.82.0
+          export CARGO_BUILD_RUSTC_WRAPPER=""
+          export CARGO_BUILD_RUSTDOC_WRAPPER=""
 
-          # Add to PATH and verify
+          # Clear any cargo cache that might have old metadata
+          rm -rf ~/.cargo/registry/cache/*
+          rm -rf ~/.cargo/git/db/*
+
+          # Install Anchor CLI from source with explicit rust version
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked --force
+
+          # Verify installation
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
           export PATH="$HOME/.cargo/bin:$PATH"
           anchor --version
