@@ -4,7 +4,7 @@
  */
 
 import * as anchor from '@coral-xyz/anchor';
-import { Program, AnchorProvider, web3, BN, Idl } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, web3 } from '@coral-xyz/anchor';
 import { 
     PublicKey, 
     Connection, 
@@ -24,7 +24,6 @@ import {
 } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
-import * as cron from 'node-cron';
 import axios from 'axios';
 
 dotenv.config();

@@ -12,6 +12,16 @@ build/
 out/
 .next/
 
+# TypeScript compiled files (except tests)
+scripts/**/*.js
+scripts/**/*.d.ts
+scripts/**/*.js.map
+scripts/**/*.d.ts.map
+src/**/*.js
+src/**/*.d.ts
+src/**/*.js.map
+src/**/*.d.ts.map
+
 # Rust/Anchor build files
 target/
 **/*.rs.bk

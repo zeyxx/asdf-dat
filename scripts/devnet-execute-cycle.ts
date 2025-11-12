@@ -55,7 +55,7 @@ async function executeCycle() {
 
   const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
     [Buffer.from("__event_authority")],
-    DEVNET_CONFIG.PUMP_swap_PROGRAM
+    DEVNET_CONFIG.PUMP_SWAP_PROGRAM
   );
 
   const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(

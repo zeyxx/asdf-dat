@@ -21,9 +21,14 @@
     "@pump-fun/pump-swap-sdk": "^1.7.7",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
-    "dotenv": "^16.4.1"
+    "axios": "^1.13.2",
+    "dotenv": "^16.4.1",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
     "@types/node": "^20.11.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
