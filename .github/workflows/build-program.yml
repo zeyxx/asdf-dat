@@ -58,16 +58,15 @@ jobs:
 
       - name: Install Anchor CLI via cargo
         run: |
-          # Force all cargo operations to use Rust 1.82.0
-          export RUSTUP_TOOLCHAIN=1.82.0
-          export CARGO_BUILD_RUSTC_WRAPPER=""
-          export CARGO_BUILD_RUSTDOC_WRAPPER=""
-
           # Clear any cargo cache that might have old metadata
           rm -rf ~/.cargo/registry/cache/*
           rm -rf ~/.cargo/git/db/*
 
-          # Install Anchor CLI from source with explicit rust version
+          # RUSTUP_TOOLCHAIN=1.82.0 is already set at job level
+          # Verify we're using correct Rust version
+          rustc --version
+
+          # Install Anchor CLI from source
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked --force
 
           # Verify installation
