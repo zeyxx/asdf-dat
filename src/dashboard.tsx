@@ -4,11 +4,9 @@
  */
 
 import express from 'express';
-import path from 'path';
 import { Server } from 'socket.io';
 import { createServer } from 'http';
 import { AsdfDATBot } from './bot';
-import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 
 const app = express();
 const server = createServer(app);
