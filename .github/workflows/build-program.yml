@@ -37,18 +37,18 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-1.82.0-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-cargo-1.82.0-
 
       - name: Cache Anchor build
         uses: actions/cache@v4
         with:
           path: |
             target/
-          key: ${{ runner.os }}-anchor-${{ hashFiles('programs/**/Cargo.toml') }}
+          key: ${{ runner.os }}-anchor-1.82.0-0.31.1-${{ hashFiles('programs/**/Cargo.toml') }}
           restore-keys: |
-            ${{ runner.os }}-anchor-
+            ${{ runner.os }}-anchor-1.82.0-0.31.1-
 
       - name: Install Solana CLI
         run: |
@@ -78,6 +78,11 @@ jobs:
           export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
           rustup default 1.82.0
           rustc --version
+
+          # Clean any old build artifacts to ensure fresh build
+          cargo clean
+
+          # Build with Anchor
           anchor build
 
       - name: List built artifacts
