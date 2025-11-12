@@ -37,26 +37,8 @@ jobs:
           rustc --version
           cargo --version
 
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-          key: ${{ runner.os }}-cargo-1.82.0-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-1.82.0-
-
-      - name: Cache Anchor build
-        uses: actions/cache@v4
-        with:
-          path: |
-            target/
-          key: ${{ runner.os }}-anchor-1.82.0-0.31.1-${{ hashFiles('programs/**/Cargo.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-anchor-1.82.0-0.31.1-
+      # CACHE DISABLED: Old cache was restoring dependencies compiled with Rust 1.75.0-dev
+      # TODO: Re-enable cache after successful build with proper cache keys
 
       - name: Install Solana CLI
         run: |
