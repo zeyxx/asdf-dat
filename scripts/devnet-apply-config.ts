@@ -287,7 +287,7 @@ async function main() {
     displayNextSteps(config);
 
   } catch (error) {
-    console.error("\n❌ Failed to apply configuration:", error.message);
+    console.error("\n❌ Failed to apply configuration:", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }
