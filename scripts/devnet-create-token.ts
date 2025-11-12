@@ -191,9 +191,9 @@ async function createToken(config: TokenConfig): Promise<CreatedTokenInfo> {
   } catch (error) {
     console.error("❌ Transaction failed:", error);
 
-    if (error.logs) {
+    if (error && typeof error === 'object' && 'logs' in error) {
       console.log("\n📋 Program Logs:");
-      error.logs.forEach(log => console.log("  ", log));
+      (error.logs as string[]).forEach((log: string) => console.log("  ", log));
     }
 
     throw error;
@@ -343,7 +343,7 @@ async function main() {
     console.log();
 
   } catch (error) {
-    console.error("\n❌ Failed to create token:", error.message);
+    console.error("\n❌ Failed to create token:", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

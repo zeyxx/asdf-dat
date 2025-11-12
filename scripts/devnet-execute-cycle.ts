@@ -129,7 +129,7 @@ async function executeCycle() {
 
   try {
     // Vérifier l'état avant exécution
-    const stateBefore = await program.account.datState.fetch(datState);
+    const stateBefore = await (program.account as any).datState.fetch(datState);
 
     console.log("📊 State Before Cycle:");
     console.log("  Is Active:", stateBefore.isActive);
@@ -191,8 +191,8 @@ async function executeCycle() {
         datAuthority: datAuthority,
         datWsolAccount: datWsolAccount,
         datAsdfAccount: datAsdfAccount,
-        creatorVaultAta: creatorVaultAta,
-        coinCreatorVaultAuthority: coinCreatorVaultAuthority,
+        creatorVault: creatorVaultAta,
+        creatorVaultAuthority: coinCreatorVaultAuthority,
         asdfMint: DEVNET_CONFIG.ASDF_MINT,
         wsolMint: DEVNET_CONFIG.WSOL_MINT,
         pool: DEVNET_CONFIG.POOL_PUMPSWAP,
@@ -200,11 +200,8 @@ async function executeCycle() {
         poolWsolAccount: poolWsolAccount,
         pumpGlobalConfig: pumpGlobalConfig,
         pumpEventAuthority: pumpEventAuthority,
-        protocolFeeRecipient: DEVNET_CONFIG.PROTOCOL_FEE_RECIPIENT,
-        protocolFeeRecipientAta: protocolFeeRecipientAta,
+        protocolFeeRecipient: protocolFeeRecipientAta,
         globalVolumeAccumulator: globalVolumeAccumulator,
-        userVolumeAccumulator: userVolumeAccumulator,
-        feeConfig: feeConfig,
         feeProgram: DEVNET_CONFIG.FEE_PROGRAM,
         pumpSwapProgram: DEVNET_CONFIG.PUMP_SWAP_PROGRAM,
         tokenProgram: TOKEN_PROGRAM_ID,
@@ -221,7 +218,7 @@ async function executeCycle() {
     console.log();
 
     // Récupérer l'état après exécution
-    const stateAfter = await program.account.datState.fetch(datState);
+    const stateAfter = await (program.account as any).datState.fetch(datState);
 
     console.log("📊 Cycle Results:");
     console.log("================================");
@@ -248,9 +245,9 @@ async function executeCycle() {
     console.error("❌ Cycle execution failed:");
     console.error(error);
 
-    if (error.logs) {
+    if (error && typeof error === 'object' && 'logs' in error) {
       console.log("\n📋 Program Logs:");
-      error.logs.forEach(log => console.log("  ", log));
+      (error.logs as string[]).forEach((log: string) => console.log("  ", log));
     }
 
     // Try to record the failure
