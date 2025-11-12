@@ -50,9 +50,6 @@ jobs:
         run: |
           sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)"
           echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-
-      - name: Verify Solana installation
-        run: |
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
 
@@ -60,9 +57,6 @@ jobs:
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-      - name: Verify Anchor installation
-        run: |
           export PATH="$HOME/.cargo/bin:$PATH"
           anchor --version
 
