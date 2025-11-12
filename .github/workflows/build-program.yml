@@ -98,6 +98,9 @@ jobs:
           anchor --version
           echo "==========================="
 
+          # Remove any Cargo.lock that might have been created with nightly Rust
+          rm -f Cargo.lock
+
           # Build with Anchor
           anchor build
 
