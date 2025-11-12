@@ -97,28 +97,24 @@ jobs:
 
           # Debug: Show all rust-related environment and versions
           echo "=== Rust Environment Debug ==="
-          echo "RUSTUP_TOOLCHAIN: $RUSTUP_TOOLCHAIN"
-          echo "PATH: $PATH"
-          which rustc
-          which cargo
           rustc --version
           cargo --version
-          rustup show
           anchor --version
           echo "==========================="
 
-          # ABSOLUTE PATH: Remove Cargo.lock right before build
-          echo "=== Removing Cargo.lock with absolute path ==="
-          rm -fv /home/runner/work/asdf-dat/asdf-dat/Cargo.lock
-          rm -fv "$PWD/Cargo.lock"
+          # Strategy: Let cargo regenerate Cargo.lock in stable format
+          echo "=== Regenerating Cargo.lock with stable Rust ==="
 
-          # Also remove from all subdirectories
-          find "$PWD" -type f -name "Cargo.lock" -exec rm -fv {} \;
+          # First, ensure no old Cargo.lock exists
+          find . -name "Cargo.lock" -type f -delete
 
-          echo "=== Listing directory to verify ==="
-          ls -la | grep -i cargo || echo "No Cargo files found"
+          # Generate a fresh Cargo.lock with stable Rust 1.83.0
+          cargo generate-lockfile
 
-          # Build with Anchor
+          echo "=== Cargo.lock regenerated successfully ==="
+          ls -la Cargo.lock
+
+          # Now build with Anchor
           anchor build
 
       - name: List built artifacts
