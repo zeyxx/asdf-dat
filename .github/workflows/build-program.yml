@@ -10,10 +10,18 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    env:
+      RUSTUP_TOOLCHAIN: 1.82.0
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Remove rust-toolchain.toml to avoid conflicts
+        run: |
+          # Remove rust-toolchain files that might conflict with RUSTUP_TOOLCHAIN
+          rm -f rust-toolchain.toml rust-toolchain
+          echo "Removed rust-toolchain files to rely on RUSTUP_TOOLCHAIN env var"
 
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
@@ -81,8 +89,6 @@ jobs:
           anchor --version
 
       - name: Build Solana Program
-        env:
-          RUSTUP_TOOLCHAIN: 1.82.0
         run: |
           export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
           rustc --version
