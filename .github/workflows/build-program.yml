@@ -17,6 +17,15 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Remove ALL Cargo.lock files immediately after checkout
+        run: |
+          echo "=== Searching for Cargo.lock files ==="
+          find . -name "Cargo.lock" -type f -ls || echo "No Cargo.lock found"
+          echo "=== Removing all Cargo.lock files ==="
+          find . -name "Cargo.lock" -type f -delete
+          echo "=== Verifying removal ==="
+          find . -name "Cargo.lock" -type f -ls || echo "All Cargo.lock files removed successfully"
+
       - name: Remove rust-toolchain.toml to avoid conflicts
         run: |
           # Remove rust-toolchain files that might conflict with RUSTUP_TOOLCHAIN
@@ -98,12 +107,12 @@ jobs:
           anchor --version
           echo "==========================="
 
-          # Remove ALL Cargo.lock files that might have version 4 format
-          find . -name "Cargo.lock" -type f -delete
-          echo "Removed all Cargo.lock files"
+          # Double-check: Verify no Cargo.lock exists before build
+          echo "=== Checking for Cargo.lock before build ==="
+          find . -name "Cargo.lock" -type f -ls || echo "No Cargo.lock found - good!"
 
-          # Build with Anchor
-          anchor build
+          # Build with Anchor (use CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS to allow older dependencies)
+          CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS=fallback anchor build
 
       - name: List built artifacts
         run: |
