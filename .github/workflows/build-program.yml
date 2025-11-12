@@ -48,23 +48,18 @@ jobs:
 
       - name: Install Solana CLI
         run: |
-          # Update CA certificates
-          sudo apt-get update
-          sudo apt-get install -y ca-certificates curl
+          # Download Solana directly from GitHub releases
+          cd ~
+          SOLANA_VERSION=1.18.22
+          wget -q https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          tar jxf solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          rm solana-release-x86_64-unknown-linux-gnu.tar.bz2
 
-          # Install Solana with retry logic
-          MAX_RETRIES=3
-          RETRY=0
-          until [ $RETRY -ge $MAX_RETRIES ]
-          do
-            sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)" && break
-            RETRY=$((RETRY+1))
-            echo "Retry $RETRY/$MAX_RETRIES failed, waiting 5s..."
-            sleep 5
-          done
+          # Add to PATH
+          echo "$HOME/solana-release/bin" >> $GITHUB_PATH
+          export PATH="$HOME/solana-release/bin:$PATH"
 
-          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          # Verify installation
           solana --version
 
       - name: Install Anchor CLI
@@ -76,7 +71,7 @@ jobs:
 
       - name: Build Solana Program
         run: |
-          export PATH="$HOME/.cargo/bin:$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
           anchor build
 
       - name: List built artifacts
