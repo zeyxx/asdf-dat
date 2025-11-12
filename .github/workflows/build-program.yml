@@ -59,12 +59,17 @@ jobs:
       - name: Install Anchor CLI
         run: |
           cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Verify Anchor installation
-        run: anchor --version
+        run: |
+          export PATH="$HOME/.cargo/bin:$PATH"
+          anchor --version
 
       - name: Build Solana Program
-        run: anchor build
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          anchor build
 
       - name: List built artifacts
         run: |
