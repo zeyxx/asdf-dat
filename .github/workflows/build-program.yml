@@ -11,7 +11,7 @@ jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     env:
-      RUSTUP_TOOLCHAIN: nightly-2024-11-01
+      RUSTUP_TOOLCHAIN: nightly-2024-09-01
       CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: "fallback"
 
     steps:
@@ -36,18 +36,18 @@ jobs:
       - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: nightly-2024-11-01
+          toolchain: nightly-2024-09-01
           profile: minimal
           override: true
           components: rustfmt, clippy
 
       - name: Verify and configure Rust
         run: |
-          rustup default nightly-2024-11-01
+          rustup default nightly-2024-09-01
           rustup target add wasm32-unknown-unknown
           rustc --version
           cargo --version
-          echo "Using Rust nightly to support lockfile version 4"
+          echo "Using Rust nightly-2024-09-01 for compatibility with Anchor 0.31.1"
 
       # CACHE DISABLED: Old cache was restoring dependencies compiled with Rust 1.75.0-dev
       # TODO: Re-enable cache after successful build with proper cache keys
