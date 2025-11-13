@@ -84,10 +84,10 @@ jobs:
           rustc --version
           echo "RUSTUP_TOOLCHAIN is set to: $RUSTUP_TOOLCHAIN"
 
-          # Install Anchor CLI from source WITHOUT --locked flag
-          # This allows cargo to resolve dependencies for Rust 1.83.0
-          # instead of using Anchor's Cargo.lock which may have 1.75.0-dev metadata
-          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --force
+          # Install Anchor CLI with RUSTC_BOOTSTRAP to enable unstable features
+          # solana-net-utils uses Option::unwrap in const context which needs const_option
+          # RUSTC_BOOTSTRAP=1 allows using nightly features in stable/nightly builds
+          RUSTC_BOOTSTRAP=1 cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --force
 
           # Verify installation
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
