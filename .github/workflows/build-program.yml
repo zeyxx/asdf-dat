@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTUP_TOOLCHAIN: nightly-2024-11-01
+      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: "fallback"
 
     steps:
       - name: Checkout code
@@ -104,19 +105,18 @@ jobs:
           anchor --version
           echo "==========================="
 
-          # Strategy: Let cargo regenerate Cargo.lock in stable format
-          echo "=== Regenerating Cargo.lock with stable Rust ==="
+          # Create .cargo/config.toml to enable lockfile v4 support globally
+          mkdir -p .cargo
+          cat > .cargo/config.toml << 'EOF'
+[unstable]
+next-lockfile-bump = true
+EOF
+          echo "Created .cargo/config.toml with lockfile v4 support"
 
-          # First, ensure no old Cargo.lock exists
+          # Remove any existing Cargo.lock
           find . -name "Cargo.lock" -type f -delete
 
-          # Generate a fresh Cargo.lock with stable Rust 1.83.0
-          cargo generate-lockfile
-
-          echo "=== Cargo.lock regenerated successfully ==="
-          ls -la Cargo.lock
-
-          # Now build with Anchor
+          # Build with Anchor - now cargo will support lockfile v4
           anchor build
 
       - name: List built artifacts
