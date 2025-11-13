@@ -15,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build using Solana CLI directly
+      - name: Build using Anchor 0.26.0
         run: |
           # Install Solana CLI from GitHub (use v1.18.18 for OpenSSL 3 support)
           cd ~
@@ -24,9 +24,17 @@ jobs:
           export PATH="$HOME/solana-release/bin:$PATH"
           solana --version
 
-          # Build the BPF program (using cargo-build-sbf, not deprecated bpf)
-          cd $GITHUB_WORKSPACE/programs/asdf-dat
-          cargo build-sbf
+          # Install Rust 1.76.0 explicitly
+          rustup install 1.76.0
+          rustup default 1.76.0
+          rustc --version
+
+          # Install Anchor 0.26.0 via npm (much simpler than compiling from source)
+          npm install -g @coral-xyz/anchor-cli@0.26.0
+
+          # Build with Anchor
+          cd $GITHUB_WORKSPACE
+          anchor build
 
       - name: List artifacts
         run: |
