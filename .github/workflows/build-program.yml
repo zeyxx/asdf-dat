@@ -17,13 +17,15 @@ jobs:
 
       - name: Build using Solana CLI directly
         run: |
-          # Install Solana CLI
-          sh -c "$(curl -sSfL https://release.solana.com/v1.14.18/install)"
-          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          # Install Solana CLI from GitHub
+          cd ~
+          wget -q https://github.com/solana-labs/solana/releases/download/v1.14.18/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          tar jxf solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          export PATH="$HOME/solana-release/bin:$PATH"
           solana --version
 
           # Build the BPF program
-          cd programs/asdf-dat
+          cd $GITHUB_WORKSPACE/programs/asdf-dat
           cargo build-bpf
 
       - name: List artifacts
