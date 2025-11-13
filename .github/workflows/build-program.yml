@@ -1,161 +1,37 @@
 name: Build Solana Program
 
 on:
-  workflow_dispatch:  # Permet de déclencher manuellement
+  workflow_dispatch:
   push:
     branches:
       - main
       - claude/*
 
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    env:
-      RUSTUP_TOOLCHAIN: nightly-2024-10-01
-      CARGO_RESOLVER_INCOMPATIBLE_RUST_VERSIONS: "fallback"
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Remove ALL Cargo.lock files immediately after checkout
+      - name: Build using Solana CLI directly
         run: |
-          echo "=== Searching for Cargo.lock files ==="
-          find . -name "Cargo.lock" -type f -ls || echo "No Cargo.lock found"
-          echo "=== Removing all Cargo.lock files ==="
-          find . -name "Cargo.lock" -type f -delete
-          echo "=== Verifying removal ==="
-          find . -name "Cargo.lock" -type f -ls || echo "All Cargo.lock files removed successfully"
-
-      - name: Remove rust-toolchain.toml to avoid conflicts
-        run: |
-          # Remove rust-toolchain files that might conflict with RUSTUP_TOOLCHAIN
-          rm -f rust-toolchain.toml rust-toolchain
-          echo "Removed rust-toolchain files to rely on RUSTUP_TOOLCHAIN env var"
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: nightly-2024-10-01
-          profile: minimal
-          override: true
-          components: rustfmt, clippy
-
-      - name: Verify and configure Rust
-        run: |
-          rustup default nightly-2024-10-01
-          rustup target add wasm32-unknown-unknown
-          rustc --version
-          cargo --version
-          echo "Using Rust nightly-2024-10-01 (rustc 1.83.x-nightly for icu_* compatibility)"
-
-      # CACHE DISABLED: Old cache was restoring dependencies compiled with Rust 1.75.0-dev
-      # TODO: Re-enable cache after successful build with proper cache keys
-
-      - name: Install Solana CLI
-        run: |
-          # Download Solana directly from GitHub releases
-          cd ~
-          SOLANA_VERSION=1.18.22
-          wget -q https://github.com/solana-labs/solana/releases/download/v${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2
-          tar jxf solana-release-x86_64-unknown-linux-gnu.tar.bz2
-          rm solana-release-x86_64-unknown-linux-gnu.tar.bz2
-
-          # Add to PATH
-          echo "$HOME/solana-release/bin" >> $GITHUB_PATH
-          export PATH="$HOME/solana-release/bin:$PATH"
-
-          # Verify installation
+          # Install Solana CLI
+          sh -c "$(curl -sSfL https://release.solana.com/v1.14.18/install)"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
           solana --version
 
-      - name: Install Anchor CLI via cargo
+          # Build the BPF program
+          cd programs/asdf-dat
+          cargo build-bpf
+
+      - name: List artifacts
         run: |
-          # Install system dependencies required by Anchor CLI
-          sudo apt-get update
-          sudo apt-get install -y libudev-dev pkg-config
-
-          # NUCLEAR OPTION: Clear ENTIRE cargo home except bin
-          # This removes ALL cached metadata from previous Rust versions
-          rm -rf ~/.cargo/registry
-          rm -rf ~/.cargo/git
-          mkdir -p ~/.cargo/bin
-
-          # Verify we're using correct Rust version
-          rustc --version
-          echo "RUSTUP_TOOLCHAIN is set to: $RUSTUP_TOOLCHAIN"
-
-          # Install Anchor CLI with RUSTC_BOOTSTRAP to enable unstable features
-          # solana-net-utils uses Option::unwrap in const context which needs const_option
-          # RUSTC_BOOTSTRAP=1 allows using nightly features in stable/nightly builds
-          RUSTC_BOOTSTRAP=1 cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --force
-
-          # Verify installation
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          export PATH="$HOME/.cargo/bin:$PATH"
-          anchor --version
-
-      - name: Build Solana Program
-        run: |
-          export PATH="$HOME/.cargo/bin:$HOME/solana-release/bin:$PATH"
-
-          # Debug: Show all rust-related environment and versions
-          echo "=== Rust Environment Debug ==="
-          rustc --version
-          cargo --version
-          anchor --version
-          echo "==========================="
-
-          # Create .cargo/config.toml to enable lockfile v4 support globally
-          mkdir -p .cargo
-          echo "[unstable]" > .cargo/config.toml
-          echo "next-lockfile-bump = true" >> .cargo/config.toml
-          echo "Created .cargo/config.toml with lockfile v4 support"
-          cat .cargo/config.toml
-
-          # Remove any existing Cargo.lock
-          find . -name "Cargo.lock" -type f -delete
-
-          # Build with Anchor - now cargo will support lockfile v4
-          anchor build
-
-      - name: List built artifacts
-        run: |
-          echo "=== Built Program ==="
           ls -lh target/deploy/
-          echo ""
-          echo "=== Generated IDL ==="
-          ls -lh target/idl/
-          echo ""
-          echo "=== Generated Types ==="
-          ls -lh target/types/
 
-      - name: Upload Program Binary
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: solana-program-binary
+          name: program-binary
           path: target/deploy/asdf_dat.so
-
-      - name: Upload IDL
-        uses: actions/upload-artifact@v4
-        with:
-          name: program-idl
-          path: target/idl/asdf_dat.json
-
-      - name: Upload TypeScript Types
-        uses: actions/upload-artifact@v4
-        with:
-          name: typescript-types
-          path: target/types/asdf_dat.ts
-
-      - name: Get Program Address
-        run: |
-          echo "### Program Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Program ID:** EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Files Generated:**" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Program binary: \`target/deploy/asdf_dat.so\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ IDL: \`target/idl/asdf_dat.json\`" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Types: \`target/types/asdf_dat.ts\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Download artifacts above to deploy to devnet!" >> $GITHUB_STEP_SUMMARY

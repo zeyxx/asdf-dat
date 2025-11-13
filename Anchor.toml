@@ -1,25 +1,15 @@
-[toolchain]
-anchor_version = "0.31.1"
-solana_version = "1.18.22"
-
 [features]
 seeds = false
 skip-lint = false
 
-[programs.localnet]
-asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
-
 [programs.devnet]
-asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
-
-[programs.mainnet]
 asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "mainnet"
+cluster = "devnet"
 wallet = "./wallet.json"
 
 [scripts]
