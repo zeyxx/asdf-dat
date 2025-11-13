@@ -107,11 +107,10 @@ jobs:
 
           # Create .cargo/config.toml to enable lockfile v4 support globally
           mkdir -p .cargo
-          cat > .cargo/config.toml << 'EOF'
-[unstable]
-next-lockfile-bump = true
-EOF
+          echo "[unstable]" > .cargo/config.toml
+          echo "next-lockfile-bump = true" >> .cargo/config.toml
           echo "Created .cargo/config.toml with lockfile v4 support"
+          cat .cargo/config.toml
 
           # Remove any existing Cargo.lock
           find . -name "Cargo.lock" -type f -delete
