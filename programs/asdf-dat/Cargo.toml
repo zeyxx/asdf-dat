@@ -1,7 +1,7 @@
 [package]
 name = "asdf-dat"
 version = "0.1.0"
-description = "ASDF DAT - Automated buyback and burn system"
+description = "ASDF DAT - Automated Buyback and Burn"
 edition = "2021"
 
 [lib]
@@ -11,9 +11,11 @@ name = "asdf_dat"
 [features]
 no-entrypoint = []
 no-idl = []
+no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
-anchor-lang = "0.26.0"
-anchor-spl = "0.26.0"
+anchor-lang = "0.30.1"
+anchor-spl = "0.30.1"
