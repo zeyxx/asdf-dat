@@ -23,7 +23,7 @@
     "devnet:setup-accounts": "ts-node scripts/devnet-setup-accounts.ts"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "0.31.1",
+    "@coral-xyz/anchor": "0.26.0",
     "@pump-fun/pump-sdk": "^1.19.0",
     "@pump-fun/pump-swap-sdk": "^1.7.7",
     "@solana/spl-token": "^0.4.0",
