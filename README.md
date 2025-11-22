@@ -1,111 +1,209 @@
-# ASDF DAT - Autonomous Supply Reduction Protocol
+# ASDF DAT - Automated Buyback and Burn System
 
-<div align="center">
+Automated system for collecting PumpFun trading fees and executing buyback-and-burn cycles on Solana.
 
-![Build Status](https://img.shields.io/badge/Build-Passing-success?style=flat-square)
-![Solana](https://img.shields.io/badge/Solana-Mainnet-blueviolet?style=flat-square)
-![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)
-![Version](https://img.shields.io/badge/Version-2.0.0-orange?style=flat-square)
+## 🏗️ **Architecture**
 
-**An open-source protocol for autonomous token supply management on Solana**
+### Program (Solana/Rust)
+- **Program ID**: `ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz`
+- **Location**: `programs/asdf-dat/src/lib.rs`
+- **Framework**: Anchor 0.31.1
 
-[Documentation](#documentation) • [Installation](#installation) • [Architecture](#architecture) • [Contributing](#contributing)
+### Supported Instructions (11 total)
 
-</div>
+**Core Operations:**
+1. `initialize` - Setup DAT state and authority PDAs
+2. `collect_fees` - Collect SOL from PumpFun creator vault (2x daily: AM/PM)
+3. `execute_buy` - Buy ASDF tokens with collected SOL
+4. `burn_and_update` - Burn tokens and update statistics
+5. `record_failure` - Log failed cycles on-chain
 
----
+**Admin Controls:**
+6. `emergency_pause` - Pause all operations
+7. `resume` - Resume after pause
+8. `update_parameters` - Adjust fees, slippage, intervals
+9. `transfer_admin` - Transfer admin authority
+10. `create_pumpfun_token` - Create tokens via CPI
 
-## Overview
-
-The ASDF DAT (Decentralized Autonomous Token) protocol is a community-developed solution that automatically manages token supply through a transparent, on-chain mechanism. The protocol collects creator fees generated from trading activity and uses them to permanently reduce the circulating supply of $ASDFASDFA tokens.
-
-### Development Background
-
-This protocol was developed by [@jeanterre13](https://twitter.com/jeanterre13) in direct response to a community proposal within the $ASDFASDFA ecosystem. The project exemplifies the community-driven development model where any member can propose improvements through the official $ASDFASDFA discussion channels, and skilled developers can implement solutions that benefit all holders.
-
-## Purpose
-
-This protocol was created in response to a community proposal in the $ASDFASDFA discussion channels, addressing the need for sustainable token economics within the ecosystem. It demonstrates the power of community-driven development where proposals from any member can be transformed into functional solutions by volunteer developers.
-
-The protocol addresses key objectives identified by the community:
-
-- Converting passive fee accumulation into active supply management
-- Providing transparent and verifiable on-chain operations
-- Eliminating manual intervention through autonomous execution
-- Ensuring equal benefit distribution to all token holders
-
-## How It Works
-
-### Core Mechanism
-
-The protocol operates through a simple, repeatable cycle:
-
-1. **Collection**: Aggregates creator fees from PumpSwap trading activity
-2. **Acquisition**: Purchases tokens from the open market
-3. **Removal**: Permanently removes acquired tokens from circulation
-4. **Documentation**: Records all operations on-chain for transparency
-
-### Technical Flow
+## 📁 **Project Structure**
 
 ```
-Trading Activity (PumpSwap)
-         │
-         ├─→ Creator Fees (0.3%-1.25% based on market cap)
-         │
-         └─→ Creator Vault (PDA)
-                  │
-                  ├─→ Threshold Check (≥0.19 SOL)
-                  │
-                  └─→ DAT Protocol Execution
-                           │
-                           ├─→ Fee Collection
-                           ├─→ Token Acquisition
-                           ├─→ Supply Reduction
-                           └─→ Event Emission
+asdf-dat/
+├── programs/asdf-dat/      # Solana program (Rust)
+│   └── src/lib.rs
+├── src/                     # TypeScript application
+│   ├── bot.ts              # Automated bot
+│   ├── dashboard.tsx       # UI dashboard
+│   └── index.ts
+├── scripts/                 # Essential setup scripts
+│   ├── init.ts             # Initialize DAT protocol
+│   ├── create-token.ts     # Create PumpFun token
+│   ├── init-all-accounts.ts
+│   ├── setup-ata.ts
+│   └── find-creator-vault.ts
+├── tests/scripts/           # Test scripts
+│   ├── test-dat-cycle.ts   # Full cycle test
+│   ├── buy-normal-wallet.ts
+│   └── simulate-fees.ts
+├── docs/                    # Documentation
+│   ├── setup/              # Setup guides
+│   └── guides/             # User guides
+├── config/                  # Configuration files
+│   └── devnet-dat-deployment.json
+├── devnet-config.json       # Active devnet config
+├── devnet-token-info.json   # Token metadata
+└── devnet-wallet.json       # Admin wallet (gitignored)
 ```
 
-## Architecture
+## 🚀 **Quick Start (Devnet)**
 
-### Smart Contract Components
+### 1. Prerequisites
 
-- **State Management**: Tracks operational metrics and parameters
-- **Fee Collection**: Interfaces with PumpSwap creator vault
-- **Market Operations**: Executes token acquisitions via PumpSwap
-- **Supply Management**: Implements permanent token removal
-- **Safety Controls**: Enforces operational limits and protections
+```bash
+# Install dependencies
+npm install
 
-### Operational Parameters
+# Setup Solana CLI
+solana config set --url devnet
+solana-keygen new -o devnet-wallet.json
+solana airdrop 2 devnet-wallet.json
+```
 
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| Minimum Threshold | 0.19 SOL | Ensures gas efficiency |
-| Maximum per Cycle | 10 SOL | Prevents market disruption |
-| Execution Frequency | 2x daily | Random times to prevent gaming |
-| Price Impact Limit | 3% | Maintains market stability |
-| Supply Reduction | 100% | All acquired tokens removed |
+### 2. Deploy Program
 
-### Security Features
+```bash
+# Build
+anchor build
 
-- **Immutable Core Logic**: Critical functions cannot be altered
-- **Multi-signature Admin**: Administrative actions require approval
-- **Automatic Safeguards**: Self-pausing on anomaly detection
-- **Slippage Protection**: Adaptive tolerance (1-3%)
-- **Anti-manipulation**: Random execution timing
+# Deploy
+anchor deploy --provider.cluster devnet
 
-## Implementation
+# Note the Program ID and update in lib.rs
+```
 
-### Prerequisites
+### 3. Initialize Protocol
 
-- Node.js v18.0.0 or higher
-- Rust 1.70.0 or higher
-- Solana CLI 1.17.0 or higher
-- Anchor Framework 0.30.0
+```bash
+# Initialize DAT state and authority
+npm run init
 
-### Installation
+# This creates:
+# - DAT State PDA (seed: "dat_v3")
+# - DAT Authority PDA (seed: "auth_v3")
+```
+
+### 4. Create Token
+
+```bash
+# Create PumpFun token with DAT Authority as creator
+npm run create-token
+
+# Saves token info to devnet-token-info.json
+```
+
+### 5. Test Cycle
+
+```bash
+# Run complete cycle test
+npx ts-node tests/scripts/test-dat-cycle.ts
+
+# This executes:
+# 1. collect_fees (requires 0.01+ SOL in creator vault)
+# 2. execute_buy (buys ASDF tokens)
+# 3. burn_and_update (burns tokens, updates stats)
+```
+
+### 6. Run Bot (Production)
+
+```bash
+npm run bot
+
+# Bot monitors and executes cycles automatically
+# - Runs twice daily (AM/PM)
+# - Validates fee thresholds
+# - Records failures on-chain
+```
+
+## 📋 **Available NPM Scripts**
+
+```bash
+npm run build          # Compile TypeScript & build Anchor program
+npm run clean          # Remove build artifacts
+npm run test           # Run Anchor tests
+
+# Setup
+npm run init           # Initialize DAT protocol
+npm run create-token   # Create PumpFun token
+npm run init-accounts  # Initialize all accounts
+npm run setup-ata      # Setup associated token accounts
+
+# Utilities
+npm run find-vault     # Find creator vault PDA
+
+# Production
+npm run bot            # Run automated bot
+```
+
+## 🔧 **Configuration**
+
+### Environment Variables (`.env`)
+
+```bash
+RPC_URL=https://api.devnet.solana.com
+WALLET_PATH=./devnet-wallet.json
+PROGRAM_ID=ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz
+```
+
+### Config Files
+
+- `config/devnet-dat-deployment.json` - DAT deployment info
+- `devnet-config.json` - Active configuration
+- `devnet-token-info.json` - Token metadata
+
+## 🔐 **Security**
+
+**⚠️ NEVER commit these files:**
+- `devnet-wallet.json`
+- `mainnet-wallet.json`
+- `ASDF*.json` (program keypairs)
+- Any file with private keys
+
+These are automatically ignored via `.gitignore`.
+
+## 🧪 **Testing**
+
+### Unit Tests
+```bash
+anchor test
+```
+
+### Integration Tests
+```bash
+# Test full cycle
+npx ts-node tests/scripts/test-dat-cycle.ts
+
+# Test buy functionality
+npx ts-node tests/scripts/buy-with-idl.ts
+
+# Simulate fees
+npx ts-node tests/scripts/simulate-fees.ts
+```
+
+## 📊 **Program Constants**
+
+- **ASDF Mint**: `9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump`
+- **Min Fees**: 10 SOL (10,000,000 lamports)
+- **Max Fees/Cycle**: 1 SOL (1,000,000,000 lamports)
+- **Slippage**: 5% (500 bps)
+- **Cycle Interval**: 60 seconds minimum
+
+## 🛠️ **Development**
+
+### Build from Source
 
 ```bash
 # Clone repository
-git clone https://github.com/asdf-community/asdf-dat
+git clone https://github.com/zeyxx/asdf-dat.git
 cd asdf-dat
 
 # Install dependencies
@@ -114,294 +212,34 @@ npm install
 # Build program
 anchor build
 
-# Run tests
-anchor test
+# Compile TypeScript
+npm run compile
 ```
 
-### Testing on Devnet (Recommended Before Mainnet)
+### Rust Dependencies
+- `anchor-lang` = "0.31.1"
+- `anchor-spl` = "0.31.1"
 
-**⚠️ IMPORTANT**: Always test on devnet before deploying to mainnet!
+### TypeScript Dependencies
+- `@coral-xyz/anchor` = "0.30.1" (compatible with 0.31.1)
+- `@solana/web3.js` = "^1.95.0"
+- `@solana/spl-token` = "^0.4.8"
 
-#### Quick Start (5 minutes)
+## 📖 **Documentation**
 
-```bash
-# 1. Configure Solana for devnet
-solana config set --url https://api.devnet.solana.com
-solana airdrop 2 && solana airdrop 2
+- [Setup Guide](docs/setup/wsl-setup.sh)
+- [Quick Start](docs/guides/quick-start-test.md)
+- [E2E Testing](docs/guides/e2e-testing.md)
+- [PumpFun Guide](PUMPFUN_DEVNET_GUIDE.md)
 
-# 2. Run automated setup wizard
-ts-node scripts/devnet-full-setup.ts
-```
+## 🤝 **Contributing**
 
-The wizard automatically:
-- ✅ Creates a test token on PumpFun devnet
-- ✅ Configures the program with devnet addresses
-- ✅ Builds and deploys to devnet
-- ✅ Initializes the protocol
-- ✅ Sets up all necessary accounts
+This is a private project. For questions or issues, contact the team.
 
-#### Manual Setup (Alternative)
+## 📜 **License**
 
-```bash
-# 1. Create token on PumpFun devnet
-ts-node scripts/devnet-create-token.ts
-
-# 2. Apply configuration to code
-ts-node scripts/devnet-apply-config.ts
-
-# 3. Build and deploy
-anchor build
-anchor deploy --provider.cluster devnet
-
-# 4. Initialize protocol
-ts-node scripts/devnet-init.ts
-
-# 5. Monitor status
-ts-node scripts/devnet-status.ts
-```
-
-#### Running Test Cycles
-
-```bash
-# Execute a buyback/burn cycle
-ts-node scripts/devnet-execute-cycle.ts
-
-# Monitor protocol status
-ts-node scripts/devnet-status.ts
-```
-
-#### Devnet Testing Resources
-
-- **Quick Start Guide**: [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) - 5-minute setup
-- **Complete Guide**: [DEVNET_DEPLOYMENT.md](DEVNET_DEPLOYMENT.md) - Detailed walkthrough
-- **PumpFun Addresses**: [PUMP_ADDRESSES.md](PUMP_ADDRESSES.md) - Official program addresses
-- **Mainnet Readiness**: [MAINNET_READINESS.md](MAINNET_READINESS.md) - Pre-deployment checklist
-- **Script Documentation**: [scripts/README.md](scripts/README.md) - All available scripts
-
-**Validation Requirements Before Mainnet**:
-- ✅ Minimum 5 successful cycles on devnet
-- ✅ All security features tested
-- ✅ Admin functions verified
-- ✅ Complete MAINNET_READINESS.md checklist
-
-### Deployment
-
-```bash
-# Deploy to Solana
-anchor deploy --provider.cluster mainnet
-
-# Initialize protocol
-npm run dat:init
-
-# Start automation
-npm run dat:start
-```
-
-### Configuration
-
-Create `.env` file with required parameters:
-
-```env
-PROGRAM_ID=<deployed_program_id>
-WALLET_PATH=./wallet.json
-NETWORK=mainnet
-RPC_URL=https://api.mainnet-beta.solana.com
-```
-
-## Monitoring
-
-### Dashboard
-
-Access real-time metrics and operational data:
-
-```bash
-npm run dashboard
-# Available at http://localhost:3000
-```
-
-### Metrics Tracked
-
-- Total tokens removed from circulation
-- Creator fees collected (SOL)
-- Number of execution cycles
-- Success rate percentage
-- Current operational status
-
-### On-Chain Verification
-
-All operations are verifiable through:
-- Solana Explorer
-- Program event logs
-- Transaction signatures
-- Account state queries
-
-## Fee Structure
-
-The protocol operates within PumpSwap's dynamic fee framework:
-
-| Market Cap Range | Creator Fee | Protocol Fee | LP Fee | Total |
-|-----------------|-------------|--------------|--------|-------|
-| < $85k | 0.30% | 0.95% | 0% | 1.25% |
-| $85k - $300k | 0.30% | 0.93% | 0.02% | 1.25% |
-| $300k - $500k | 0.95% | 0.05% | 0.20% | 1.20% |
-| $500k - $2M | 0.85% | 0.05% | 0.20% | 1.10% |
-| $2M - $20M | 0.70% | 0.05% | 0.20% | 0.95% |
-| > $20M | 0.05% | 0.05% | 0.20% | 0.30% |
-
-## Project Structure
-
-```
-asdf-dat/
-├── programs/           # Solana program (Rust)
-│   └── asdf-dat/
-│       ├── src/
-│       │   └── lib.rs
-│       └── Cargo.toml
-├── src/               # Off-chain components (TypeScript)
-│   ├── bot.ts         # Automation service
-│   ├── dashboard.tsx  # Monitoring interface
-│   └── index.ts       # Entry point
-├── tests/             # Test suite
-├── scripts/           # Utility scripts
-└── docs/              # Documentation
-```
-
-## Contributing
-
-We welcome contributions from the community. This project itself was born from a community proposal, demonstrating that anyone can make a meaningful impact on the $ASDFASDFA ecosystem.
-
-### How to Contribute
-
-1. **Propose Ideas**: Share your proposals in $ASDFASDFA community discussion channels
-2. **Technical Implementation**: Developers can volunteer to build approved proposals
-3. **Code Contributions**: Submit pull requests to improve the existing protocol
-4. **Testing & Feedback**: Help test new features and provide feedback
-5. **Documentation**: Improve guides and technical documentation
-
-### Development Setup
-
-```bash
-# Install development dependencies
-npm install --save-dev
-
-# Run linter
-npm run lint
-
-# Format code
-npm run format
-
-# Run test suite
-npm test
-```
-
-For technical contributions, please see our [Contributing Guidelines](CONTRIBUTING.md) for:
-- Code standards
-- Testing requirements
-- Pull request process
-- Issue reporting
-
-## Governance
-
-The protocol is governed by the $ASDFASDFA community through:
-
-- **Community Proposals**: Any member can propose ideas in $ASDFASDFA discussion channels
-- **Developer Implementation**: Community developers like [@jeanterre13](https://twitter.com/jeanterre13) volunteer to build proposed solutions
-- **Technical Review**: Code is open-source and reviewed by the community
-- **Transparent Operations**: All changes documented and publicly auditable
-
-### Community Participation
-
-The ASDF DAT protocol demonstrates the power of community collaboration:
-- **Origin**: Born from a community proposal to address token supply management
-- **Development**: Built by community developer [@jeanterre13](https://twitter.com/jeanterre13) 
-- **Future**: Open to new proposals from any community member
-- **Channels**: Join $ASDFASDFA discussion channels to propose improvements or contribute
-
-## Addresses
-
-### Mainnet Contracts
-
-| Contract | Address |
-|----------|---------|
-| Program | To be deployed |
-| Authority | PDA (derived) |
-| State | PDA (derived) |
-
-### Token Information
-
-| Token | Address |
-|-------|---------|
-| ASDF | `9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump` |
-| WSOL | `So11111111111111111111111111111111111111112` |
-
-### PumpSwap Integration
-
-| Component | Address |
-|-----------|---------|
-| Pool | `DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb` |
-| Program | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
-
-## Documentation
-
-- [Technical Specification](docs/TECHNICAL_SPEC.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-- [API Reference](docs/API.md)
-- [Security Audit](docs/AUDIT.md)
-
-## Acknowledgments
-
-This project represents the collaborative spirit of the $ASDFASDFA community:
-- **Community**: For proposing and supporting this initiative
-- **Developer**: [@jeanterre13](https://twitter.com/jeanterre13) for implementing the solution
-- **Contributors**: All those who test, review, and improve the protocol
-- **Holders**: For trusting in community-driven development
-
-The ASDF DAT protocol proves that great ideas can come from anywhere in the community, and with skilled developers willing to contribute, these ideas can become reality.
-
-## Support
-
-- **Developer**: [@jeanterre13](https://twitter.com/jeanterre13) - Protocol developer and maintainer
-- **Community Proposals**: Join $ASDFASDFA discussion channels to propose new features
-- **GitHub Issues**: [Report bugs or technical issues](https://github.com/asdf-community/asdf-dat/issues)
-- **Twitter**: [Join community discussions](https://x.com/i/communities/1942343109159051272)
-- **Documentation**: [Read the docs](https://docs.asdf-dat.com)
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-```
-MIT License
-
-Copyright (c) 2025 ASDF Community
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
-```
-
-## Disclaimer
-
-This software is experimental and provided "as is" without warranty of any kind. Users should understand the technical aspects and risks associated with blockchain protocols. The protocol operates autonomously based on predetermined parameters and cannot guarantee specific outcomes.
+See [LICENSE](LICENSE) file for details.
 
 ---
 
-<div align="center">
-
-**ASDF DAT Protocol** - Community-Driven Supply Management
-
-Developed by [@jeanterre13](https://twitter.com/jeanterre13) for the $ASDFASDFA Community
-
-*Built on community proposal • Open to all contributors*
-
-</div>
+**⚡ Built with [Anchor](https://www.anchor-lang.com/) on [Solana](https://solana.com/)**
