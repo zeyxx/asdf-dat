@@ -38,9 +38,23 @@ keypair.json
 *-keypair.json
 cto-wallet.json
 authority-wallet.json
+devnet-wallet.json
+mainnet-wallet.json
+asdf_dat_v2-keypair.json
 .wallet/
 wallets/
 keys/
+
+# Program keypairs (SECURITY - NEVER COMMIT)
+ASDF*.json
+!ASDF*.md
+
+# Build artifacts
+bonding-curve.bin
+*.bin
+
+# External program IDLs
+*-idl.json
 
 # IDL files (generated)
 target/idl/
