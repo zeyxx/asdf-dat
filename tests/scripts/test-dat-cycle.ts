@@ -11,7 +11,7 @@ import {
   getAssociatedTokenAddress,
   getAccount,
 } from "@solana/spl-token";
-import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
@@ -40,7 +40,7 @@ function logSection(title: string) {
   console.log(`${"=".repeat(60)}\n`);
 }
 
-function loadIdl(): any {
+function loadIdl(): Idl {
   const possiblePaths = [
     "target/idl/asdf_dat.json",
     "../target/idl/asdf_dat.json",
@@ -51,7 +51,7 @@ function loadIdl(): any {
   for (const idlPath of possiblePaths) {
     try {
       if (fs.existsSync(idlPath)) {
-        const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+        const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
         // Ensure metadata.address is set for Anchor 0.30.1
         if (idl.metadata) {
           idl.metadata.address = PROGRAM_ID.toString();
@@ -135,7 +135,7 @@ async function main() {
   );
 
   const idl = loadIdl();
-  const program = new Program(idl, provider);
+  const program: Program<Idl> = new Program(idl, provider);
 
   log("✅", "Programme chargé", colors.green);
   log("🔧", `Available methods: ${Object.keys(program.methods).join(", ")}`, colors.cyan);
