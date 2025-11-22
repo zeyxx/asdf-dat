@@ -1,0 +1,122 @@
+name: Build Solana Program
+
+on:
+  workflow_dispatch:  # Permet de déclencher manuellement
+  push:
+    branches:
+      - main
+      - claude/*
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: 1.82.0
+          profile: minimal
+          override: true
+
+      - name: Add wasm32 target
+        run: rustup target add wasm32-unknown-unknown
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache Anchor build
+        uses: actions/cache@v4
+        with:
+          path: |
+            target/
+          key: ${{ runner.os }}-anchor-${{ hashFiles('programs/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-anchor-
+
+      - name: Install Solana CLI
+        run: |
+          # Update CA certificates
+          sudo apt-get update
+          sudo apt-get install -y ca-certificates curl
+
+          # Install Solana with retry logic
+          MAX_RETRIES=3
+          RETRY=0
+          until [ $RETRY -ge $MAX_RETRIES ]
+          do
+            sh -c "$(curl -sSfL https://release.solana.com/v1.18.22/install)" && break
+            RETRY=$((RETRY+1))
+            echo "Retry $RETRY/$MAX_RETRIES failed, waiting 5s..."
+            sleep 5
+          done
+
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana --version
+
+      - name: Install Anchor CLI
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor --tag v0.31.1 anchor-cli --locked
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          export PATH="$HOME/.cargo/bin:$PATH"
+          anchor --version
+
+      - name: Build Solana Program
+        run: |
+          export PATH="$HOME/.cargo/bin:$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          anchor build
+
+      - name: List built artifacts
+        run: |
+          echo "=== Built Program ==="
+          ls -lh target/deploy/
+          echo ""
+          echo "=== Generated IDL ==="
+          ls -lh target/idl/
+          echo ""
+          echo "=== Generated Types ==="
+          ls -lh target/types/
+
+      - name: Upload Program Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: solana-program-binary
+          path: target/deploy/asdf_dat.so
+
+      - name: Upload IDL
+        uses: actions/upload-artifact@v4
+        with:
+          name: program-idl
+          path: target/idl/asdf_dat.json
+
+      - name: Upload TypeScript Types
+        uses: actions/upload-artifact@v4
+        with:
+          name: typescript-types
+          path: target/types/asdf_dat.ts
+
+      - name: Get Program Address
+        run: |
+          echo "### Program Build Complete! 🎉" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Program ID:** EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Files Generated:**" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Program binary: \`target/deploy/asdf_dat.so\`" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ IDL: \`target/idl/asdf_dat.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Types: \`target/types/asdf_dat.ts\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Download artifacts above to deploy to devnet!" >> $GITHUB_STEP_SUMMARY

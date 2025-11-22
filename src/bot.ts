@@ -4,7 +4,7 @@
  */
 
 import * as anchor from '@coral-xyz/anchor';
-import { Program, AnchorProvider, web3, BN, Idl } from '@coral-xyz/anchor';
+import { Program, AnchorProvider, web3 } from '@coral-xyz/anchor';
 import { 
     PublicKey, 
     Connection, 
@@ -24,7 +24,6 @@ import {
 } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as dotenv from 'dotenv';
-import * as cron from 'node-cron';
 import axios from 'axios';
 
 dotenv.config();
@@ -236,12 +235,12 @@ class FailureHandler {
 // ===========================
 
 export class AsdfDATBot {
-    private connection: Connection;
-    private provider: AnchorProvider;
-    private program: Program;
+    private connection!: Connection;
+    private provider!: AnchorProvider;
+    private program!: Program;
     private wallet: Keypair;
-    private scheduler: RandomScheduler;
-    private failureHandler: FailureHandler;
+    private scheduler!: RandomScheduler;
+    private failureHandler!: FailureHandler;
     private currentRPCIndex: number = 0;
     private isRunning: boolean = false;
     private metrics: any = {
@@ -251,11 +250,11 @@ export class AsdfDATBot {
         lastExecution: null,
         uptime: Date.now()
     };
-    
+
     // PDAs
-    private datStatePDA: PublicKey;
-    private datAuthorityPDA: PublicKey;
-    private creatorVaultAuthorityPDA: PublicKey;
+    private datStatePDA!: PublicKey;
+    private datAuthorityPDA!: PublicKey;
+    private creatorVaultAuthorityPDA!: PublicKey;
     
     constructor() {
         console.log('🚀 Initializing ASDF DAT Bot...');
@@ -338,8 +337,8 @@ export class AsdfDATBot {
             throw new Error('IDL not found. Run anchor build first.');
         }
         const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
-        
-        this.program = new Program(idl, programId, this.provider);
+
+        this.program = new Program(idl, this.provider);
     }
     
     /**
@@ -583,7 +582,7 @@ export class AsdfDATBot {
     private async checkVaultBalance(vaultAta: PublicKey): Promise<number> {
         try {
             const accountInfo = await this.connection.getTokenAccountBalance(vaultAta);
-            return parseFloat(accountInfo.value.uiAmount || '0');
+            return parseFloat(String(accountInfo.value.uiAmount || 0));
         } catch {
             return 0;
         }
@@ -664,7 +663,7 @@ export class AsdfDATBot {
      */
     async getStats(): Promise<any> {
         try {
-            const state = await this.program.account.datState.fetch(this.datStatePDA);
+            const state = await (this.program.account as any).datState.fetch(this.datStatePDA);
             
             return {
                 onChain: {

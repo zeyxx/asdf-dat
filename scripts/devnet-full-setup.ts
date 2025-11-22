@@ -118,7 +118,11 @@ function executeCommand(command: string, description: string): boolean {
     return true;
   } catch (error: any) {
     console.error("❌ Failed");
-    console.error(error.stdout || error.message);
+    if (error && typeof error === 'object') {
+      console.error(('stdout' in error ? error.stdout : null) || (error instanceof Error ? error.message : String(error)));
+    } else {
+      console.error(String(error));
+    }
     console.log();
     return false;
   }
