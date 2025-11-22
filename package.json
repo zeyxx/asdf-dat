@@ -16,18 +16,18 @@
     "bot": "ts-node src/bot.ts"
   },
   "dependencies": {
-    "@coral-xyz/anchor": "0.30.1",
-    "@pump-fun/pump-sdk": "^1.20.0",
-    "@pump-fun/pump-swap-sdk": "^1.11.0",
-    "@solana/spl-token": "^0.4.8",
-    "@solana/web3.js": "^1.95.0",
-    "axios": "^1.6.0",
-    "bn.js": "^5.2.2",
+    "@coral-xyz/anchor": "0.31.1",
+    "@pump-fun/pump-swap-sdk": "^1.7.7",
+    "@solana/spl-token": "^0.4.0",
+    "@solana/web3.js": "^1.91.0",
+    "axios": "^1.13.2",
     "dotenv": "^16.4.1",
-    "node-cron": "^3.0.3"
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
   },
   "devDependencies": {
-    "@types/bn.js": "^5.2.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.5",
     "@types/node": "^20.11.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"

@@ -41,7 +41,7 @@ async function initialize() {
 
   // Vérifier si déjà initialisé
   try {
-    const existingState = await program.account.datState.fetch(datState);
+    const existingState = await (program.account as any).datState.fetch(datState);
     console.log("⚠️  Protocol already initialized!");
     console.log("  Admin:", existingState.admin.toString());
     console.log("  Is Active:", existingState.isActive);
@@ -86,7 +86,7 @@ async function initialize() {
     console.log();
 
     // Récupérer et afficher l'état initial
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
 
     console.log("📊 Initial Protocol State:");
     console.log("================================");
@@ -129,9 +129,9 @@ async function initialize() {
     console.error("❌ Initialization failed:");
     console.error(error);
 
-    if (error.logs) {
+    if (error && typeof error === 'object' && 'logs' in error) {
       console.log("\n📋 Program Logs:");
-      error.logs.forEach(log => console.log("  ", log));
+      (error.logs as string[]).forEach((log: string) => console.log("  ", log));
     }
   }
 }

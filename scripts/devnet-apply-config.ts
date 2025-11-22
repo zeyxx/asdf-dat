@@ -308,8 +308,8 @@ async function main() {
     // Display next steps
     displayNextSteps(config);
 
-  } catch (error: any) {
-    console.error("\n❌ Failed to apply configuration:", error.message);
+  } catch (error) {
+    console.error("\n❌ Failed to apply configuration:", error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }
