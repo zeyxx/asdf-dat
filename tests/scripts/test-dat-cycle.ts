@@ -121,6 +121,19 @@ async function main() {
   }
 
   const tokenInfo = JSON.parse(fs.readFileSync(tokenInfoPath, "utf-8"));
+
+  // Validate token info
+  if (!tokenInfo.mint) {
+    log("❌", "Token info manque 'mint'", colors.red);
+    log("💡", "Vérifiez devnet-token-info.json", colors.yellow);
+    process.exit(1);
+  }
+  if (!tokenInfo.bondingCurve) {
+    log("❌", "Token info manque 'bondingCurve'", colors.red);
+    log("💡", "Vérifiez devnet-token-info.json", colors.yellow);
+    process.exit(1);
+  }
+
   const tokenMint = new PublicKey(tokenInfo.mint);
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
 
