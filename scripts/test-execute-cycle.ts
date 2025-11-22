@@ -18,6 +18,7 @@ import path from "path";
 const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const PUMP_SWAP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+const PUMPSWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 const FEE_PROGRAM = new PublicKey("8afbFEgoZ3RB6D3FGxNU7JnQZbJLmkcBCJ8RLGVEWVdc");
 
 const colors = {
@@ -126,10 +127,10 @@ async function main() {
 
   logSection("PRÉPARATION DES COMPTES");
 
-  // Derive all required accounts
+  // Derive all required accounts - Creator Vault Authority (updated to correct PDA derivation)
   const [vaultAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from("coin-creator-vault-authority"), bondingCurve.toBuffer()],
-    PUMP_SWAP_PROGRAM
+    [Buffer.from("creator_vault"), datAuthority.toBuffer()],
+    PUMPSWAP_PROGRAM
   );
 
   const [pumpGlobalConfig] = PublicKey.findProgramAddressSync(
