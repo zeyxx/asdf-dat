@@ -1,0 +1,14 @@
+{
+  "mint": "1kJvz2NnAa3bEQ1Ro8Y9amCyySRZwHSeJ4DwNcMjvhM",
+  "creator": "9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj",
+  "timestamp": "2025-10-24T17:36:11.596Z",
+  "metadata": {
+    "name": "ASDF Test Token",
+    "symbol": "ASDFT",
+    "description": "Test token for ASDF DAT protocol created via PumpFun SDK",
+    "twitter": "https://twitter.com/asdf",
+    "telegram": "https://t.me/asdf",
+    "website": "https://asdf.com"
+  },
+  "network": "devnet"
+}
