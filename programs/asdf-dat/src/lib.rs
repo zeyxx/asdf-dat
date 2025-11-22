@@ -3,6 +3,7 @@ use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{
     token::{self, Token, TokenAccount, Mint},
+    token_2022::{self as token2022},
     associated_token::AssociatedToken,
 };
 
@@ -25,6 +26,22 @@ pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
     Pubkey::new_from_array([81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219, 29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216]),
 ];
+
+// Mayhem Mode constants
+pub const MAYHEM_PROGRAM: Pubkey = Pubkey::new_from_array([
+    137, 218, 238, 239, 168, 72, 231, 178, 160, 44, 152, 142, 20, 125, 67, 196,
+    43, 166, 78, 225, 251, 144, 219, 123, 110, 241, 54, 179, 185, 154, 254, 99
+]); // MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e
+
+pub const MAYHEM_FEE_RECIPIENT: Pubkey = Pubkey::new_from_array([
+    231, 187, 167, 206, 49, 119, 164, 163, 136, 194, 114, 154, 76, 149, 230,
+    206, 125, 133, 68, 102, 17, 167, 236, 118, 150, 25, 123, 68, 54, 221, 39, 12
+]); // GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS
+
+pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
+    166, 133, 239, 180, 77, 235, 68, 100, 199, 33, 25, 139, 185, 9, 232, 164,
+    228, 205, 74, 123, 166, 139, 114, 13, 221, 225, 162, 93, 101, 11, 19, 102
+]); // BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
 
 #[program]
 pub mod asdf_dat {
