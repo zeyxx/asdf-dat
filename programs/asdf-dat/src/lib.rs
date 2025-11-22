@@ -447,7 +447,7 @@ pub mod asdf_dat {
         state.pending_burn_amount = 0;
 
         msg!("✅ Burned: {} tokens", tokens_bought);
-        msg!("🎉 Full cycle #{} complete!", state.total_buybacks);
+        msg!("💊 #{}", state.total_buybacks);
 
         emit!(CycleCompleted {
             cycle_number: state.total_buybacks,
