@@ -49,6 +49,8 @@ keypair.json
 *-keypair.json
 cto-wallet.json
 authority-wallet.json
+devnet-wallet.json
+mainnet-wallet.json
 .wallet/
 wallets/
 keys/
