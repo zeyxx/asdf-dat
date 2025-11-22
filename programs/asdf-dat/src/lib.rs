@@ -15,6 +15,12 @@ pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([192, 248, 200, 149, 14
 pub const PUMP_SWAP_PROGRAM: Pubkey = Pubkey::new_from_array([137, 221, 191, 187, 100, 187, 237, 209, 53, 51, 235, 147, 50, 161, 103, 19, 141, 17, 201, 24, 105, 206, 44, 209, 166, 60, 161, 222, 94, 203, 251, 230]);
 pub const PUMP_PROGRAM: Pubkey = Pubkey::new_from_array([137, 221, 191, 187, 100, 187, 237, 209, 53, 51, 235, 147, 50, 161, 103, 19, 141, 17, 201, 24, 105, 206, 44, 209, 166, 60, 161, 222, 94, 203, 251, 230]);
 
+// Token2022 program ID
+pub const TOKEN_2022_PROGRAM: Pubkey = Pubkey::new_from_array([
+    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172,
+    190, 192, 170, 33, 225, 195, 158, 240, 26, 96, 235, 152, 242, 210, 242, 92
+]); // TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
+
 pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
 pub const MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;
 pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
@@ -403,7 +409,106 @@ pub mod asdf_dat {
             symbol,
             timestamp: Clock::get()?.unix_timestamp,
         });
-        
+
+        Ok(())
+    }
+
+    /// Create a PumpFun token in Mayhem Mode with AI trading agent
+    /// Uses Token2022 and create_v2 instruction
+    /// Supply: 2 billion tokens (1B + 1B for agent)
+    pub fn create_pumpfun_token_mayhem(
+        ctx: Context<CreatePumpfunTokenMayhem>,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<()> {
+        let state = &ctx.accounts.dat_state;
+
+        msg!("Creating PumpFun token in MAYHEM MODE via CPI");
+        msg!("Name: {}, Symbol: {}, Creator: {}", name, symbol, ctx.accounts.dat_authority.key());
+        msg!("Mayhem Mode: AI agent will trade for 24h");
+
+        let mut data = Vec::new();
+
+        // Discriminator for create_v2: [214, 144, 76, 236, 95, 139, 49, 180]
+        data.extend_from_slice(&[214, 144, 76, 236, 95, 139, 49, 180]);
+
+        // Name (String)
+        data.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        data.extend_from_slice(name.as_bytes());
+
+        // Symbol (String)
+        data.extend_from_slice(&(symbol.len() as u32).to_le_bytes());
+        data.extend_from_slice(symbol.as_bytes());
+
+        // URI (String)
+        data.extend_from_slice(&(uri.len() as u32).to_le_bytes());
+        data.extend_from_slice(uri.as_bytes());
+
+        // Creator (Pubkey)
+        data.extend_from_slice(&ctx.accounts.dat_authority.key().to_bytes());
+
+        // is_mayhem_mode (bool - 1 byte)
+        data.extend_from_slice(&[1u8]); // true for Mayhem Mode
+
+        let accounts = vec![
+            AccountMeta::new(ctx.accounts.mint.key(), true),
+            AccountMeta::new_readonly(ctx.accounts.mint_authority.key(), false),
+            AccountMeta::new(ctx.accounts.bonding_curve.key(), false),
+            AccountMeta::new(ctx.accounts.associated_bonding_curve.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.global.key(), false),
+            AccountMeta::new(ctx.accounts.dat_authority.key(), true), // user/creator
+            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.token_2022_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
+            AccountMeta::new(ctx.accounts.mayhem_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.global_params.key(), false),
+            AccountMeta::new(ctx.accounts.sol_vault.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.event_authority.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.pump_program.key(), false),
+        ];
+
+        let ix = Instruction {
+            program_id: PUMP_PROGRAM,
+            accounts,
+            data,
+        };
+
+        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
+
+        invoke_signed(
+            &ix,
+            &[
+                ctx.accounts.mint.to_account_info(),
+                ctx.accounts.mint_authority.to_account_info(),
+                ctx.accounts.bonding_curve.to_account_info(),
+                ctx.accounts.associated_bonding_curve.to_account_info(),
+                ctx.accounts.global.to_account_info(),
+                ctx.accounts.dat_authority.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+                ctx.accounts.token_2022_program.to_account_info(),
+                ctx.accounts.associated_token_program.to_account_info(),
+                ctx.accounts.mayhem_program.to_account_info(),
+                ctx.accounts.global_params.to_account_info(),
+                ctx.accounts.sol_vault.to_account_info(),
+                ctx.accounts.event_authority.to_account_info(),
+                ctx.accounts.pump_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+
+        msg!("Mayhem Mode token created successfully!");
+        msg!("Supply: 2 billion tokens (1B base + 1B for AI agent)");
+
+        emit!(TokenCreated {
+            mint: ctx.accounts.mint.key(),
+            bonding_curve: ctx.accounts.bonding_curve.key(),
+            creator: ctx.accounts.dat_authority.key(),
+            name,
+            symbol,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+
         Ok(())
     }
 }
@@ -658,6 +763,60 @@ pub struct CreatePumpfunToken<'info> {
     /// CHECK: Event authority
     pub event_authority: AccountInfo<'info>,
     /// CHECK: Pump program
+    pub pump_program: AccountInfo<'info>,
+}
+
+#[derive(Accounts)]
+pub struct CreatePumpfunTokenMayhem<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// CHECK: PDA - DAT Authority acts as token creator
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+
+    #[account(mut, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
+
+    #[account(mut)]
+    pub mint: Signer<'info>,
+
+    /// CHECK: PDA from pump program (mint-authority seed)
+    pub mint_authority: AccountInfo<'info>,
+
+    /// CHECK: Bonding curve PDA (82 bytes for Mayhem Mode - 81 + 1 for is_mayhem_mode flag)
+    #[account(mut)]
+    pub bonding_curve: AccountInfo<'info>,
+
+    /// CHECK: Associated bonding curve token account (Token2022 ATA)
+    #[account(mut)]
+    pub associated_bonding_curve: AccountInfo<'info>,
+
+    /// CHECK: Global config PDA from pump program
+    pub global: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+
+    /// CHECK: Token2022 program (not legacy Token program!)
+    pub token_2022_program: AccountInfo<'info>,
+
+    pub associated_token_program: Program<'info, AssociatedToken>,
+
+    /// CHECK: Mayhem program - handles AI agent trading
+    #[account(mut)]
+    pub mayhem_program: AccountInfo<'info>,
+
+    /// CHECK: Global params PDA from mayhem program
+    pub global_params: AccountInfo<'info>,
+
+    /// CHECK: SOL vault PDA from mayhem program
+    #[account(mut)]
+    pub sol_vault: AccountInfo<'info>,
+
+    /// CHECK: Event authority PDA
+    pub event_authority: AccountInfo<'info>,
+
+    /// CHECK: Main pump program (6EF8r...)
     pub pump_program: AccountInfo<'info>,
 }
 
