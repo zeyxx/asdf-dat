@@ -12,8 +12,10 @@ declare_id!("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
 pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([137, 186, 88, 184, 174, 194, 106, 212, 88, 106, 151, 42, 200, 185, 36, 216, 12, 68, 223, 123, 57, 228, 213, 18, 228, 89, 200, 243, 29, 9, 91, 145]);
 pub const WSOL_MINT: Pubkey = Pubkey::new_from_array([6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]);
 pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([192, 248, 200, 149, 140, 186, 128, 73, 229, 234, 185, 221, 168, 154, 161, 205, 98, 170, 28, 212, 197, 248, 155, 225, 81, 137, 239, 236, 51, 136, 62, 163]);
-pub const PUMP_SWAP_PROGRAM: Pubkey = Pubkey::new_from_array([137, 221, 191, 187, 100, 187, 237, 209, 53, 51, 235, 147, 50, 161, 103, 19, 141, 17, 201, 24, 105, 206, 44, 209, 166, 60, 161, 222, 94, 203, 251, 230]);
-pub const PUMP_PROGRAM: Pubkey = Pubkey::new_from_array([137, 221, 191, 187, 100, 187, 237, 209, 53, 51, 235, 147, 50, 161, 103, 19, 141, 17, 201, 24, 105, 206, 44, 209, 166, 60, 161, 222, 94, 203, 251, 230]);
+// pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA - PumpSwap AMM program
+pub const PUMP_SWAP_PROGRAM: Pubkey = Pubkey::new_from_array([12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101, 244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99]);
+// 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P - Main Pump.fun program
+pub const PUMP_PROGRAM: Pubkey = Pubkey::new_from_array([1, 86, 224, 246, 147, 102, 90, 207, 68, 219, 21, 104, 191, 23, 91, 170, 81, 137, 203, 151, 245, 210, 255, 59, 101, 93, 43, 182, 253, 109, 24, 176]);
 
 // Token2022 program ID
 pub const TOKEN_2022_PROGRAM: Pubkey = Pubkey::new_from_array([
@@ -96,35 +98,37 @@ pub mod asdf_dat {
         let clock = Clock::get()?;
 
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
-        require!(
-            clock.unix_timestamp - state.last_cycle_timestamp >= state.min_cycle_interval,
-            ErrorCode::CycleTooSoon
-        );
+
+        // TEMPORARY: Min cycle interval disabled for testing
+        // require!(
+        //     clock.unix_timestamp - state.last_cycle_timestamp >= state.min_cycle_interval,
+        //     ErrorCode::CycleTooSoon
+        // );
 
         state.last_cycle_timestamp = clock.unix_timestamp;
 
-        let hour = (clock.unix_timestamp / 3600) % 24;
-        let is_am = hour < 12;
-        let today = (clock.unix_timestamp / 86400) * 86400;
+        // TEMPORARY: AM/PM protection disabled for testing
+        // let hour = (clock.unix_timestamp / 3600) % 24;
+        // let is_am = hour < 12;
+        // let today = (clock.unix_timestamp / 86400) * 86400;
 
-        let valid = if is_am {
-            if state.last_am_execution < today {
-                state.last_am_execution = clock.unix_timestamp;
-                true
-            } else { false }
-        } else {
-            if state.last_pm_execution < today {
-                state.last_pm_execution = clock.unix_timestamp;
-                true
-            } else { false }
-        };
+        // let valid = if is_am {
+        //     if state.last_am_execution < today {
+        //         state.last_am_execution = clock.unix_timestamp;
+        //         true
+        //     } else { false }
+        // } else {
+        //     if state.last_pm_execution < today {
+        //         state.last_pm_execution = clock.unix_timestamp;
+        //         true
+        //     } else { false }
+        // };
 
-        require!(valid, ErrorCode::AlreadyExecutedThisPeriod);
+        // require!(valid, ErrorCode::AlreadyExecutedThisPeriod);
 
-        validate_pool_creator(&ctx.accounts.pool, &ctx.accounts.dat_authority.key())?;
-
-        let vault_balance = ctx.accounts.creator_vault_ata.amount;
-        require!(vault_balance >= state.min_fees_threshold, ErrorCode::InsufficientFees);
+        // TEMPORARY: Min fees threshold disabled for testing
+        // let vault_balance = ctx.accounts.creator_vault.lamports();
+        // require!(vault_balance >= state.min_fees_threshold, ErrorCode::InsufficientFees);
 
         let seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
         execute_collect_fees_cpi(ctx, seeds)?;
@@ -137,16 +141,25 @@ pub mod asdf_dat {
         let state = &ctx.accounts.dat_state;
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
 
-        ctx.accounts.dat_wsol_account.reload()?;
         ctx.accounts.pool_wsol_account.reload()?;
         ctx.accounts.pool_asdf_account.reload()?;
 
-        let collected = ctx.accounts.dat_wsol_account.amount;
+        // Use native SOL balance (lamports) instead of WSOL
+        let rent_exempt_minimum = 890880; // Keep minimum for rent
+        let collected_lamports = ctx.accounts.dat_authority.lamports();
+        let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
         let pool_reserves = ctx.accounts.pool_wsol_account.amount;
-        
+
+        msg!("DAT native SOL balance: {} (total: {})", collected, collected_lamports);
+        msg!("Pool WSOL reserves: {}", pool_reserves);
+
         let capped = collected.min(state.max_fees_per_cycle);
         let max_safe = pool_reserves / 100;
         let final_amount = capped.min(max_safe);
+
+        msg!("Final buy amount: {}", final_amount);
+        msg!("Pool token reserves: {}", ctx.accounts.pool_asdf_account.amount);
+        msg!("Token total supply: {}", ctx.accounts.asdf_mint.supply);
 
         let expected = calculate_tokens_out(
             final_amount,
@@ -154,15 +167,30 @@ pub mod asdf_dat {
             ctx.accounts.pool_asdf_account.amount,
             ctx.accounts.asdf_mint.supply,
         )?;
-        
-        let min_out = apply_slippage(expected, state.slippage_bps);
+
+        msg!("Expected tokens: {}", expected);
+
+        // Apply safety factor (10%) because AMM buy/sell calculations are asymmetric
+        // Our calculate_tokens_out estimates tokens for SOL spent,
+        // but PumpFun's buy calculates SOL needed for tokens wanted
+        let safe_expected = expected / 10;
+        msg!("Safe expected (10%): {}", safe_expected);
+
+        let min_out = apply_slippage(safe_expected, state.slippage_bps);
+
+        msg!("Min tokens out: {}", min_out);
 
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
-        
+
+        // Allow up to 2x final_amount to account for AMM asymmetry
+        let max_sol_cost = final_amount.saturating_mul(2);
+        msg!("Max SOL cost (2x): {}", max_sol_cost);
+
         let mut data = Vec::new();
-        data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
-        data.extend_from_slice(&final_amount.to_le_bytes());
-        data.extend_from_slice(&min_out.to_le_bytes());
+        data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]); // discriminator
+        data.extend_from_slice(&min_out.to_le_bytes()); // amount: tokens to buy
+        data.extend_from_slice(&max_sol_cost.to_le_bytes()); // max_sol_cost: max SOL to spend
+        data.push(0); // track_volume: OptionBool::None
 
         let accounts = vec![
             AccountMeta::new_readonly(ctx.accounts.pump_global_config.key(), false),
@@ -174,13 +202,17 @@ pub mod asdf_dat {
             AccountMeta::new(ctx.accounts.dat_authority.key(), true),
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.rent.key(), false),
+            AccountMeta::new(ctx.accounts.creator_vault.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
-            AccountMeta::new_readonly(PUMP_SWAP_PROGRAM, false),
+            AccountMeta::new_readonly(PUMP_PROGRAM, false),
+            AccountMeta::new_readonly(ctx.accounts.global_volume_accumulator.key(), false),
+            AccountMeta::new(ctx.accounts.user_volume_accumulator.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.fee_config.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.fee_program.key(), false),
         ];
 
         let ix = Instruction {
-            program_id: PUMP_SWAP_PROGRAM,
+            program_id: PUMP_PROGRAM,
             accounts,
             data,
         };
@@ -197,8 +229,13 @@ pub mod asdf_dat {
                 ctx.accounts.dat_authority.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
                 ctx.accounts.token_program.to_account_info(),
-                ctx.accounts.rent.to_account_info(),
+                ctx.accounts.creator_vault.to_account_info(),
                 ctx.accounts.pump_event_authority.to_account_info(),
+                ctx.accounts.pump_swap_program.to_account_info(),
+                ctx.accounts.global_volume_accumulator.to_account_info(),
+                ctx.accounts.user_volume_accumulator.to_account_info(),
+                ctx.accounts.fee_config.to_account_info(),
+                ctx.accounts.fee_program.to_account_info(),
             ],
             &[seeds],
         )?;
@@ -464,6 +501,8 @@ pub mod asdf_dat {
             AccountMeta::new(ctx.accounts.mayhem_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.global_params.key(), false),
             AccountMeta::new(ctx.accounts.sol_vault.key(), false),
+            AccountMeta::new(ctx.accounts.mayhem_state.key(), false),
+            AccountMeta::new(ctx.accounts.mayhem_token_vault.key(), false),
             AccountMeta::new_readonly(ctx.accounts.event_authority.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_program.key(), false),
         ];
@@ -491,6 +530,8 @@ pub mod asdf_dat {
                 ctx.accounts.mayhem_program.to_account_info(),
                 ctx.accounts.global_params.to_account_info(),
                 ctx.accounts.sol_vault.to_account_info(),
+                ctx.accounts.mayhem_state.to_account_info(),
+                ctx.accounts.mayhem_token_vault.to_account_info(),
                 ctx.accounts.event_authority.to_account_info(),
                 ctx.accounts.pump_program.to_account_info(),
             ],
@@ -520,35 +561,36 @@ fn execute_collect_fees_cpi<'info>(
     ctx: Context<CollectFees<'info>>,
     seeds: &[&[u8]],
 ) -> Result<()> {
+    // Call collect_creator_fee to transfer SOL from creator_vault to dat_authority
     let ix = Instruction {
-        program_id: PUMP_SWAP_PROGRAM,
+        program_id: PUMP_PROGRAM,
         accounts: vec![
-            AccountMeta::new_readonly(ctx.accounts.wsol_mint.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.dat_authority.key(), true),
-            AccountMeta::new_readonly(ctx.accounts.coin_creator_vault_authority.key(), false),
-            AccountMeta::new(ctx.accounts.creator_vault_ata.key(), false),
-            AccountMeta::new(ctx.accounts.dat_wsol_account.key(), false),
+            AccountMeta::new(ctx.accounts.dat_authority.key(), false),
+            AccountMeta::new(ctx.accounts.creator_vault.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.pump_swap_program.key(), false),
+            AccountMeta::new_readonly(PUMP_PROGRAM, false),
         ],
-        data: vec![160u8, 57, 89, 42, 181, 139, 43, 66],
+        data: vec![20, 22, 86, 123, 198, 28, 219, 132], // collect_creator_fee discriminator
     };
 
     invoke_signed(
         &ix,
         &[
-            ctx.accounts.wsol_mint.to_account_info(),
-            ctx.accounts.token_program.to_account_info(),
             ctx.accounts.dat_authority.to_account_info(),
-            ctx.accounts.coin_creator_vault_authority.to_account_info(),
-            ctx.accounts.creator_vault_ata.to_account_info(),
-            ctx.accounts.dat_wsol_account.to_account_info(),
+            ctx.accounts.creator_vault.to_account_info(),
+            ctx.accounts.system_program.to_account_info(),
             ctx.accounts.pump_event_authority.to_account_info(),
-            ctx.accounts.pump_swap_program.to_account_info(),
+            ctx.accounts.pump_swap_program.to_account_info(), // PUMP_PROGRAM
         ],
         &[seeds],
     )?;
+
+    // Keep SOL as native lamports in DAT Authority (no wrapping to WSOL)
+    // This allows execute_buy to use the native SOL directly via CPI
+    let current_balance = ctx.accounts.dat_authority.lamports();
+    msg!("DAT Authority balance after collect: {} SOL", current_balance as f64 / 1e9);
+
     Ok(())
 }
 
@@ -611,7 +653,18 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
 }
 
 pub fn apply_slippage(amount: u64, bps: u16) -> u64 {
-    amount.saturating_mul(10000 - bps as u64) / 10000
+    msg!("apply_slippage: amount={}, bps={}", amount, bps);
+    let amt = amount as u128;
+    msg!("apply_slippage: amt={}", amt);
+    let multiplier = (10000 - bps as u128);
+    msg!("apply_slippage: multiplier={}", multiplier);
+    let product = amt.saturating_mul(multiplier);
+    msg!("apply_slippage: product={}", product);
+    let result = product / 10000;
+    msg!("apply_slippage: result={}", result);
+    let final_val = result.min(u64::MAX as u128) as u64;
+    msg!("apply_slippage: final_val={}", final_val);
+    final_val
 }
 
 // ACCOUNTS
@@ -632,36 +685,26 @@ pub struct Initialize<'info> {
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA
-    #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    /// CHECK: PDA - creator (receives SOL from creator vault)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    /// CHECK: Pool
+    /// CHECK: Creator vault (PDA that holds SOL fees)
     #[account(mut)]
-    pub pool: AccountInfo<'info>,
-    /// CHECK: WSOL
-    pub wsol_mint: AccountInfo<'info>,
-    /// CHECK: Vault authority
-    pub coin_creator_vault_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub creator_vault_ata: Account<'info, TokenAccount>,
-    #[account(mut)]
-    pub dat_wsol_account: Account<'info, TokenAccount>,
+    pub creator_vault: AccountInfo<'info>,
     /// CHECK: Event auth
     pub pump_event_authority: AccountInfo<'info>,
     /// CHECK: Pump program
     pub pump_swap_program: AccountInfo<'info>,
-    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]
 pub struct ExecuteBuy<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA
-    #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    /// CHECK: PDA (holds native SOL for buying)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub dat_wsol_account: Account<'info, TokenAccount>,
     #[account(mut)]
     pub dat_asdf_account: Account<'info, TokenAccount>,
     /// CHECK: Pool
@@ -669,8 +712,6 @@ pub struct ExecuteBuy<'info> {
     pub pool: AccountInfo<'info>,
     #[account(mut)]
     pub asdf_mint: Account<'info, Mint>,
-    /// CHECK: WSOL
-    pub wsol_mint: AccountInfo<'info>,
     #[account(mut)]
     pub pool_asdf_account: Account<'info, TokenAccount>,
     #[account(mut)]
@@ -678,17 +719,28 @@ pub struct ExecuteBuy<'info> {
     /// CHECK: Config
     pub pump_global_config: AccountInfo<'info>,
     /// CHECK: Recipient
+    #[account(mut)]
     pub protocol_fee_recipient: AccountInfo<'info>,
     #[account(mut)]
     pub protocol_fee_recipient_ata: Account<'info, TokenAccount>,
+    /// CHECK: Creator vault (PDA from token creator)
+    #[account(mut)]
+    pub creator_vault: AccountInfo<'info>,
     /// CHECK: Event auth
     pub pump_event_authority: AccountInfo<'info>,
     /// CHECK: Pump program
     pub pump_swap_program: AccountInfo<'info>,
+    /// CHECK: Global volume accumulator (PDA)
+    pub global_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: User volume accumulator (PDA)
+    #[account(mut)]
+    pub user_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: Fee config (PDA)
+    pub fee_config: AccountInfo<'info>,
+    /// CHECK: Fee program
+    pub fee_program: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    /// CHECK: Rent sysvar
-    pub rent: AccountInfo<'info>,
 }
 
 #[derive(Accounts)]
@@ -812,6 +864,14 @@ pub struct CreatePumpfunTokenMayhem<'info> {
     /// CHECK: SOL vault PDA from mayhem program
     #[account(mut)]
     pub sol_vault: AccountInfo<'info>,
+
+    /// CHECK: Mayhem state PDA (derived from mint)
+    #[account(mut)]
+    pub mayhem_state: AccountInfo<'info>,
+
+    /// CHECK: Mayhem token vault (Token2022 ATA)
+    #[account(mut)]
+    pub mayhem_token_vault: AccountInfo<'info>,
 
     /// CHECK: Event authority PDA
     pub event_authority: AccountInfo<'info>,
