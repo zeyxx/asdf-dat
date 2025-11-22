@@ -58,7 +58,14 @@ function loadIdl(): any {
   for (const idlPath of possiblePaths) {
     try {
       if (fs.existsSync(idlPath)) {
-        return JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+        const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+        // Fix the program ID in the IDL to match the deployed address
+        if (idl.metadata) {
+          idl.metadata.address = PROGRAM_ID.toString();
+        } else {
+          idl.metadata = { address: PROGRAM_ID.toString() };
+        }
+        return idl;
       }
     } catch (error) {
       continue;
@@ -338,10 +345,8 @@ async function main() {
   const idl = loadIdl();
   const program = new Program(idl as Idl, provider);
 
-  // Override the program ID with the deployed address
-  (program as any).programId = PROGRAM_ID;
-
   log("✅", "Programme chargé\n", colors.green);
+  log("🔑", `Program ID: ${program.programId.toString()}`, colors.cyan);
 
   try {
     // Exécuter le cycle DAT
