@@ -12,7 +12,7 @@ import {
   getAccount,
 } from "@solana/spl-token";
 import * as anchor from "@coral-xyz/anchor";
-import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
@@ -336,7 +336,10 @@ async function main() {
   );
 
   const idl = loadIdl();
-  const program = new Program(idl, PROGRAM_ID, provider);
+  const program = new Program(idl as Idl, provider);
+
+  // Override the program ID with the deployed address
+  (program as any).programId = PROGRAM_ID;
 
   log("✅", "Programme chargé\n", colors.green);
 
