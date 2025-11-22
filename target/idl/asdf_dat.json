@@ -1,199 +1,1379 @@
 {
-  "version": "0.1.0",
-  "name": "asdf_dat",
+  "address": "ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz",
+  "metadata": {
+    "name": "asdf_dat",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "ASDF DAT"
+  },
   "instructions": [
     {
-      "name": "initialize",
+      "name": "burn_and_update",
+      "discriminator": [
+        56,
+        128,
+        113,
+        77,
+        16,
+        192,
+        209,
+        118
+      ],
       "accounts": [
-        { "name": "admin", "isMut": true, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false },
-        { "name": "datAuthority", "isMut": false, "isSigner": false },
-        { "name": "systemProgram", "isMut": false, "isSigner": false }
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "asdf_mint",
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
       ],
       "args": []
     },
     {
-      "name": "executeCycle",
+      "name": "collect_fees",
+      "discriminator": [
+        164,
+        152,
+        207,
+        99,
+        30,
+        186,
+        19,
+        182
+      ],
       "accounts": [
-        { "name": "executor", "isMut": true, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false },
-        { "name": "datAuthority", "isMut": false, "isSigner": false },
-        { "name": "asdfMint", "isMut": true, "isSigner": false },
-        { "name": "wsolMint", "isMut": false, "isSigner": false },
-        { "name": "pool", "isMut": true, "isSigner": false },
-        { "name": "poolAsdfAccount", "isMut": true, "isSigner": false },
-        { "name": "poolWsolAccount", "isMut": true, "isSigner": false },
-        { "name": "datWsolAccount", "isMut": true, "isSigner": false },
-        { "name": "datAsdfAccount", "isMut": true, "isSigner": false },
-        { "name": "creatorVaultAuthority", "isMut": false, "isSigner": false },
-        { "name": "creatorVault", "isMut": true, "isSigner": false },
-        { "name": "pumpSwapProgram", "isMut": false, "isSigner": false },
-        { "name": "pumpGlobalConfig", "isMut": false, "isSigner": false },
-        { "name": "pumpEventAuthority", "isMut": false, "isSigner": false },
-        { "name": "globalVolumeAccumulator", "isMut": true, "isSigner": false },
-        { "name": "feeProgram", "isMut": false, "isSigner": false },
-        { "name": "protocolFeeRecipient", "isMut": true, "isSigner": false },
-        { "name": "tokenProgram", "isMut": false, "isSigner": false },
-        { "name": "associatedTokenProgram", "isMut": false, "isSigner": false },
-        { "name": "systemProgram", "isMut": false, "isSigner": false }
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_vault",
+          "writable": true
+        },
+        {
+          "name": "pump_event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
       ],
       "args": []
     },
     {
-      "name": "recordFailure",
+      "name": "create_pumpfun_token",
+      "discriminator": [
+        32,
+        217,
+        77,
+        209,
+        89,
+        36,
+        65,
+        35
+      ],
       "accounts": [
-        { "name": "executor", "isMut": false, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false }
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint_authority",
+          "writable": true
+        },
+        {
+          "name": "bonding_curve",
+          "writable": true
+        },
+        {
+          "name": "associated_bonding_curve",
+          "writable": true
+        },
+        {
+          "name": "metadata",
+          "writable": true
+        },
+        {
+          "name": "global",
+          "writable": true
+        },
+        {
+          "name": "mpl_token_metadata"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "pump_program"
+        }
       ],
       "args": [
-        { "name": "errorCode", "type": "u32" }
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        }
       ]
     },
     {
-      "name": "emergencyPause",
+      "name": "create_pumpfun_token_mayhem",
+      "docs": [
+        "Create a PumpFun token in Mayhem Mode with AI trading agent",
+        "Uses Token2022 and create_v2 instruction",
+        "Supply: 2 billion tokens (1B + 1B for agent)"
+      ],
+      "discriminator": [
+        110,
+        227,
+        18,
+        24,
+        157,
+        240,
+        50,
+        90
+      ],
       "accounts": [
-        { "name": "admin", "isMut": false, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false }
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint_authority"
+        },
+        {
+          "name": "bonding_curve",
+          "writable": true
+        },
+        {
+          "name": "associated_bonding_curve",
+          "writable": true
+        },
+        {
+          "name": "global"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_2022_program"
+        },
+        {
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "mayhem_program",
+          "writable": true
+        },
+        {
+          "name": "global_params"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "mayhem_state",
+          "writable": true
+        },
+        {
+          "name": "mayhem_token_vault",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "pump_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "emergency_pause",
+      "discriminator": [
+        21,
+        143,
+        27,
+        142,
+        200,
+        181,
+        210,
+        255
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
       ],
       "args": []
+    },
+    {
+      "name": "execute_buy",
+      "discriminator": [
+        14,
+        137,
+        248,
+        5,
+        172,
+        244,
+        183,
+        152
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdf_mint",
+          "writable": true
+        },
+        {
+          "name": "pool_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pool_wsol_account",
+          "writable": true
+        },
+        {
+          "name": "pump_global_config"
+        },
+        {
+          "name": "protocol_fee_recipient",
+          "writable": true
+        },
+        {
+          "name": "protocol_fee_recipient_ata",
+          "writable": true
+        },
+        {
+          "name": "creator_vault",
+          "writable": true
+        },
+        {
+          "name": "pump_event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "execute_full_cycle",
+      "docs": [
+        "Execute full DAT cycle in one transaction: COLLECT → BUY → BURN"
+      ],
+      "discriminator": [
+        74,
+        198,
+        91,
+        104,
+        130,
+        92,
+        97,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_vault",
+          "writable": true
+        },
+        {
+          "name": "dat_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdf_mint",
+          "writable": true
+        },
+        {
+          "name": "pool_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pool_wsol_account",
+          "writable": true
+        },
+        {
+          "name": "pump_global_config"
+        },
+        {
+          "name": "protocol_fee_recipient",
+          "writable": true
+        },
+        {
+          "name": "protocol_fee_recipient_ata",
+          "writable": true
+        },
+        {
+          "name": "pump_event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "record_failure",
+      "discriminator": [
+        86,
+        94,
+        231,
+        2,
+        95,
+        43,
+        53,
+        161
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "error_code",
+          "type": "u32"
+        }
+      ]
     },
     {
       "name": "resume",
+      "discriminator": [
+        1,
+        166,
+        51,
+        170,
+        127,
+        32,
+        141,
+        206
+      ],
       "accounts": [
-        { "name": "admin", "isMut": false, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false }
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
       ],
       "args": []
     },
     {
-      "name": "updateParameters",
+      "name": "transfer_admin",
+      "discriminator": [
+        42,
+        242,
+        66,
+        106,
+        228,
+        10,
+        111,
+        156
+      ],
       "accounts": [
-        { "name": "admin", "isMut": false, "isSigner": true },
-        { "name": "datState", "isMut": true, "isSigner": false }
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_parameters",
+      "discriminator": [
+        116,
+        107,
+        24,
+        207,
+        101,
+        49,
+        213,
+        77
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
       ],
       "args": [
-        { "name": "minFeesThreshold", "type": { "option": "u64" } },
-        { "name": "maxFeesPerCycle", "type": { "option": "u64" } },
-        { "name": "slippageBps", "type": { "option": "u16" } },
-        { "name": "minCycleInterval", "type": { "option": "i64" } }
+        {
+          "name": "new_min_fees",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "new_max_fees",
+          "type": {
+            "option": "u64"
+          }
+        },
+        {
+          "name": "new_slippage_bps",
+          "type": {
+            "option": "u16"
+          }
+        },
+        {
+          "name": "new_min_interval",
+          "type": {
+            "option": "i64"
+          }
+        }
       ]
-    },
-    {
-      "name": "transferAdmin",
-      "accounts": [
-        { "name": "admin", "isMut": false, "isSigner": true },
-        { "name": "newAdmin", "isMut": false, "isSigner": false },
-        { "name": "datState", "isMut": true, "isSigner": false }
-      ],
-      "args": []
     }
   ],
   "accounts": [
     {
       "name": "DATState",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          { "name": "admin", "type": "publicKey" },
-          { "name": "asdfMint", "type": "publicKey" },
-          { "name": "wsolMint", "type": "publicKey" },
-          { "name": "poolAddress", "type": "publicKey" },
-          { "name": "pumpSwapProgram", "type": "publicKey" },
-          { "name": "totalBurned", "type": "u64" },
-          { "name": "totalSolCollected", "type": "u64" },
-          { "name": "totalBuybacks", "type": "u32" },
-          { "name": "failedCycles", "type": "u32" },
-          { "name": "consecutiveFailures", "type": "u8" },
-          { "name": "isActive", "type": "bool" },
-          { "name": "emergencyPause", "type": "bool" },
-          { "name": "lastCycleTimestamp", "type": "i64" },
-          { "name": "initializedAt", "type": "i64" },
-          { "name": "lastAmExecution", "type": "i64" },
-          { "name": "lastPmExecution", "type": "i64" },
-          { "name": "lastCycleSol", "type": "u64" },
-          { "name": "lastCycleBurned", "type": "u64" },
-          { "name": "minFeesThreshold", "type": "u64" },
-          { "name": "maxFeesPerCycle", "type": "u64" },
-          { "name": "slippageBps", "type": "u16" },
-          { "name": "minCycleInterval", "type": "i64" },
-          { "name": "datAuthorityBump", "type": "u8" },
-          { "name": "currentFeeRecipientIndex", "type": "u8" },
-          { "name": "lastKnownPrice", "type": "u64" },
-          { "name": "reserved", "type": { "array": ["u8", 64] } }
-        ]
-      }
+      "discriminator": [
+        196,
+        195,
+        136,
+        62,
+        68,
+        91,
+        102,
+        182
+      ]
     }
   ],
   "events": [
     {
-      "name": "DATInitialized",
-      "fields": [
-        { "name": "admin", "type": "publicKey", "index": false },
-        { "name": "datAuthority", "type": "publicKey", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "name": "AdminTransferred",
+      "discriminator": [
+        255,
+        147,
+        182,
+        5,
+        199,
+        217,
+        38,
+        179
       ]
     },
     {
       "name": "CycleCompleted",
-      "fields": [
-        { "name": "executor", "type": "publicKey", "index": false },
-        { "name": "solCollected", "type": "u64", "index": false },
-        { "name": "tokensBurned", "type": "u64", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "discriminator": [
+        189,
+        109,
+        239,
+        146,
+        232,
+        224,
+        55,
+        99
       ]
     },
     {
       "name": "CycleFailed",
-      "fields": [
-        { "name": "executor", "type": "publicKey", "index": false },
-        { "name": "errorCode", "type": "u32", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "discriminator": [
+        23,
+        179,
+        8,
+        23,
+        109,
+        110,
+        91,
+        41
       ]
     },
     {
-      "name": "StatusChanged",
-      "fields": [
-        { "name": "admin", "type": "publicKey", "index": false },
-        { "name": "isActive", "type": "bool", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "name": "DATInitialized",
+      "discriminator": [
+        139,
+        90,
+        100,
+        153,
+        60,
+        38,
+        24,
+        107
       ]
     },
     {
       "name": "EmergencyAction",
-      "fields": [
-        { "name": "admin", "type": "publicKey", "index": false },
-        { "name": "action", "type": "string", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "discriminator": [
+        39,
+        136,
+        106,
+        150,
+        85,
+        114,
+        170,
+        156
       ]
     },
     {
-      "name": "AdminTransferred",
-      "fields": [
-        { "name": "oldAdmin", "type": "publicKey", "index": false },
-        { "name": "newAdmin", "type": "publicKey", "index": false },
-        { "name": "timestamp", "type": "i64", "index": false }
+      "name": "StatusChanged",
+      "discriminator": [
+        146,
+        235,
+        222,
+        125,
+        145,
+        246,
+        34,
+        240
+      ]
+    },
+    {
+      "name": "TokenCreated",
+      "discriminator": [
+        236,
+        19,
+        41,
+        255,
+        130,
+        78,
+        147,
+        172
       ]
     }
   ],
   "errors": [
-    { "code": 6000, "name": "Unauthorized", "msg": "Unauthorized access" },
-    { "code": 6001, "name": "AlreadyInitialized", "msg": "State already initialized" },
-    { "code": 6002, "name": "NotInitialized", "msg": "State not initialized" },
-    { "code": 6003, "name": "InvalidMint", "msg": "Invalid mint address" },
-    { "code": 6004, "name": "InvalidPool", "msg": "Invalid pool address" },
-    { "code": 6005, "name": "EmergencyPauseActive", "msg": "Emergency pause is active" },
-    { "code": 6006, "name": "CooldownPeriod", "msg": "Cooldown period not elapsed" },
-    { "code": 6007, "name": "InsufficientFees", "msg": "Insufficient fees to claim" },
-    { "code": 6008, "name": "ExcessiveFees", "msg": "Fees exceed maximum per cycle" },
-    { "code": 6009, "name": "SlippageExceeded", "msg": "Slippage tolerance exceeded" },
-    { "code": 6010, "name": "InsufficientBalance", "msg": "Insufficient balance" },
-    { "code": 6011, "name": "InvalidParameters", "msg": "Invalid parameters" },
-    { "code": 6012, "name": "MathOverflow", "msg": "Math operation overflow" },
-    { "code": 6013, "name": "PriceImpactTooHigh", "msg": "Price impact too high" },
-    { "code": 6014, "name": "TooManyConsecutiveFailures", "msg": "Too many consecutive failures" },
-    { "code": 6015, "name": "InvalidTimestamp", "msg": "Invalid timestamp" }
+    {
+      "code": 6000,
+      "name": "DATNotActive",
+      "msg": "DAT not active"
+    },
+    {
+      "code": 6001,
+      "name": "InsufficientFees",
+      "msg": "Insufficient fees"
+    },
+    {
+      "code": 6002,
+      "name": "UnauthorizedAccess",
+      "msg": "Unauthorized"
+    },
+    {
+      "code": 6003,
+      "name": "CycleTooSoon",
+      "msg": "Cycle too soon"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidParameter",
+      "msg": "Invalid parameter"
+    },
+    {
+      "code": 6005,
+      "name": "MathOverflow",
+      "msg": "Math overflow"
+    },
+    {
+      "code": 6006,
+      "name": "AlreadyExecutedThisPeriod",
+      "msg": "Already executed"
+    },
+    {
+      "code": 6007,
+      "name": "SlippageExceeded",
+      "msg": "Slippage exceeded"
+    },
+    {
+      "code": 6008,
+      "name": "NotCoinCreator",
+      "msg": "Not coin creator"
+    },
+    {
+      "code": 6009,
+      "name": "PriceImpactTooHigh",
+      "msg": "Price impact too high"
+    },
+    {
+      "code": 6010,
+      "name": "RateTooLow",
+      "msg": "Rate too low"
+    },
+    {
+      "code": 6011,
+      "name": "VaultNotInitialized",
+      "msg": "Vault not initialized"
+    },
+    {
+      "code": 6012,
+      "name": "NoPendingBurn",
+      "msg": "No pending burn"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidPool",
+      "msg": "Invalid pool data"
+    }
   ],
-  "metadata": {
-    "address": "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
-  }
+  "types": [
+    {
+      "name": "AdminTransferred",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "old_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "new_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CycleCompleted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "cycle_number",
+            "type": "u32"
+          },
+          {
+            "name": "tokens_burned",
+            "type": "u64"
+          },
+          {
+            "name": "sol_used",
+            "type": "u64"
+          },
+          {
+            "name": "total_burned",
+            "type": "u64"
+          },
+          {
+            "name": "total_sol_collected",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CycleFailed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "failed_count",
+            "type": "u32"
+          },
+          {
+            "name": "consecutive_failures",
+            "type": "u8"
+          },
+          {
+            "name": "error_code",
+            "type": "u32"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DATInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "dat_authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DATState",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "asdf_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wsol_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "pool_address",
+            "type": "pubkey"
+          },
+          {
+            "name": "pump_swap_program",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_burned",
+            "type": "u64"
+          },
+          {
+            "name": "total_sol_collected",
+            "type": "u64"
+          },
+          {
+            "name": "total_buybacks",
+            "type": "u32"
+          },
+          {
+            "name": "failed_cycles",
+            "type": "u32"
+          },
+          {
+            "name": "consecutive_failures",
+            "type": "u8"
+          },
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "emergency_pause",
+            "type": "bool"
+          },
+          {
+            "name": "last_cycle_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "initialized_at",
+            "type": "i64"
+          },
+          {
+            "name": "last_am_execution",
+            "type": "i64"
+          },
+          {
+            "name": "last_pm_execution",
+            "type": "i64"
+          },
+          {
+            "name": "last_cycle_sol",
+            "type": "u64"
+          },
+          {
+            "name": "last_cycle_burned",
+            "type": "u64"
+          },
+          {
+            "name": "min_fees_threshold",
+            "type": "u64"
+          },
+          {
+            "name": "max_fees_per_cycle",
+            "type": "u64"
+          },
+          {
+            "name": "slippage_bps",
+            "type": "u16"
+          },
+          {
+            "name": "min_cycle_interval",
+            "type": "i64"
+          },
+          {
+            "name": "dat_authority_bump",
+            "type": "u8"
+          },
+          {
+            "name": "current_fee_recipient_index",
+            "type": "u8"
+          },
+          {
+            "name": "last_known_price",
+            "type": "u64"
+          },
+          {
+            "name": "pending_burn_amount",
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "EmergencyAction",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "action",
+            "type": "string"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "StatusChanged",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "is_active",
+            "type": "bool"
+          },
+          {
+            "name": "emergency_pause",
+            "type": "bool"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonding_curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "symbol",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    }
+  ]
 }

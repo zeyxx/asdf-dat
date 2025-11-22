@@ -26,14 +26,12 @@ function log(emoji: string, message: string, color = colors.reset) {
   console.log(`${color}${emoji} ${message}${colors.reset}`);
 }
 
-function loadIdl(): Idl {
+function loadIdl(): any {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
-  const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
-  if (idl.metadata) {
-    (idl.metadata as any).address = PROGRAM_ID.toString();
-  } else {
-    (idl as any).metadata = { address: PROGRAM_ID.toString() };
-  }
+  const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+  // Force metadata to have correct program ID
+  idl.metadata = { address: PROGRAM_ID.toString() };
+  idl.address = PROGRAM_ID.toString();
   return idl;
 }
 
@@ -55,13 +53,21 @@ async function main() {
   log("💰", `Balance: ${(balance / 1e9).toFixed(4)} SOL`, colors.cyan);
 
   // Setup provider and program
+  log("🔄", "Setting up provider...", colors.yellow);
   const provider = new AnchorProvider(connection, new Wallet(admin), {
     commitment: "confirmed",
   });
+
+  log("📂", "Loading IDL...", colors.yellow);
   const idl = loadIdl();
-  const program: Program<Idl> = new Program(idl, provider);
+
+  log("🏗️", "Creating program instance...", colors.yellow);
+  const program = new Program(idl, provider);
+
+  log("✅", "Program instance created successfully", colors.green);
 
   // Derive DAT PDAs
+  log("🔍", "Deriving DAT PDAs...", colors.yellow);
   const [datState] = PublicKey.findProgramAddressSync(
     [Buffer.from("dat_v3")],
     PROGRAM_ID
@@ -74,6 +80,24 @@ async function main() {
 
   log("📦", `DAT State: ${datState.toString()}`, colors.cyan);
   log("🔑", `DAT Authority (Creator): ${datAuthority.toString()}`, colors.cyan);
+
+  log("🔍", "Checking DAT state...", colors.yellow);
+  try {
+    const state = await program.account.datState.fetch(datState);
+    log("✅", `DAT State admin: ${state.admin.toString()}`, colors.green);
+    log("✅", `Current wallet: ${admin.publicKey.toString()}`, colors.green);
+
+    if (state.admin.toString() !== admin.publicKey.toString()) {
+      log("❌", "ERROR: Current wallet is not the DAT admin!", colors.red);
+      log("⚠️", `Admin is: ${state.admin.toString()}`, colors.yellow);
+      log("⚠️", `You are: ${admin.publicKey.toString()}`, colors.yellow);
+      process.exit(1);
+    }
+  } catch (e: any) {
+    log("❌", `DAT State not found or error: ${e.message}`, colors.red);
+    log("⚠️", "Make sure DAT is initialized first!", colors.yellow);
+    throw e;
+  }
 
   // Generate mint keypair
   const mint = Keypair.generate();
