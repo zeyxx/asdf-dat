@@ -295,3 +295,18 @@ reports/
 .anchor_test_ledger/
 migrations/
 .program_logs/
+
+# Devnet configuration and token info files
+devnet-config.json
+devnet-token-*.json
+!devnet-config.example.json
+
+# Temporary scripts at root
+check-pump-accounts*.ts
+decode-mystery.ts
+get-correct-bytes.ts
+verify-bug.ts
+devnet-init-raw.ts
+
+# Git temporary files
+FETCH_HEAD
