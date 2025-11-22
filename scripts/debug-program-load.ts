@@ -74,25 +74,36 @@ try {
   console.log("   IDL type:", typeof idl);
   console.log("   IDL keys:", Object.keys(idl).join(", "));
 
+  // Anchor 0.26.0 approach: new Program(idl, programId, provider)
+  console.log("\n🔧 Tentative 1: new Program(idl, PROGRAM_ID, provider)");
   try {
-    const program = new Program(idl as Idl, provider);
+    const program = new Program(idl, PROGRAM_ID, provider);
     console.log("✅ Program créé!");
     console.log("   Program ID:", program.programId.toString());
     console.log("   Methods:", Object.keys(program.methods).slice(0, 5).join(", "));
+    console.log("\n🎉 SUCCÈS! Utilisez cette approche dans les scripts.");
   } catch (error: any) {
-    console.error("❌ Erreur création Program:", error.message);
-    console.error("   Stack:", error.stack?.split("\n").slice(0, 5).join("\n   "));
+    console.error("❌ Tentative 1 échouée:", error.message);
+    console.error("   Stack:", error.stack?.split("\n").slice(0, 3).join("\n   "));
 
-    // Try alternative approach
-    console.log("\n🔧 Tentative alternative avec address dans IDL...");
-    idl.address = PROGRAM_ID.toString();
-
+    // Try with Idl type cast
+    console.log("\n🔧 Tentative 2: new Program(idl as Idl, PROGRAM_ID, provider)");
     try {
-      const program2 = new Program(idl as Idl, provider);
-      console.log("✅ Program créé (alternative)!");
+      const program2 = new Program(idl as Idl, PROGRAM_ID, provider);
+      console.log("✅ Program créé (tentative 2)!");
       console.log("   Program ID:", program2.programId.toString());
     } catch (error2: any) {
-      console.error("❌ Alternative échouée aussi:", error2.message);
+      console.error("❌ Tentative 2 échouée:", error2.message);
+
+      // Try without programId
+      console.log("\n🔧 Tentative 3: new Program(idl, provider) - dépend de metadata");
+      try {
+        const program3 = new Program(idl as Idl, provider);
+        console.log("✅ Program créé (tentative 3)!");
+        console.log("   Program ID:", program3.programId.toString());
+      } catch (error3: any) {
+        console.error("❌ Tentative 3 échouée:", error3.message);
+      }
     }
   }
 } catch (error: any) {
