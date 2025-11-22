@@ -1,14 +1,11 @@
 {
-  "mint": "1kJvz2NnAa3bEQ1Ro8Y9amCyySRZwHSeJ4DwNcMjvhM",
+  "mint": "3r5WEM7embTdMiez9dqcNCkUN3vZYJYiyFrxkTXTQ5fH",
   "creator": "9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj",
-  "timestamp": "2025-10-24T17:36:11.596Z",
-  "metadata": {
-    "name": "ASDF Test Token",
-    "symbol": "ASDFT",
-    "description": "Test token for ASDF DAT protocol created via PumpFun SDK",
-    "twitter": "https://twitter.com/asdf",
-    "telegram": "https://t.me/asdf",
-    "website": "https://asdf.com"
-  },
-  "network": "devnet"
+  "name": "Test Token Direct",
+  "symbol": "TESTD",
+  "uri": "https://pump.fun/test",
+  "network": "devnet",
+  "timestamp": "2025-11-22T12:57:52.234Z",
+  "transaction": "XxNUN78hhQMgCLj3SvS5k89KJ4opz3DfqtgLxY6u4oH2rFtbG5kk2tA9JTct37UXTLwNuGGTMQcS43eX9V8fynP",
+  "bondingCurve": "9ZF2azTD9oYKKxcNaQTLvUsSX7ViVYxbH55XYZMYuHAL"
 }
