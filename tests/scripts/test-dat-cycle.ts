@@ -52,6 +52,12 @@ function loadIdl(): any {
     try {
       if (fs.existsSync(idlPath)) {
         const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
+        // Ensure metadata.address is set for Anchor 0.30.1
+        if (idl.metadata) {
+          idl.metadata.address = PROGRAM_ID.toString();
+        } else {
+          idl.metadata = { address: PROGRAM_ID.toString() };
+        }
         return idl;
       }
     } catch (error) {
@@ -129,7 +135,7 @@ async function main() {
   );
 
   const idl = loadIdl();
-  const program = new Program(idl, PROGRAM_ID, provider);
+  const program = new Program(idl, provider);
 
   log("✅", "Programme chargé", colors.green);
   log("🔧", `Available methods: ${Object.keys(program.methods).join(", ")}`, colors.cyan);
