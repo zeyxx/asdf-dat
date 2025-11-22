@@ -1,0 +1,16 @@
+{
+  "programId": "ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz",
+  "datState": "2TAfDdRjfZhemE2kGxTmcMWTQJkaDzgtQ7gVz8FNmFRz",
+  "datAuthority": "HzZ2AFNYVdCR1dvg8Mb9vuxZnpkmx3P2vMiq7f6gEi7J",
+  "datStateBump": 254,
+  "datAuthorityBump": 252,
+  "admin": "9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj",
+  "network": "devnet",
+  "deployedAt": "2025-11-15T13:12:53.134Z",
+  "instructions": {
+    "step1": "✅ Programme initialisé",
+    "step2": "Créer un token PumpFun sur devnet",
+    "step3": "Utiliser comme CREATOR: HzZ2AFNYVdCR1dvg8Mb9vuxZnpkmx3P2vMiq7f6gEi7J",
+    "step4": "Les fees iront au creator vault du programme!"
+  }
+}
