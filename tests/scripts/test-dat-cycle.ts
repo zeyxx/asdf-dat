@@ -52,11 +52,11 @@ function loadIdl(): Idl {
     try {
       if (fs.existsSync(idlPath)) {
         const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
-        // Ensure metadata.address is set for Anchor 0.30.1
+        // Set program address in IDL metadata (bypass strict typing)
         if (idl.metadata) {
-          idl.metadata.address = PROGRAM_ID.toString();
+          (idl.metadata as any).address = PROGRAM_ID.toString();
         } else {
-          idl.metadata = { address: PROGRAM_ID.toString() };
+          (idl as any).metadata = { address: PROGRAM_ID.toString() };
         }
         return idl;
       }
