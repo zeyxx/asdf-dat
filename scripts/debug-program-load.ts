@@ -92,18 +92,9 @@ try {
       const program2 = new Program(idl as Idl, PROGRAM_ID, provider);
       console.log("✅ Program créé (tentative 2)!");
       console.log("   Program ID:", program2.programId.toString());
+      console.log("\n🎉 SUCCÈS! Utilisez cette approche dans les scripts.");
     } catch (error2: any) {
       console.error("❌ Tentative 2 échouée:", error2.message);
-
-      // Try without programId
-      console.log("\n🔧 Tentative 3: new Program(idl, provider) - dépend de metadata");
-      try {
-        const program3 = new Program(idl as Idl, provider);
-        console.log("✅ Program créé (tentative 3)!");
-        console.log("   Program ID:", program3.programId.toString());
-      } catch (error3: any) {
-        console.error("❌ Tentative 3 échouée:", error3.message);
-      }
     }
   }
 } catch (error: any) {

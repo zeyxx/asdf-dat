@@ -343,7 +343,7 @@ async function main() {
   );
 
   const idl = loadIdl();
-  const program = new Program(idl as Idl, provider);
+  const program = new Program(idl, PROGRAM_ID, provider);
 
   log("✅", "Programme chargé\n", colors.green);
   log("🔑", `Program ID: ${program.programId.toString()}`, colors.cyan);
