@@ -40,7 +40,7 @@ const TOKEN_METADATA = {
 };
 
 // Network - IMPORTANT: Mayhem Mode is MAINNET ONLY!
-const NETWORK = "mainnet-beta"; // or "devnet" for testing regular mode
+const NETWORK: "mainnet-beta" | "devnet" = "mainnet-beta"; // or "devnet" for testing regular mode
 const RPC_URL = NETWORK === "mainnet-beta"
   ? "https://api.mainnet-beta.solana.com"
   : "https://api.devnet.solana.com";

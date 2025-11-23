@@ -83,7 +83,7 @@ async function main() {
 
   log("🔍", "Checking DAT state...", colors.yellow);
   try {
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
     log("✅", `DAT State admin: ${state.admin.toString()}`, colors.green);
     log("✅", `Current wallet: ${admin.publicKey.toString()}`, colors.green);
 
@@ -174,6 +174,7 @@ async function main() {
   console.log("=".repeat(60) + "\n");
 
   try {
+    // @ts-ignore - Type instantiation depth issue with Anchor types
     const tx = await program.methods
       .createPumpfunTokenMayhem(name, symbol, uri)
       .accounts({
