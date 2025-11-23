@@ -13,7 +13,9 @@
     "init-accounts": "ts-node scripts/init-all-accounts.ts",
     "setup-ata": "ts-node scripts/setup-ata.ts",
     "find-vault": "ts-node scripts/find-creator-vault.ts",
-    "bot": "ts-node src/bot.ts"
+    "bot": "ts-node src/bot.ts",
+    "dashboard": "ts-node src/index.ts dashboard",
+    "start": "ts-node src/index.ts all"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
