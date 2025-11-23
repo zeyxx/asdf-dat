@@ -442,10 +442,10 @@ pub mod asdf_dat {
         // ===== STEP 3: BURN TOKENS =====
         msg!("Step 3/3: Burning all purchased tokens");
 
-        token::burn(
+        token_interface::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                token::Burn {
+                token_interface::Burn {
                     mint: ctx.accounts.asdf_mint.to_account_info(),
                     from: ctx.accounts.dat_asdf_account.to_account_info(),
                     authority: ctx.accounts.dat_authority.to_account_info(),
