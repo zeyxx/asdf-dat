@@ -298,7 +298,9 @@ async function main() {
       TOKEN_2022_PROGRAM_ID
     );
     const tokenBalance = Number(tokenInfoAccount.amount);
-    log("💎", `Tokens achetés: ${tokenBalance.toLocaleString()}`, colors.green);
+    const DECIMALS = 6; // Mayhem tokens have 6 decimals
+    const tokensReal = tokenBalance / Math.pow(10, DECIMALS);
+    log("💎", `Tokens achetés: ${tokensReal.toLocaleString(undefined, {maximumFractionDigits: 6})} tokens (${tokenBalance.toLocaleString()} unités)`, colors.green);
   } catch (error: any) {
     log("❌", `Erreur execute_buy: ${error.message}`, colors.red);
     if (error.logs) {
@@ -313,6 +315,17 @@ async function main() {
   // ========================================================================
 
   try {
+    // Get balance before burn
+    const DECIMALS = 6;
+    const tokenInfoBeforeBurn = await getAccount(
+      connection,
+      datTokenAccount,
+      undefined,
+      TOKEN_2022_PROGRAM_ID
+    );
+    const tokenBalanceBefore = Number(tokenInfoBeforeBurn.amount);
+    const tokensRealBefore = tokenBalanceBefore / Math.pow(10, DECIMALS);
+
     const tx3 = await program.methods
       .burnAndUpdate()
       .accounts({
@@ -328,14 +341,17 @@ async function main() {
     log("🔗", `TX: https://explorer.solana.com/tx/${tx3}?cluster=devnet`, colors.cyan);
 
     // Verify token balance is 0
-    const tokenInfoAccount = await getAccount(
+    const tokenInfoAccountAfterBurn = await getAccount(
       connection,
       datTokenAccount,
       undefined,
       TOKEN_2022_PROGRAM_ID
     );
-    const tokenBalance = Number(tokenInfoAccount.amount);
-    log("💎", `Tokens restants: ${tokenBalance}`, tokenBalance === 0 ? colors.green : colors.yellow);
+    const tokenBalanceAfter = Number(tokenInfoAccountAfterBurn.amount);
+    const tokensRealAfter = tokenBalanceAfter / Math.pow(10, DECIMALS);
+    const tokensBurned = tokensRealBefore - tokensRealAfter;
+    log("🔥", `Tokens brûlés: ${tokensBurned.toLocaleString(undefined, {maximumFractionDigits: 6})} tokens`, colors.green);
+    log("💎", `Tokens restants: ${tokensRealAfter.toLocaleString(undefined, {maximumFractionDigits: 6})} tokens`, tokenBalanceAfter === 0 ? colors.green : colors.yellow);
   } catch (error: any) {
     log("❌", `Erreur burn_and_update: ${error.message}`, colors.red);
     if (error.logs) {

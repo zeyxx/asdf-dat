@@ -41,8 +41,17 @@ async function main() {
     console.log("ASDF Mint:", state.asdfMint.toString());
     console.log("Is Active:", state.isActive);
     console.log("Emergency Pause:", state.emergencyPause);
-    console.log("Total Burned:", state.totalBurned.toString());
-    console.log("Total SOL Collected:", state.totalSolCollected.toString());
+
+    // Token amounts (6 decimals for most tokens)
+    const TOKEN_DECIMALS = 6;
+    const totalBurnedReal = Number(state.totalBurned.toString()) / Math.pow(10, TOKEN_DECIMALS);
+    console.log("Total Burned:", totalBurnedReal.toLocaleString(undefined, {maximumFractionDigits: 6}), "tokens", `(${state.totalBurned.toString()} unités)`);
+
+    // SOL amounts (9 decimals for lamports)
+    const SOL_DECIMALS = 9;
+    const totalSolReal = Number(state.totalSolCollected.toString()) / Math.pow(10, SOL_DECIMALS);
+    console.log("Total SOL Collected:", totalSolReal.toLocaleString(undefined, {maximumFractionDigits: 9}), "SOL", `(${state.totalSolCollected.toString()} lamports)`);
+
     console.log("Total Buybacks:", state.totalBuybacks);
     console.log("DAT Authority Bump:", state.datAuthorityBump);
 
