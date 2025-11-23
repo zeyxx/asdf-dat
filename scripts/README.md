@@ -2,7 +2,7 @@
 
 This directory contains all operational scripts for the ASDF DAT project.
 
-**Total scripts**: 15 (reduced from 37)
+**Total scripts**: 18 (15 existing + 3 new SPL scripts)
 **Cleanup date**: 2025-11-23
 **Scripts removed**: 22 obsolete/duplicate scripts
 
@@ -12,7 +12,13 @@ This directory contains all operational scripts for the ASDF DAT project.
 
 ### 🚀 Core Production Scripts
 
-#### Token Creation
+#### Token Creation - SPL
+- **`create-token-spl.ts`** - Create SPL token (Regular Token Program)
+  - Creates standard SPL token via DAT program
+  - Uses PumpFun bonding curve
+  - Outputs: `devnet-token-spl.json`
+
+#### Token Creation - Token2022 (Mayhem Mode)
 - **`create-token-mayhem.ts`** - Create Mayhem Mode token (Devnet)
   - Creates Token2022 token via DAT program
   - 2B token supply (1B + 1B for AI agent)
@@ -25,22 +31,38 @@ This directory contains all operational scripts for the ASDF DAT project.
   - **USE THIS FOR MAINNET LAUNCH**
 
 #### Pool Initialization
-- **`init-mayhem-pool-accounts.ts`** - Initialize pool accounts
+- **`init-spl-pool-accounts.ts`** - Initialize SPL pool accounts
+  - Creates pool SPL token account
+  - Creates pool WSOL account
+  - Creates DAT authority accounts
+  - Required after SPL token creation
+
+- **`init-mayhem-pool-accounts.ts`** - Initialize Mayhem pool accounts
   - Creates pool Token2022 account
   - Creates pool WSOL account
-  - Required after token creation
+  - Required after Mayhem token creation
 
 ### ✅ Testing Scripts
 
+#### SPL Token Testing
+- **`test-spl-full-cycle.ts`** - Test SPL cycle (3 steps)
+  - Executes: collect_fees → execute_buy → burn_and_update
+  - Three separate transaction execution
+  - Works with SPL tokens
+  - Status: ✅ Scripts created, ready for testing
+
+#### Token2022 (Mayhem) Testing
 - **`test-mayhem-full-cycle.ts`** ⭐ - Test complete cycle (1 TX)
   - Executes: collect_fees → execute_buy → burn_and_update
   - Single transaction execution
   - **PRIMARY TEST SCRIPT**
+  - Works with Token2022
   - Status: ✅ 11+ successful cycles on devnet
 
 - **`test-mayhem-cycle.ts`** - Test cycle (3 steps)
   - Step-by-step cycle execution
   - Useful for debugging specific steps
+  - Works with Token2022
   - Status: ✅ Functional
 
 ### 📊 Monitoring & Debug
@@ -95,6 +117,36 @@ This directory contains all operational scripts for the ASDF DAT project.
 ---
 
 ## 🎯 Standard Workflows
+
+### Workflow 0: SPL Token Testing (New Workflow)
+
+Create and test an SPL token (standard Token Program):
+
+```bash
+# 1. Create SPL token
+npx ts-node scripts/create-token-spl.ts
+
+# 2. Initialize pool accounts
+npx ts-node scripts/init-spl-pool-accounts.ts
+
+# 3. Make trades to accumulate fees
+# Note: Use PumpFun devnet UI or wait for manual trades
+# The creator vault needs fees before running the cycle
+
+# 4. Check DAT state before cycle
+npx ts-node scripts/check-dat-state.ts
+
+# 5. Run full cycle test (3 steps)
+npx ts-node scripts/test-spl-full-cycle.ts
+
+# 6. Check results
+npx ts-node scripts/check-dat-state.ts
+```
+
+**Token created**: Saves to `devnet-token-spl.json`
+**Token program**: SPL (standard)
+
+---
 
 ### Workflow 1: Devnet Testing (Current Token)
 
