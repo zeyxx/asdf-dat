@@ -60,10 +60,10 @@ This document tracks what has been successfully tested for Mayhem Mode and what 
 
 **Evidence:**
 - Test run: 2025-11-23
-- Collect TX: `5U334aBtmpSioRVswf4qmtZ2JhHXZNGo12qQNgNHjLCNnq1TTJC5EfZTm7hhakacrvLgEXT5dy1zJnPCA8i6SL25`
-- Buy TX: `4FT13YffnoZWxcW5w4qrGpsVMYX5anMzfjB9Q3RVSs2iBTZKHQS262CuB2aouA4Qdq2fskJ94uAdJFqjQstv3H2C`
-- Burn TX: `9aV238J5V5ECm38ToSP3ijBqAa3enCX83LuQc6EZcBU4n9KkcdzaRRxUch4EuNvHugzrpXRNzGRCgY5NwLPh4zq`
-- Tokens bought: 2,942,382,847,065 (2.94T Token2022)
+- Collect TX: `3xZ7Pw3DBRsBeYCQ9z1vV9an3ZQqEzPo1Ayp1sUA3DS6ZQyW2UNs4LFQthJeEMZh6NRkh6VV8E5S5iZxTcemuu5D`
+- Buy TX: `3hRseTtHfs5LdobFtLXyiHuGC4hvUup56uowmoozRXAAoctMSyPpibLcnXvnh2VKG8bR7aCk7XfuUQ4i6Zrfpkmf`
+- Burn TX: `tXABuEcPxDWQgkpindAvdP1RFTRqJCWSqcSKds1Gaxcsa9LqJXwbNLCHg1E9Qu1ENbRisZ65FkMQJdDHxxcH8rd`
+- Tokens bought: 969,774 tokens (969,774,265,780 units, 6 decimals)
 - Tokens burned: 100% (balance = 0)
 
 ### PumpFun Integration
