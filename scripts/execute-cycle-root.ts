@@ -276,7 +276,7 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury: null, // Not used for root token
+         // Not used for root token
         tokenProgram: TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
       })

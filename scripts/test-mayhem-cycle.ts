@@ -199,7 +199,7 @@ async function main() {
         creatorVault,
         pumpEventAuthority,
         pumpSwapProgram: PUMP_PROGRAM,
-        rootTreasury: null, // Not used for non-root token
+         // Not used for non-root token
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -285,7 +285,7 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury: null, // Not used for non-root token
+         // Not used for non-root token
         tokenProgram: TOKEN_2022_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
