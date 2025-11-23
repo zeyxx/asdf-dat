@@ -726,6 +726,15 @@ export type AsdfDat = {
           "name": "feeProgram"
         },
         {
+          "name": "rootTreasury",
+          "docs": [
+            "Seeds: [b\"root_treasury\", root_mint]",
+            "This account receives the 44.8% portion from secondary tokens",
+            "and is collected by the root token during its cycles"
+          ],
+          "writable": true
+        },
+        {
           "name": "tokenProgram"
         },
         {
@@ -922,6 +931,82 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "setRootToken",
+      "discriminator": [
+        63,
+        87,
+        166,
+        213,
+        186,
+        169,
+        225,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rootTokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root_token_stats.mint",
+                "account": "tokenStats"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "rootMint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "transferAdmin",
       "discriminator": [
         42,
@@ -962,6 +1047,50 @@ export type AsdfDat = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "updateFeeSplit",
+      "discriminator": [
+        120,
+        149,
+        67,
+        33,
+        63,
+        94,
+        168,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "newFeeSplitBps",
+          "type": "u16"
+        }
+      ]
     },
     {
       "name": "updateParameters",
@@ -1123,6 +1252,58 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "feeSplitUpdated",
+      "discriminator": [
+        125,
+        91,
+        141,
+        252,
+        205,
+        113,
+        171,
+        92
+      ]
+    },
+    {
+      "name": "feesRedirectedToRoot",
+      "discriminator": [
+        202,
+        59,
+        96,
+        104,
+        217,
+        13,
+        63,
+        130
+      ]
+    },
+    {
+      "name": "rootTokenSet",
+      "discriminator": [
+        151,
+        90,
+        80,
+        93,
+        136,
+        75,
+        17,
+        40
+      ]
+    },
+    {
+      "name": "rootTreasuryCollected",
+      "discriminator": [
+        150,
+        22,
+        115,
+        246,
+        101,
+        146,
+        102,
+        160
+      ]
+    },
+    {
       "name": "statusChanged",
       "discriminator": [
         146,
@@ -1232,6 +1413,16 @@ export type AsdfDat = {
       "code": 6013,
       "name": "invalidPool",
       "msg": "Invalid pool data"
+    },
+    {
+      "code": 6014,
+      "name": "invalidRootToken",
+      "msg": "Invalid root token"
+    },
+    {
+      "code": 6015,
+      "name": "invalidFeeSplit",
+      "msg": "Invalid fee split basis points"
     }
   ],
   "types": [
@@ -1441,11 +1632,21 @@ export type AsdfDat = {
             "type": "u64"
           },
           {
+            "name": "rootTokenMint",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "feeSplitBps",
+            "type": "u16"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                64
+                30
               ]
             }
           }
@@ -1464,6 +1665,86 @@ export type AsdfDat = {
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeSplitUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "newFeeSplitBps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feesRedirectedToRoot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fromToken",
+            "type": "pubkey"
+          },
+          {
+            "name": "toRoot",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rootTokenSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rootMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeSplitBps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rootTreasuryCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rootMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           },
           {
             "name": "timestamp",
@@ -1542,6 +1823,18 @@ export type AsdfDat = {
             "type": "u64"
           },
           {
+            "name": "totalSolUsed",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolSentToRoot",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolReceivedFromOthers",
+            "type": "u64"
+          },
+          {
             "name": "totalBuybacks",
             "type": "u64"
           },
@@ -1556,6 +1849,10 @@ export type AsdfDat = {
           {
             "name": "lastCycleBurned",
             "type": "u64"
+          },
+          {
+            "name": "isRootToken",
+            "type": "bool"
           },
           {
             "name": "bump",
