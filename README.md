@@ -170,6 +170,49 @@ PROGRAM_ID=ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz
 
 These are automatically ignored via `.gitignore`.
 
+## ⚠️ **TESTING_MODE - Production Deployment**
+
+**CRITICAL: Before deploying to mainnet/production:**
+
+The program includes a `TESTING_MODE` constant in `programs/asdf-dat/src/lib.rs` (line 59):
+
+```rust
+pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE FALSE FOR MAINNET
+```
+
+### What TESTING_MODE Controls
+
+When `TESTING_MODE = true` (current default for devnet):
+- ✅ Disables minimum cycle interval enforcement
+- ✅ Disables AM/PM execution limits
+- ✅ Disables minimum fees threshold checks
+- 🎯 Allows rapid testing without waiting periods
+
+When `TESTING_MODE = false` (required for production):
+- ✅ Enforces 60-second minimum between cycles
+- ✅ Enforces AM/PM execution limits (prevents spam)
+- ✅ Enforces minimum fees threshold (10 SOL)
+- 🔒 Full production safety constraints active
+
+### Before Mainnet Deployment
+
+1. **Change TESTING_MODE to false**:
+   ```rust
+   pub const TESTING_MODE: bool = false;
+   ```
+
+2. **Rebuild the program**:
+   ```bash
+   anchor build
+   ```
+
+3. **Deploy to mainnet**:
+   ```bash
+   anchor deploy --provider.cluster mainnet
+   ```
+
+**⚠️ Deploying with TESTING_MODE=true on mainnet is a security risk!**
+
 ## 🧪 **Testing**
 
 ### Unit Tests
