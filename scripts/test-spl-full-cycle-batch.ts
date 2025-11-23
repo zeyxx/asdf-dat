@@ -92,6 +92,12 @@ async function main() {
   const tokenMint = new PublicKey(tokenInfo.mint);
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
 
+  // Derive TokenStats PDA
+  const [tokenStats] = PublicKey.findProgramAddressSync(
+    [Buffer.from("token_stats_v1"), tokenMint.toBuffer()],
+    PROGRAM_ID
+  );
+
   log("🪙", `Token Mint: ${tokenMint.toString()}`, colors.cyan);
   log("📈", `Bonding Curve: ${bondingCurve.toString()}`, colors.cyan);
   log("🔗", `Token Program: SPL`, colors.cyan);
@@ -190,6 +196,7 @@ async function main() {
       .executeFullCycle()
       .accounts({
         datState,
+        tokenStats,
         datAuthority,
         creatorVault,
         wsolMint: WSOL_MINT,

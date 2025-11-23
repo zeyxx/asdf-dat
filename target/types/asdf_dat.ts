@@ -46,6 +46,37 @@ export type AsdfDat = {
           }
         },
         {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asdfMint"
+              }
+            ]
+          }
+        },
+        {
           "name": "datAuthority",
           "pda": {
             "seeds": [
@@ -590,6 +621,37 @@ export type AsdfDat = {
           }
         },
         {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asdfMint"
+              }
+            ]
+          }
+        },
+        {
           "name": "datAuthority",
           "writable": true,
           "pda": {
@@ -726,6 +788,65 @@ export type AsdfDat = {
         },
         {
           "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeTokenStats",
+      "discriminator": [
+        234,
+        129,
+        212,
+        97,
+        174,
+        172,
+        212,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "payer",
           "writable": true,
           "signer": true
         },
@@ -920,6 +1041,19 @@ export type AsdfDat = {
         102,
         182
       ]
+    },
+    {
+      "name": "tokenStats",
+      "discriminator": [
+        7,
+        126,
+        25,
+        232,
+        73,
+        79,
+        202,
+        236
+      ]
     }
   ],
   "events": [
@@ -1012,6 +1146,19 @@ export type AsdfDat = {
         78,
         147,
         172
+      ]
+    },
+    {
+      "name": "tokenStatsInitialized",
+      "discriminator": [
+        200,
+        96,
+        96,
+        41,
+        186,
+        163,
+        165,
+        233
       ]
     }
   ],
@@ -1369,6 +1516,62 @@ export type AsdfDat = {
           {
             "name": "symbol",
             "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenStats",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "totalBurned",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolCollected",
+            "type": "u64"
+          },
+          {
+            "name": "totalBuybacks",
+            "type": "u64"
+          },
+          {
+            "name": "lastCycleTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastCycleSol",
+            "type": "u64"
+          },
+          {
+            "name": "lastCycleBurned",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenStatsInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
           },
           {
             "name": "timestamp",
