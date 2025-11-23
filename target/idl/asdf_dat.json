@@ -40,6 +40,37 @@
           }
         },
         {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asdf_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "dat_authority",
           "pda": {
             "seeds": [
@@ -584,6 +615,37 @@
           }
         },
         {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asdf_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "dat_authority",
           "writable": true,
           "pda": {
@@ -720,6 +782,65 @@
         },
         {
           "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_token_stats",
+      "discriminator": [
+        234,
+        129,
+        212,
+        97,
+        174,
+        172,
+        212,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "payer",
           "writable": true,
           "signer": true
         },
@@ -914,6 +1035,19 @@
         102,
         182
       ]
+    },
+    {
+      "name": "TokenStats",
+      "discriminator": [
+        7,
+        126,
+        25,
+        232,
+        73,
+        79,
+        202,
+        236
+      ]
     }
   ],
   "events": [
@@ -1006,6 +1140,19 @@
         78,
         147,
         172
+      ]
+    },
+    {
+      "name": "TokenStatsInitialized",
+      "discriminator": [
+        200,
+        96,
+        96,
+        41,
+        186,
+        163,
+        165,
+        233
       ]
     }
   ],
@@ -1363,6 +1510,62 @@
           {
             "name": "symbol",
             "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenStats",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_burned",
+            "type": "u64"
+          },
+          {
+            "name": "total_sol_collected",
+            "type": "u64"
+          },
+          {
+            "name": "total_buybacks",
+            "type": "u64"
+          },
+          {
+            "name": "last_cycle_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "last_cycle_sol",
+            "type": "u64"
+          },
+          {
+            "name": "last_cycle_burned",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TokenStatsInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
           },
           {
             "name": "timestamp",

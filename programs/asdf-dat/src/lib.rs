@@ -31,6 +31,7 @@ pub const MIN_CYCLE_INTERVAL: i64 = 60;
 
 pub const DAT_STATE_SEED: &[u8] = b"dat_v3";
 pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
+pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
 
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
     Pubkey::new_from_array([81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219, 29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216]),
@@ -96,7 +97,29 @@ pub mod asdf_dat {
             dat_authority: ctx.accounts.dat_authority.key(),
             timestamp: clock.unix_timestamp,
         });
-        
+
+        Ok(())
+    }
+
+    // Initialize per-token statistics tracking
+    pub fn initialize_token_stats(ctx: Context<InitializeTokenStats>) -> Result<()> {
+        let stats = &mut ctx.accounts.token_stats;
+        let clock = Clock::get()?;
+
+        stats.mint = ctx.accounts.mint.key();
+        stats.total_burned = 0;
+        stats.total_sol_collected = 0;
+        stats.total_buybacks = 0;
+        stats.last_cycle_timestamp = 0;
+        stats.last_cycle_sol = 0;
+        stats.last_cycle_burned = 0;
+        stats.bump = ctx.bumps.token_stats;
+
+        emit!(TokenStatsInitialized {
+            mint: stats.mint,
+            timestamp: clock.unix_timestamp,
+        });
+
         Ok(())
     }
 
@@ -285,23 +308,30 @@ pub mod asdf_dat {
             tokens_to_burn
         )?;
 
-        state.total_burned = state.total_burned.saturating_add(tokens_to_burn);
-        state.total_sol_collected = state.total_sol_collected.saturating_add(state.last_cycle_sol);
-        state.total_buybacks = state.total_buybacks.saturating_add(1);
+        // Update per-token statistics
+        let token_stats = &mut ctx.accounts.token_stats;
+        token_stats.total_burned = token_stats.total_burned.saturating_add(tokens_to_burn);
+        token_stats.total_sol_collected = token_stats.total_sol_collected.saturating_add(state.last_cycle_sol);
+        token_stats.total_buybacks = token_stats.total_buybacks.saturating_add(1);
+        token_stats.last_cycle_timestamp = clock.unix_timestamp;
+        token_stats.last_cycle_sol = state.last_cycle_sol;
+        token_stats.last_cycle_burned = tokens_to_burn;
+
+        // Update global state
         state.last_cycle_burned = tokens_to_burn;
         state.consecutive_failures = 0;
         state.pending_burn_amount = 0;
 
         let (whole, frac) = format_tokens(tokens_to_burn);
         msg!("Cycle #{} complete: {}.{:06} tokens burned ({} units)",
-            state.total_buybacks, whole, frac, tokens_to_burn);
+            token_stats.total_buybacks, whole, frac, tokens_to_burn);
 
         emit!(CycleCompleted {
-            cycle_number: state.total_buybacks,
+            cycle_number: token_stats.total_buybacks as u32,
             tokens_burned: tokens_to_burn,
             sol_used: state.last_cycle_sol,
-            total_burned: state.total_burned,
-            total_sol_collected: state.total_sol_collected,
+            total_burned: token_stats.total_burned,
+            total_sol_collected: token_stats.total_sol_collected,
             timestamp: clock.unix_timestamp,
         });
 
@@ -459,23 +489,30 @@ pub mod asdf_dat {
             tokens_bought
         )?;
 
-        state.total_burned = state.total_burned.saturating_add(tokens_bought);
-        state.total_sol_collected = state.total_sol_collected.saturating_add(final_amount);
-        state.total_buybacks = state.total_buybacks.saturating_add(1);
+        // Update per-token statistics
+        let token_stats = &mut ctx.accounts.token_stats;
+        token_stats.total_burned = token_stats.total_burned.saturating_add(tokens_bought);
+        token_stats.total_sol_collected = token_stats.total_sol_collected.saturating_add(final_amount);
+        token_stats.total_buybacks = token_stats.total_buybacks.saturating_add(1);
+        token_stats.last_cycle_timestamp = clock.unix_timestamp;
+        token_stats.last_cycle_sol = final_amount;
+        token_stats.last_cycle_burned = tokens_bought;
+
+        // Update global state
         state.last_cycle_burned = tokens_bought;
         state.consecutive_failures = 0;
         state.pending_burn_amount = 0;
 
         let (whole_burned, frac_burned) = format_tokens(tokens_bought);
         msg!("✅ Burned: {}.{:06} tokens ({} units)", whole_burned, frac_burned, tokens_bought);
-        msg!("💊 #{}", state.total_buybacks);
+        msg!("💊 #{}", token_stats.total_buybacks);
 
         emit!(CycleCompleted {
-            cycle_number: state.total_buybacks,
+            cycle_number: token_stats.total_buybacks as u32,
             tokens_burned: tokens_bought,
             sol_used: final_amount,
-            total_burned: state.total_burned,
-            total_sol_collected: state.total_sol_collected,
+            total_burned: token_stats.total_burned,
+            total_sol_collected: token_stats.total_sol_collected,
             timestamp: clock.unix_timestamp,
         });
 
@@ -881,6 +918,23 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeTokenStats<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + TokenStats::LEN,
+        seeds = [TOKEN_STATS_SEED, mint.key().as_ref()],
+        bump
+    )]
+    pub token_stats: Account<'info, TokenStats>,
+    /// CHECK: Token mint
+    pub mint: AccountInfo<'info>,
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
@@ -946,6 +1000,12 @@ pub struct ExecuteBuy<'info> {
 pub struct BurnAndUpdate<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, asdf_mint.key().as_ref()],
+        bump = token_stats.bump
+    )]
+    pub token_stats: Account<'info, TokenStats>,
     /// CHECK: PDA
     #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
@@ -961,6 +1021,12 @@ pub struct BurnAndUpdate<'info> {
 pub struct ExecuteFullCycle<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, asdf_mint.key().as_ref()],
+        bump = token_stats.bump
+    )]
+    pub token_stats: Account<'info, TokenStats>,
     /// CHECK: PDA (holds native SOL and signs CPIs)
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
@@ -1172,12 +1238,35 @@ impl DATState {
     pub const LEN: usize = 32 * 5 + 8 * 13 + 4 * 2 + 1 * 5 + 2 + 64;
 }
 
+// Per-token statistics tracking
+#[account]
+pub struct TokenStats {
+    pub mint: Pubkey,              // The token mint this stats account tracks
+    pub total_burned: u64,         // Total tokens burned for this specific token
+    pub total_sol_collected: u64,  // Total SOL collected for this specific token
+    pub total_buybacks: u64,       // Number of buyback cycles for this token
+    pub last_cycle_timestamp: i64, // Last cycle execution timestamp
+    pub last_cycle_sol: u64,       // SOL collected in last cycle
+    pub last_cycle_burned: u64,    // Tokens burned in last cycle
+    pub bump: u8,                  // PDA bump seed
+}
+
+impl TokenStats {
+    pub const LEN: usize = 32 + 8 * 6 + 1;
+}
+
 // EVENTS
 
 #[event]
 pub struct DATInitialized {
     pub admin: Pubkey,
     pub dat_authority: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct TokenStatsInitialized {
+    pub mint: Pubkey,
     pub timestamp: i64,
 }
 

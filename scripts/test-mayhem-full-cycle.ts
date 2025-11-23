@@ -82,6 +82,12 @@ async function main() {
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
   const tokenCreator = new PublicKey(tokenInfo.creator);
 
+  // Derive TokenStats PDA
+  const [tokenStats] = PublicKey.findProgramAddressSync(
+    [Buffer.from("token_stats_v1"), tokenMint.toBuffer()],
+    PROGRAM_ID
+  );
+
   log("🪙", `Token Mint: ${tokenMint.toString()}`, colors.cyan);
   log("📈", `Bonding Curve: ${bondingCurve.toString()}`, colors.cyan);
   log("🔥", `Token Program: Token2022 (Mayhem Mode)`, colors.yellow);
@@ -211,8 +217,11 @@ async function main() {
       .executeFullCycle()
       .accounts({
         datState,
+        tokenStats,
         datAuthority,
         creatorVault,
+        wsolMint: WSOL_MINT,
+        datWsolAccount,
         datAsdfAccount: datTokenAccount,
         pool: bondingCurve,
         asdfMint: tokenMint,
