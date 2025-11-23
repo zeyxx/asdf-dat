@@ -4,7 +4,7 @@ use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{
     token::{self, Token},
     token_2022::{self as token2022},
-    token_interface::{TokenInterface, TokenAccount, Mint},
+    token_interface::{self as token_interface, TokenInterface, TokenAccount, Mint},
     associated_token::AssociatedToken,
 };
 
@@ -195,9 +195,9 @@ pub mod asdf_dat {
 
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
 
-        // Allow up to 2x final_amount to account for AMM asymmetry
-        let max_sol_cost = final_amount.saturating_mul(2);
-        msg!("Max SOL cost (2x): {}", max_sol_cost);
+        // Allow up to 10x final_amount to account for AMM asymmetry and price volatility
+        let max_sol_cost = final_amount.saturating_mul(10);
+        msg!("Max SOL cost (10x): {}", max_sol_cost);
 
         let mut data = Vec::new();
         data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]); // discriminator
@@ -271,10 +271,10 @@ pub mod asdf_dat {
         let tokens_to_burn = state.pending_burn_amount;
         let seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
 
-        token::burn(
+        token_interface::burn(
             CpiContext::new_with_signer(
                 ctx.accounts.token_program.to_account_info(),
-                token::Burn {
+                token_interface::Burn {
                     mint: ctx.accounts.asdf_mint.to_account_info(),
                     from: ctx.accounts.dat_asdf_account.to_account_info(),
                     authority: ctx.accounts.dat_authority.to_account_info(),
@@ -374,7 +374,7 @@ pub mod asdf_dat {
 
         let safe_expected = expected / 10;
         let min_out = apply_slippage(safe_expected, state.slippage_bps);
-        let max_sol_cost = final_amount.saturating_mul(2);
+        let max_sol_cost = final_amount.saturating_mul(10);
 
         let mut buy_data = Vec::new();
         buy_data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
