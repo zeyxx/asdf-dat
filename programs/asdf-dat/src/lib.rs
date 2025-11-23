@@ -195,9 +195,9 @@ pub mod asdf_dat {
 
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
 
-        // Allow up to 10x final_amount to account for AMM asymmetry and price volatility
-        let max_sol_cost = final_amount.saturating_mul(10);
-        msg!("Max SOL cost (10x): {}", max_sol_cost);
+        // Allow up to 200x final_amount to account for AMM asymmetry and price volatility
+        let max_sol_cost = final_amount.saturating_mul(200);
+        msg!("Max SOL cost (200x): {}", max_sol_cost);
 
         let mut data = Vec::new();
         data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]); // discriminator
@@ -376,7 +376,7 @@ pub mod asdf_dat {
 
         let safe_expected = expected / 10;
         let min_out = apply_slippage(safe_expected, state.slippage_bps);
-        let max_sol_cost = final_amount.saturating_mul(10);
+        let max_sol_cost = final_amount.saturating_mul(200); // Increased from 10 to 200 for SPL tokens with high slippage
 
         let mut buy_data = Vec::new();
         buy_data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
@@ -384,13 +384,13 @@ pub mod asdf_dat {
         buy_data.extend_from_slice(&max_sol_cost.to_le_bytes());
         buy_data.push(0);
 
+        // Use EXACT same account order as execute_buy (which works with Token2022)
         let buy_accounts = vec![
             AccountMeta::new_readonly(ctx.accounts.pump_global_config.key(), false),
             AccountMeta::new(ctx.accounts.protocol_fee_recipient.key(), false),
             AccountMeta::new(ctx.accounts.asdf_mint.key(), false),
             AccountMeta::new(ctx.accounts.pool.key(), false),
             AccountMeta::new(ctx.accounts.pool_asdf_account.key(), false),
-            AccountMeta::new(ctx.accounts.pool_wsol_account.key(), false), // Added: pool WSOL account
             AccountMeta::new(ctx.accounts.dat_asdf_account.key(), false),
             AccountMeta::new(ctx.accounts.dat_authority.key(), true),
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
@@ -410,6 +410,7 @@ pub mod asdf_dat {
             data: buy_data,
         };
 
+        // Use EXACT same account order as execute_buy (which works with Token2022)
         invoke_signed(
             &buy_ix,
             &[
@@ -418,7 +419,6 @@ pub mod asdf_dat {
                 ctx.accounts.asdf_mint.to_account_info(),
                 ctx.accounts.pool.to_account_info(),
                 ctx.accounts.pool_asdf_account.to_account_info(),
-                ctx.accounts.pool_wsol_account.to_account_info(), // Added: pool WSOL account
                 ctx.accounts.dat_asdf_account.to_account_info(),
                 ctx.accounts.dat_authority.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
