@@ -26,6 +26,7 @@
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.2.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/node": "^20.11.5",

@@ -35,7 +35,7 @@ async function main() {
   console.log("DAT Authority PDA:", datAuthority.toString());
 
   try {
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
     console.log("\n=== DAT State Data ===\n");
     console.log("Admin:", state.admin.toString());
     console.log("ASDF Mint:", state.asdfMint.toString());

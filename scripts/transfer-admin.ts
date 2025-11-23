@@ -84,7 +84,7 @@ async function main() {
 
   // Fetch current state
   log("🔍", "Vérification de l'état actuel...", colors.yellow);
-  const state = await program.account.datState.fetch(datState);
+  const state = await (program.account as any).datState.fetch(datState);
   log("✅", `Admin actuel: ${state.admin.toString()}`, colors.green);
 
   if (state.admin.toString() !== oldAdmin.publicKey.toString()) {
