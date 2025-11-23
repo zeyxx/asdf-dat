@@ -122,7 +122,7 @@ async function main() {
 
   try {
     const tx = await program.methods
-      .setRootToken()
+      .setRootToken(rootMint)
       .accounts({
         datState,
         rootTokenStats,

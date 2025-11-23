@@ -219,7 +219,7 @@ async function main() {
         creatorVault,
         pumpEventAuthority,
         pumpSwapProgram: PUMP_PROGRAM,
-        rootTreasury: null, // Not used for secondary token
+        rootTreasury, // Pass it but won't be used (is_root_token=false)
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -293,7 +293,7 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury, // Include root treasury for fee split
+        rootTreasury, // Root treasury for fee split
         tokenProgram: TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
       })
