@@ -15,7 +15,8 @@
     "find-vault": "ts-node scripts/find-creator-vault.ts",
     "bot": "ts-node src/bot.ts",
     "dashboard": "ts-node src/index.ts dashboard",
-    "start": "ts-node src/index.ts all"
+    "start": "ts-node src/index.ts all",
+    "validate-mayhem": "ts-node scripts/validate-mayhem-readiness.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
