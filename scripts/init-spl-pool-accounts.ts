@@ -115,7 +115,7 @@ async function main() {
   }
 
   // 3. DAT Authority Token Account (for receiving bought tokens)
-  const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+  const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
   const [datAuthority] = PublicKey.findProgramAddressSync(
     [Buffer.from("auth_v3")],
     PROGRAM_ID

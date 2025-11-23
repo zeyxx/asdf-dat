@@ -23,7 +23,7 @@ import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
@@ -104,22 +104,8 @@ async function main() {
 
   log("✅", "Program loaded", colors.green);
 
-  // Check DAT WSOL balance
-  const datWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, datAuthority, true);
-
-  try {
-    const wsolInfo = await getAccount(connection, datWsolAccount);
-    const wsolBalance = Number(wsolInfo.amount) / 1e9;
-    log("💰", `DAT WSOL Balance (before): ${wsolBalance.toFixed(6)} SOL`, colors.yellow);
-  } catch {
-    log("❌", "DAT WSOL account doesn't exist!", colors.red);
-    log("💡", "Run: npx ts-node scripts/init-spl-pool-accounts.ts", colors.yellow);
-    process.exit(1);
-  }
-
   const datTokenAccount = await getAssociatedTokenAddress(tokenMint, datAuthority, true);
   const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, bondingCurve, true);
-  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true);
 
   // Derive creator vault
   const tokenCreator = new PublicKey(tokenInfo.creator);
@@ -145,6 +131,12 @@ async function main() {
     log("💡", "Make at least one trade to create the vault", colors.yellow);
   }
 
+  // Derive token stats
+  const [tokenStats] = PublicKey.findProgramAddressSync(
+    [Buffer.from("token_stats_v1"), tokenMint.toBuffer()],
+    PROGRAM_ID
+  );
+
   // Check DAT state
   const stateAccount: any = await (program.account as any).datState.fetch(datState);
   log("📊", `Total Burned (before): ${(Number(stateAccount.totalBurned) / 1e6).toLocaleString()} tokens`, colors.cyan);
@@ -162,16 +154,16 @@ async function main() {
 
   try {
     const tx1 = await program.methods
-      .collectFees()
+      .collectFees(false) // is_root_token = false (default behavior)
       .accounts({
         datState,
+        tokenStats,
+        tokenMint,
         datAuthority,
         creatorVault,
-        wsolMint: WSOL_MINT,
-        datWsolAccount,
         pumpEventAuthority,
         pumpSwapProgram: PUMP_PROGRAM,
-        tokenProgram: TOKEN_PROGRAM_ID,
+        rootTreasury: null, // Not used for non-root token
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -180,14 +172,16 @@ async function main() {
     log("🔗", `TX: https://explorer.solana.com/tx/${tx1}?cluster=devnet`, colors.cyan);
 
     // Check updated balances
-    const wsolInfo = await getAccount(connection, datWsolAccount);
-    const wsolBalance = Number(wsolInfo.amount) / 1e9;
-    log("💰", `DAT WSOL Balance (after collect): ${wsolBalance.toFixed(6)} SOL`, colors.green);
-
     const creatorVaultInfoAfter = await connection.getAccountInfo(creatorVault);
     if (creatorVaultInfoAfter) {
       const balance = creatorVaultInfoAfter.lamports / 1e9;
       log("💎", `Creator Vault Balance (after collect): ${balance.toFixed(6)} SOL`, colors.green);
+    }
+
+    const datAuthorityAfter = await connection.getAccountInfo(datAuthority);
+    if (datAuthorityAfter) {
+      const balance = datAuthorityAfter.lamports / 1e9;
+      log("💰", `DAT Authority SOL (after collect): ${balance.toFixed(6)} SOL`, colors.green);
     }
   } catch (error: any) {
     log("❌", `Error collect_fees: ${error.message}`, colors.red);
@@ -227,17 +221,14 @@ async function main() {
 
   try {
     const tx2 = await program.methods
-      .executeBuy()
+      .executeBuy(false) // is_secondary_token = false (default behavior)
       .accounts({
         datState,
         datAuthority,
-        datWsolAccount,
         datAsdfAccount: datTokenAccount,
         pool: bondingCurve,
         asdfMint: tokenMint,
-        wsolMint: WSOL_MINT,
         poolAsdfAccount: poolTokenAccount,
-        poolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
@@ -248,6 +239,7 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
+        rootTreasury: null, // Not used for non-root token
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -278,6 +270,7 @@ async function main() {
       .burnAndUpdate()
       .accounts({
         datState,
+        tokenStats,
         datAuthority,
         datAsdfAccount: datTokenAccount,
         asdfMint: tokenMint,

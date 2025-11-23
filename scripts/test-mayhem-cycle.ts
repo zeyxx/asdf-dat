@@ -14,7 +14,7 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
@@ -157,6 +157,12 @@ async function main() {
 
   log("🏦", `Creator Vault: ${creatorVault.toString()}`, colors.cyan);
 
+  // Derive token stats
+  const [tokenStats] = PublicKey.findProgramAddressSync(
+    [Buffer.from("token_stats_v1"), tokenMint.toBuffer()],
+    PROGRAM_ID
+  );
+
   // Check creator vault balance
   const creatorVaultInfo = await connection.getAccountInfo(creatorVault);
   if (creatorVaultInfo) {
@@ -184,16 +190,16 @@ async function main() {
 
   try {
     const tx1 = await program.methods
-      .collectFees()
+      .collectFees(false) // is_root_token = false (default behavior)
       .accounts({
         datState,
+        tokenStats,
+        tokenMint,
         datAuthority,
         creatorVault,
-        wsolMint: WSOL_MINT,
-        datWsolAccount,
         pumpEventAuthority,
         pumpSwapProgram: PUMP_PROGRAM,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
+        rootTreasury: null, // Not used for non-root token
         systemProgram: SystemProgram.programId,
       })
       .rpc();
@@ -261,17 +267,14 @@ async function main() {
 
   try {
     const tx2 = await program.methods
-      .executeBuy()
+      .executeBuy(false) // is_secondary_token = false (default behavior)
       .accounts({
         datState,
         datAuthority,
-        datWsolAccount,
         datAsdfAccount: datTokenAccount,
         pool: bondingCurve,
         asdfMint: tokenMint,
-        wsolMint: WSOL_MINT,
         poolAsdfAccount: poolTokenAccount,
-        poolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
@@ -282,6 +285,7 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
+        rootTreasury: null, // Not used for non-root token
         tokenProgram: TOKEN_2022_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
       })
@@ -330,6 +334,7 @@ async function main() {
       .burnAndUpdate()
       .accounts({
         datState,
+        tokenStats,
         datAuthority,
         datAsdfAccount: datTokenAccount,
         asdfMint: tokenMint,
