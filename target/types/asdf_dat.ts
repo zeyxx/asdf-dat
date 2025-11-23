@@ -620,6 +620,7 @@ export type AsdfDat = {
         },
         {
           "name": "rootTreasury",
+          "writable": true,
           "optional": true
         },
         {

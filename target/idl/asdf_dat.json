@@ -614,6 +614,7 @@
         },
         {
           "name": "root_treasury",
+          "writable": true,
           "optional": true
         },
         {
