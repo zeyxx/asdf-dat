@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/asdf_dat.json`.
  */
 export type AsdfDat = {
-  "address": "ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz",
+  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
   "metadata": {
     "name": "asdfDat",
     "version": "0.1.0",
@@ -142,6 +142,40 @@ export type AsdfDat = {
           }
         },
         {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
           "name": "datAuthority",
           "writable": true,
           "pda": {
@@ -172,11 +206,20 @@ export type AsdfDat = {
           "name": "pumpSwapProgram"
         },
         {
+          "name": "rootTreasury",
+          "optional": true
+        },
+        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "isRootToken",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "createPumpfunToken",
@@ -576,163 +619,8 @@ export type AsdfDat = {
           "name": "feeProgram"
         },
         {
-          "name": "tokenProgram"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "executeFullCycle",
-      "docs": [
-        "Execute full DAT cycle in one transaction: COLLECT → BUY → BURN"
-      ],
-      "discriminator": [
-        74,
-        198,
-        91,
-        104,
-        130,
-        92,
-        97,
-        244
-      ],
-      "accounts": [
-        {
-          "name": "datState",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  97,
-                  116,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "tokenStats",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  115,
-                  95,
-                  118,
-                  49
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "asdfMint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "datAuthority",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "creatorVault",
-          "writable": true
-        },
-        {
-          "name": "datAsdfAccount",
-          "writable": true
-        },
-        {
-          "name": "pool",
-          "writable": true
-        },
-        {
-          "name": "asdfMint",
-          "writable": true
-        },
-        {
-          "name": "poolAsdfAccount",
-          "writable": true
-        },
-        {
-          "name": "poolWsolAccount",
-          "writable": true
-        },
-        {
-          "name": "pumpGlobalConfig"
-        },
-        {
-          "name": "protocolFeeRecipient",
-          "writable": true
-        },
-        {
-          "name": "protocolFeeRecipientAta",
-          "writable": true
-        },
-        {
-          "name": "pumpEventAuthority"
-        },
-        {
-          "name": "pumpSwapProgram"
-        },
-        {
-          "name": "globalVolumeAccumulator"
-        },
-        {
-          "name": "userVolumeAccumulator",
-          "writable": true
-        },
-        {
-          "name": "feeConfig"
-        },
-        {
-          "name": "feeProgram"
-        },
-        {
           "name": "rootTreasury",
-          "docs": [
-            "Seeds: [b\"root_treasury\", root_mint]",
-            "This account receives the 44.8% portion from secondary tokens",
-            "and is collected by the root token during its cycles"
-          ],
-          "writable": true
+          "optional": true
         },
         {
           "name": "tokenProgram"
@@ -742,7 +630,12 @@ export type AsdfDat = {
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "isSecondaryToken",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "initialize",

@@ -11,7 +11,7 @@ import { Keypair } from "@solana/web3.js";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const TOKEN_DECIMALS = 6; // 6 decimals for tokens
 const SOL_DECIMALS = 9; // 9 decimals for lamports
 

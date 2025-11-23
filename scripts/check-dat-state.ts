@@ -4,7 +4,7 @@ import { Keypair } from "@solana/web3.js";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 function loadIdl(): Idl {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");

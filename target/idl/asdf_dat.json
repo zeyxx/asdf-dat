@@ -1,5 +1,5 @@
 {
-  "address": "ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz",
+  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
   "metadata": {
     "name": "asdf_dat",
     "version": "0.1.0",
@@ -136,6 +136,40 @@
           }
         },
         {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
           "name": "dat_authority",
           "writable": true,
           "pda": {
@@ -166,11 +200,20 @@
           "name": "pump_swap_program"
         },
         {
+          "name": "root_treasury",
+          "optional": true
+        },
+        {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "is_root_token",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "create_pumpfun_token",
@@ -570,163 +613,8 @@
           "name": "fee_program"
         },
         {
-          "name": "token_program"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "execute_full_cycle",
-      "docs": [
-        "Execute full DAT cycle in one transaction: COLLECT → BUY → BURN"
-      ],
-      "discriminator": [
-        74,
-        198,
-        91,
-        104,
-        130,
-        92,
-        97,
-        244
-      ],
-      "accounts": [
-        {
-          "name": "dat_state",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  97,
-                  116,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "token_stats",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  115,
-                  95,
-                  118,
-                  49
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "asdf_mint"
-              }
-            ]
-          }
-        },
-        {
-          "name": "dat_authority",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "creator_vault",
-          "writable": true
-        },
-        {
-          "name": "dat_asdf_account",
-          "writable": true
-        },
-        {
-          "name": "pool",
-          "writable": true
-        },
-        {
-          "name": "asdf_mint",
-          "writable": true
-        },
-        {
-          "name": "pool_asdf_account",
-          "writable": true
-        },
-        {
-          "name": "pool_wsol_account",
-          "writable": true
-        },
-        {
-          "name": "pump_global_config"
-        },
-        {
-          "name": "protocol_fee_recipient",
-          "writable": true
-        },
-        {
-          "name": "protocol_fee_recipient_ata",
-          "writable": true
-        },
-        {
-          "name": "pump_event_authority"
-        },
-        {
-          "name": "pump_swap_program"
-        },
-        {
-          "name": "global_volume_accumulator"
-        },
-        {
-          "name": "user_volume_accumulator",
-          "writable": true
-        },
-        {
-          "name": "fee_config"
-        },
-        {
-          "name": "fee_program"
-        },
-        {
           "name": "root_treasury",
-          "docs": [
-            "Seeds: [b\"root_treasury\", root_mint]",
-            "This account receives the 44.8% portion from secondary tokens",
-            "and is collected by the root token during its cycles"
-          ],
-          "writable": true
+          "optional": true
         },
         {
           "name": "token_program"
@@ -736,7 +624,12 @@
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "is_secondary_token",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "initialize",
