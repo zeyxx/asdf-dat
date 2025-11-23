@@ -720,6 +720,15 @@
           "name": "fee_program"
         },
         {
+          "name": "root_treasury",
+          "docs": [
+            "Seeds: [b\"root_treasury\", root_mint]",
+            "This account receives the 44.8% portion from secondary tokens",
+            "and is collected by the root token during its cycles"
+          ],
+          "writable": true
+        },
+        {
           "name": "token_program"
         },
         {
@@ -916,6 +925,82 @@
       "args": []
     },
     {
+      "name": "set_root_token",
+      "discriminator": [
+        63,
+        87,
+        166,
+        213,
+        186,
+        169,
+        225,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "root_token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root_token_stats.mint",
+                "account": "TokenStats"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "root_mint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "transfer_admin",
       "discriminator": [
         42,
@@ -956,6 +1041,50 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "update_fee_split",
+      "discriminator": [
+        120,
+        149,
+        67,
+        33,
+        63,
+        94,
+        168,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "new_fee_split_bps",
+          "type": "u16"
+        }
+      ]
     },
     {
       "name": "update_parameters",
@@ -1117,6 +1246,58 @@
       ]
     },
     {
+      "name": "FeeSplitUpdated",
+      "discriminator": [
+        125,
+        91,
+        141,
+        252,
+        205,
+        113,
+        171,
+        92
+      ]
+    },
+    {
+      "name": "FeesRedirectedToRoot",
+      "discriminator": [
+        202,
+        59,
+        96,
+        104,
+        217,
+        13,
+        63,
+        130
+      ]
+    },
+    {
+      "name": "RootTokenSet",
+      "discriminator": [
+        151,
+        90,
+        80,
+        93,
+        136,
+        75,
+        17,
+        40
+      ]
+    },
+    {
+      "name": "RootTreasuryCollected",
+      "discriminator": [
+        150,
+        22,
+        115,
+        246,
+        101,
+        146,
+        102,
+        160
+      ]
+    },
+    {
       "name": "StatusChanged",
       "discriminator": [
         146,
@@ -1226,6 +1407,16 @@
       "code": 6013,
       "name": "InvalidPool",
       "msg": "Invalid pool data"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidRootToken",
+      "msg": "Invalid root token"
+    },
+    {
+      "code": 6015,
+      "name": "InvalidFeeSplit",
+      "msg": "Invalid fee split basis points"
     }
   ],
   "types": [
@@ -1435,11 +1626,21 @@
             "type": "u64"
           },
           {
+            "name": "root_token_mint",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "fee_split_bps",
+            "type": "u16"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                64
+                30
               ]
             }
           }
@@ -1458,6 +1659,86 @@
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeeSplitUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_fee_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FeesRedirectedToRoot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "from_token",
+            "type": "pubkey"
+          },
+          {
+            "name": "to_root",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RootTokenSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "root_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_split_bps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RootTreasuryCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "root_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           },
           {
             "name": "timestamp",
@@ -1536,6 +1817,18 @@
             "type": "u64"
           },
           {
+            "name": "total_sol_used",
+            "type": "u64"
+          },
+          {
+            "name": "total_sol_sent_to_root",
+            "type": "u64"
+          },
+          {
+            "name": "total_sol_received_from_others",
+            "type": "u64"
+          },
+          {
             "name": "total_buybacks",
             "type": "u64"
           },
@@ -1550,6 +1843,10 @@
           {
             "name": "last_cycle_burned",
             "type": "u64"
+          },
+          {
+            "name": "is_root_token",
+            "type": "bool"
           },
           {
             "name": "bump",

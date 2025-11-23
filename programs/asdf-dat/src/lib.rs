@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
-use anchor_lang::solana_program::program::invoke_signed;
+use anchor_lang::solana_program::program::{invoke, invoke_signed};
 use anchor_spl::{
     token::{self, Token},
     token_2022::{self as token2022},
@@ -32,6 +32,7 @@ pub const MIN_CYCLE_INTERVAL: i64 = 60;
 pub const DAT_STATE_SEED: &[u8] = b"dat_v3";
 pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
 pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
+pub const ROOT_TREASURY_SEED: &[u8] = b"root_treasury";
 
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
     Pubkey::new_from_array([81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219, 29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216]),
@@ -91,7 +92,9 @@ pub mod asdf_dat {
         state.current_fee_recipient_index = 0;
         state.last_known_price = 0;
         state.pending_burn_amount = 0;
-        
+        state.root_token_mint = None;        // No root token by default
+        state.fee_split_bps = 5520;          // 55.2% keep, 44.8% to root
+
         emit!(DATInitialized {
             admin: state.admin,
             dat_authority: ctx.accounts.dat_authority.key(),
@@ -109,14 +112,74 @@ pub mod asdf_dat {
         stats.mint = ctx.accounts.mint.key();
         stats.total_burned = 0;
         stats.total_sol_collected = 0;
+        stats.total_sol_used = 0;
+        stats.total_sol_sent_to_root = 0;
+        stats.total_sol_received_from_others = 0;
         stats.total_buybacks = 0;
         stats.last_cycle_timestamp = 0;
         stats.last_cycle_sol = 0;
         stats.last_cycle_burned = 0;
+        stats.is_root_token = false;  // Will be set when assigned as root
         stats.bump = ctx.bumps.token_stats;
 
         emit!(TokenStatsInitialized {
             mint: stats.mint,
+            timestamp: clock.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
+    // Set the root token that receives 44.8% from other tokens
+    pub fn set_root_token(ctx: Context<SetRootToken>, root_mint: Pubkey) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        // Verify admin authorization
+        require!(
+            ctx.accounts.admin.key() == state.admin,
+            ErrorCode::UnauthorizedAccess
+        );
+
+        // Verify TokenStats exists for this mint
+        require!(
+            ctx.accounts.root_token_stats.mint == root_mint,
+            ErrorCode::InvalidRootToken
+        );
+
+        // Mark previous root as non-root (if any)
+        // Note: This would require passing old root token stats too
+        // For now, admin must manually handle old root if changing
+
+        // Update state
+        state.root_token_mint = Some(root_mint);
+
+        // Mark this token as root
+        let root_stats = &mut ctx.accounts.root_token_stats;
+        root_stats.is_root_token = true;
+
+        emit!(RootTokenSet {
+            root_mint,
+            fee_split_bps: state.fee_split_bps,
+            timestamp: clock.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
+    // Update the fee split ratio (admin only)
+    pub fn update_fee_split(ctx: Context<AdminControl>, new_fee_split_bps: u16) -> Result<()> {
+        require!(
+            new_fee_split_bps <= 10000,
+            ErrorCode::InvalidFeeSplit
+        );
+
+        let state = &mut ctx.accounts.dat_state;
+        state.fee_split_bps = new_fee_split_bps;
+        let clock = Clock::get()?;
+
+        emit!(FeeSplitUpdated {
+            new_fee_split_bps,
             timestamp: clock.unix_timestamp,
         });
 
@@ -378,73 +441,67 @@ pub mod asdf_dat {
             &[seeds],
         )?;
 
-        let collected_balance = ctx.accounts.dat_authority.lamports();
-        msg!("✅ Collected: {} lamports", collected_balance);
+        // ===== SPLIT LOGIC: ROOT vs SECONDARY =====
+        let mut total_collected = ctx.accounts.dat_authority.lamports();
+        let (sol_for_root, treasury_amt);
+
+        // Root token: collect from treasury
+        if state.root_token_mint == Some(ctx.accounts.asdf_mint.key()) {
+            treasury_amt = ctx.accounts.root_treasury.lamports();
+            if treasury_amt > 0 {
+                invoke(&anchor_lang::solana_program::system_instruction::transfer(ctx.accounts.root_treasury.key, ctx.accounts.dat_authority.key, treasury_amt), &[ctx.accounts.root_treasury.to_account_info(), ctx.accounts.dat_authority.to_account_info(), ctx.accounts.system_program.to_account_info()])?;
+                total_collected += treasury_amt;
+                emit!(RootTreasuryCollected { root_mint: ctx.accounts.asdf_mint.key(), amount: treasury_amt, timestamp: clock.unix_timestamp });
+            }
+            sol_for_root = 0;
+        } else if state.root_token_mint.is_some() {
+            // Secondary token: split and transfer
+            sol_for_root = total_collected.saturating_sub((total_collected * state.fee_split_bps as u64) / 10000);
+            if sol_for_root > 0 {
+                invoke_signed(&anchor_lang::solana_program::system_instruction::transfer(ctx.accounts.dat_authority.key, ctx.accounts.root_treasury.key, sol_for_root), &[ctx.accounts.dat_authority.to_account_info(), ctx.accounts.root_treasury.to_account_info(), ctx.accounts.system_program.to_account_info()], &[&[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]]])?;
+                emit!(FeesRedirectedToRoot { from_token: ctx.accounts.asdf_mint.key(), to_root: state.root_token_mint.unwrap(), amount: sol_for_root, timestamp: clock.unix_timestamp });
+            }
+            treasury_amt = 0;
+        } else {
+            sol_for_root = 0;
+            treasury_amt = 0;
+        }
 
         // ===== STEP 2: EXECUTE BUY =====
-        msg!("Step 2/3: Buying tokens with collected SOL");
-
         ctx.accounts.pool_asdf_account.reload()?;
 
-        let rent_exempt_minimum = 890880;
-        let collected_lamports = ctx.accounts.dat_authority.lamports();
-        let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
+        let final_amount = ctx.accounts.dat_authority.lamports().saturating_sub(890880).min(state.max_fees_per_cycle).min(ctx.accounts.pool.lamports() / 100);
 
-        // PumpFun stores SOL as native lamports in the bonding curve account, not in a WSOL token account
-        let pool_reserves = ctx.accounts.pool.lamports();
-
-        let capped = collected.min(state.max_fees_per_cycle);
-        let max_safe = pool_reserves / 100;
-        let final_amount = capped.min(max_safe);
-
-        msg!("Buy amount: {} lamports", final_amount);
-
-        let expected = calculate_tokens_out(
-            final_amount,
-            pool_reserves,
-            ctx.accounts.pool_asdf_account.amount,
-            ctx.accounts.asdf_mint.supply,
-        )?;
-
-        let safe_expected = expected / 10;
-        let min_out = apply_slippage(safe_expected, state.slippage_bps);
-        let max_sol_cost = final_amount.saturating_mul(200); // Increased from 10 to 200 for SPL tokens with high slippage
-
-        let mut buy_data = Vec::new();
-        buy_data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
-        buy_data.extend_from_slice(&min_out.to_le_bytes());
-        buy_data.extend_from_slice(&max_sol_cost.to_le_bytes());
-        buy_data.push(0);
-
-        // Use EXACT same account order as execute_buy (which works with Token2022)
-        let buy_accounts = vec![
-            AccountMeta::new_readonly(ctx.accounts.pump_global_config.key(), false),
-            AccountMeta::new(ctx.accounts.protocol_fee_recipient.key(), false),
-            AccountMeta::new(ctx.accounts.asdf_mint.key(), false),
-            AccountMeta::new(ctx.accounts.pool.key(), false),
-            AccountMeta::new(ctx.accounts.pool_asdf_account.key(), false),
-            AccountMeta::new(ctx.accounts.dat_asdf_account.key(), false),
-            AccountMeta::new(ctx.accounts.dat_authority.key(), true),
-            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
-            AccountMeta::new(ctx.accounts.creator_vault.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-            AccountMeta::new_readonly(ctx.accounts.global_volume_accumulator.key(), false),
-            AccountMeta::new(ctx.accounts.user_volume_accumulator.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.fee_config.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.fee_program.key(), false),
-        ];
-
-        let buy_ix = Instruction {
-            program_id: PUMP_PROGRAM,
-            accounts: buy_accounts,
-            data: buy_data,
-        };
-
-        // Use EXACT same account order as execute_buy (which works with Token2022)
         invoke_signed(
-            &buy_ix,
+            &Instruction {
+                program_id: PUMP_PROGRAM,
+                accounts: vec![
+                    AccountMeta::new_readonly(ctx.accounts.pump_global_config.key(), false),
+                    AccountMeta::new(ctx.accounts.protocol_fee_recipient.key(), false),
+                    AccountMeta::new(ctx.accounts.asdf_mint.key(), false),
+                    AccountMeta::new(ctx.accounts.pool.key(), false),
+                    AccountMeta::new(ctx.accounts.pool_asdf_account.key(), false),
+                    AccountMeta::new(ctx.accounts.dat_asdf_account.key(), false),
+                    AccountMeta::new(ctx.accounts.dat_authority.key(), true),
+                    AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
+                    AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
+                    AccountMeta::new(ctx.accounts.creator_vault.key(), false),
+                    AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
+                    AccountMeta::new_readonly(PUMP_PROGRAM, false),
+                    AccountMeta::new_readonly(ctx.accounts.global_volume_accumulator.key(), false),
+                    AccountMeta::new(ctx.accounts.user_volume_accumulator.key(), false),
+                    AccountMeta::new_readonly(ctx.accounts.fee_config.key(), false),
+                    AccountMeta::new_readonly(ctx.accounts.fee_program.key(), false),
+                ],
+                data: {
+                    let mut d = Vec::new();
+                    d.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
+                    d.extend_from_slice(&apply_slippage(calculate_tokens_out(final_amount, ctx.accounts.pool.lamports(), ctx.accounts.pool_asdf_account.amount, ctx.accounts.asdf_mint.supply)? / 10, state.slippage_bps).to_le_bytes());
+                    d.extend_from_slice(&final_amount.saturating_mul(200).to_le_bytes());
+                    d.push(0);
+                    d
+                },
+            },
             &[
                 ctx.accounts.pump_global_config.to_account_info(),
                 ctx.accounts.protocol_fee_recipient.to_account_info(),
@@ -492,7 +549,22 @@ pub mod asdf_dat {
         // Update per-token statistics
         let token_stats = &mut ctx.accounts.token_stats;
         token_stats.total_burned = token_stats.total_burned.saturating_add(tokens_bought);
-        token_stats.total_sol_collected = token_stats.total_sol_collected.saturating_add(final_amount);
+
+        // total_sol_collected tracks ALL SOL generated from creator fees (before split)
+        token_stats.total_sol_collected = token_stats.total_sol_collected.saturating_add(total_collected);
+
+        // total_sol_used tracks actual SOL used for buybacks (after caps and limits)
+        token_stats.total_sol_used = token_stats.total_sol_used.saturating_add(final_amount);
+
+        // Track split distribution
+        if treasury_amt > 0 {
+            // Root token: track SOL received from secondary tokens
+            token_stats.total_sol_received_from_others = token_stats.total_sol_received_from_others.saturating_add(treasury_amt);
+        } else if sol_for_root > 0 {
+            // Secondary token: track SOL sent to root
+            token_stats.total_sol_sent_to_root = token_stats.total_sol_sent_to_root.saturating_add(sol_for_root);
+        }
+
         token_stats.total_buybacks = token_stats.total_buybacks.saturating_add(1);
         token_stats.last_cycle_timestamp = clock.unix_timestamp;
         token_stats.last_cycle_sol = final_amount;
@@ -935,6 +1007,19 @@ pub struct InitializeTokenStats<'info> {
 }
 
 #[derive(Accounts)]
+pub struct SetRootToken<'info> {
+    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, root_token_stats.mint.as_ref()],
+        bump = root_token_stats.bump
+    )]
+    pub root_token_stats: Account<'info, TokenStats>,
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
@@ -1072,6 +1157,13 @@ pub struct ExecuteFullCycle<'info> {
     pub fee_config: AccountInfo<'info>,
     /// CHECK: Fee program
     pub fee_program: AccountInfo<'info>,
+
+    /// CHECK: Root treasury PDA (holds SOL from secondary tokens)
+    /// Seeds: [b"root_treasury", root_mint]
+    /// This account receives the 44.8% portion from secondary tokens
+    /// and is collected by the root token during its cycles
+    #[account(mut)]
+    pub root_treasury: AccountInfo<'info>,
 
     // System programs
     pub token_program: Interface<'info, TokenInterface>,
@@ -1231,11 +1323,13 @@ pub struct DATState {
     pub current_fee_recipient_index: u8,
     pub last_known_price: u64,
     pub pending_burn_amount: u64,
-    pub _reserved: [u8; 64],
+    pub root_token_mint: Option<Pubkey>,  // Token principal qui reçoit 44.8% des autres
+    pub fee_split_bps: u16,                // Basis points: 5520 = 55.2% keep, 44.8% to root
+    pub _reserved: [u8; 30],               // Reduced from 64 to accommodate new fields
 }
 
 impl DATState {
-    pub const LEN: usize = 32 * 5 + 8 * 13 + 4 * 2 + 1 * 5 + 2 + 64;
+    pub const LEN: usize = 32 * 5 + 8 * 13 + 4 * 2 + 1 * 5 + 2 + 33 + 2 + 30; // Added Option<Pubkey>(33) + u16(2), reduced reserved to 30
 }
 
 // Per-token statistics tracking
@@ -1243,16 +1337,20 @@ impl DATState {
 pub struct TokenStats {
     pub mint: Pubkey,              // The token mint this stats account tracks
     pub total_burned: u64,         // Total tokens burned for this specific token
-    pub total_sol_collected: u64,  // Total SOL collected for this specific token
+    pub total_sol_collected: u64,  // Total SOL collected/generated by this token
+    pub total_sol_used: u64,       // Total SOL actually used for buybacks
+    pub total_sol_sent_to_root: u64,      // SOL sent to root token (if secondary)
+    pub total_sol_received_from_others: u64, // SOL received from other tokens (if root)
     pub total_buybacks: u64,       // Number of buyback cycles for this token
     pub last_cycle_timestamp: i64, // Last cycle execution timestamp
     pub last_cycle_sol: u64,       // SOL collected in last cycle
     pub last_cycle_burned: u64,    // Tokens burned in last cycle
+    pub is_root_token: bool,       // Whether this is the root token
     pub bump: u8,                  // PDA bump seed
 }
 
 impl TokenStats {
-    pub const LEN: usize = 32 + 8 * 6 + 1;
+    pub const LEN: usize = 32 + 8 * 9 + 1 + 1; // Pubkey(32) + u64(9) + bool(1) + u8(1) = 106
 }
 
 // EVENTS
@@ -1319,6 +1417,34 @@ pub struct TokenCreated {
     pub timestamp: i64,
 }
 
+#[event]
+pub struct RootTokenSet {
+    pub root_mint: Pubkey,
+    pub fee_split_bps: u16,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FeeSplitUpdated {
+    pub new_fee_split_bps: u16,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct FeesRedirectedToRoot {
+    pub from_token: Pubkey,
+    pub to_root: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct RootTreasuryCollected {
+    pub root_mint: Pubkey,
+    pub amount: u64,
+    pub timestamp: i64,
+}
+
 // ERRORS
 
 #[error_code]
@@ -1351,4 +1477,8 @@ pub enum ErrorCode {
     NoPendingBurn,
     #[msg("Invalid pool data")]
     InvalidPool,
+    #[msg("Invalid root token")]
+    InvalidRootToken,
+    #[msg("Invalid fee split basis points")]
+    InvalidFeeSplit,
 }
