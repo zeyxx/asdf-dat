@@ -72,20 +72,21 @@ This document tracks what has been successfully tested for Mayhem Mode and what 
 
 ---
 
-## 🔴 Known Blockers on Devnet
+## ✅ PumpFun Infrastructure Confirmed on Devnet
 
-### 1. PumpFun Global Config
-**Issue:** PumpFun's global configuration account doesn't exist on devnet
-```
-Error: AccountOwnedByWrongProgram
-Account: global
-Expected owner: 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P
-Actual owner: 11111111111111111111111111111111
-```
+### Verified Accounts
+- **PumpFun Program**: `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` ✅
+- **Global Config**: `4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf` (740 bytes, owned by PumpFun) ✅
+- **Mayhem Program**: `MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e` (deployed on devnet) ✅
+- **Sol Vault**: `BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s` (35.7 SOL) ✅
 
-**Impact:** Cannot execute PumpFun buy instructions on devnet
+### Recent Progress
+- ✅ Pool WSOL account initialized
+- ✅ Pool liquidity added (0.1 SOL manually)
+- ✅ DAT Token Account funded (1M tokens ready for burn)
+- ✅ Documentation from [pump-fun/pump-public-docs](https://github.com/pump-fun/pump-public-docs) reviewed
 
-**Solution:** Deploy on mainnet for real testing
+**Status:** PumpFun infrastructure exists on devnet. Previous errors may have been due to incorrect account derivations or missing accounts.
 
 ### 2. Bonding Curve Liquidity
 **Issue:** Pool WSOL reserves: 0

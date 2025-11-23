@@ -229,7 +229,19 @@ async function main() {
     PUMP_PROGRAM
   );
 
-  const protocolFeeRecipient = new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
+  // Mayhem Mode fee recipients (select randomly from the 7 authorized)
+  const MAYHEM_FEE_RECIPIENTS = [
+    "GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS",
+    "4budycTjhs9fD6xw62VBducVTNgMgJJ5BgtKq7mAZwn6",
+    "8SBKzEQU4nLSzcwF4a74F2iaUDQyTfjGndn6qUWBnrpR",
+    "4UQeTP1T39KZ9Sfxzo3WR5skgsaP6NZa87BAkuazLEKH",
+    "8sNeir4QsLsJdYpc9RZacohhK1Y5FLU3nC5LXgYB4aa6",
+    "Fh9HmeLNUMVCvejxCtCL2DbYaRyBFVJ5xrWkLnMH6fdk",
+    "463MEnMeGyJekNZFQSTUABBEbLnvMTALbT6ZmsxAbAdq",
+  ];
+
+  // Use first Mayhem fee recipient for Mayhem Mode tokens
+  const protocolFeeRecipient = new PublicKey(MAYHEM_FEE_RECIPIENTS[0]);
   const protocolFeeRecipientAta = await getAssociatedTokenAddress(WSOL_MINT, protocolFeeRecipient, true);
 
   const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
