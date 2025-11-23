@@ -1083,6 +1083,7 @@ pub struct ExecuteBuy<'info> {
     /// CHECK: Fee program
     pub fee_program: AccountInfo<'info>,
     /// CHECK: Root treasury PDA (optional - only for secondary tokens)
+    #[account(mut)]
     pub root_treasury: Option<AccountInfo<'info>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,

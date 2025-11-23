@@ -10,6 +10,7 @@ import {
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
+  TOKEN_PROGRAM_ID,
   TOKEN_2022_PROGRAM_ID,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
@@ -26,22 +27,27 @@ async function main() {
     new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
   );
 
-  const tokenInfo = JSON.parse(fs.readFileSync("devnet-token-mayhem.json", "utf-8"));
+  const tokenFile = process.argv[2] || "devnet-token-mayhem.json";
+  const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
+  const isMayhem = tokenInfo.tokenProgram === "Token2022";
 
   const [datAuthority] = PublicKey.findProgramAddressSync(
     [Buffer.from("auth_v3")],
     PROGRAM_ID
   );
 
+  const TOKEN_PROGRAM = isMayhem ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+
   console.log(`DAT Authority: ${datAuthority.toString()}`);
   console.log(`Token Mint: ${tokenMint.toString()}`);
+  console.log(`Token Program: ${isMayhem ? "Token2022" : "SPL"}`);
 
   const datTokenAccount = await getAssociatedTokenAddress(
     tokenMint,
     datAuthority,
     true,
-    TOKEN_2022_PROGRAM_ID
+    TOKEN_PROGRAM
   );
 
   console.log(`DAT Token Account: ${datTokenAccount.toString()}`);
@@ -57,7 +63,7 @@ async function main() {
     datTokenAccount,
     datAuthority,
     tokenMint,
-    TOKEN_2022_PROGRAM_ID,
+    TOKEN_PROGRAM,
     ASSOCIATED_TOKEN_PROGRAM_ID
   );
 

@@ -254,8 +254,30 @@ async function main() {
     PUMP_PROGRAM
   );
 
-  const protocolFeeRecipient = new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
-  const protocolFeeRecipientAta = await getAssociatedTokenAddress(tokenMint, protocolFeeRecipient, true, TOKEN_PROGRAM);
+  // For Mayhem Mode (Token2022), use Mayhem fee recipient
+  // For normal SPL tokens, use standard protocol fee recipient
+  const MAYHEM_FEE_RECIPIENTS = [
+    "GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS",
+    "4budycTjhs9fD6xw62VBducVTNgMgJJ5BgtKq7mAZwn6",
+    "8SBKzEQU4nLSzcwF4a74F2iaUDQyTfjGndn6qUWBnrpR",
+    "4UQeTP1T39KZ9Sfxzo3WR5skgsaP6NZa87BAkuazLEKH",
+    "8sNeir4QsLsJdYpc9RZacohhK1Y5FLU3nC5LXgYB4aa6",
+    "Fh9HmeLNUMVCvejxCtCL2DbYaRyBFVJ5xrWkLnMH6fdk",
+    "463MEnMeGyJekNZFQSTUABBEbLnvMTALbT6ZmsxAbAdq",
+  ];
+
+  const protocolFeeRecipient = isMayhem
+    ? new PublicKey(MAYHEM_FEE_RECIPIENTS[0]) // Use first Mayhem fee recipient
+    : new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
+
+  // For Mayhem Mode: protocol fee account is WSOL ATA of Mayhem fee recipient
+  // For normal SPL: protocol fee account is token ATA of protocol fee recipient
+  const protocolFeeRecipientAta = isMayhem
+    ? await getAssociatedTokenAddress(WSOL_MINT, protocolFeeRecipient, true, TOKEN_PROGRAM_ID)
+    : await getAssociatedTokenAddress(tokenMint, protocolFeeRecipient, true, TOKEN_PROGRAM);
+
+  log("💰", `Fee Recipient: ${protocolFeeRecipient.toString()}`, colors.cyan);
+  log("📦", `Fee Recipient ATA: ${protocolFeeRecipientAta.toString()}`, colors.cyan);
 
   const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
     [Buffer.from("global_volume_accumulator")],
