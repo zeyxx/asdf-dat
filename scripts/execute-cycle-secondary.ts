@@ -196,8 +196,11 @@ async function main() {
     process.exit(1);
   }
 
+  const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+
   const datTokenAccount = await getAssociatedTokenAddress(tokenMint, datAuthority, true, TOKEN_PROGRAM);
   const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, bondingCurve, true, TOKEN_PROGRAM);
+  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
 
   // ========================================================================
   logSection("STEP 1/3: COLLECT FEES (SECONDARY TOKEN MODE)");
@@ -283,6 +286,7 @@ async function main() {
         pool: bondingCurve,
         asdfMint: tokenMint,
         poolAsdfAccount: poolTokenAccount,
+        poolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
