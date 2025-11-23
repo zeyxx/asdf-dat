@@ -291,7 +291,9 @@ pub mod asdf_dat {
         state.consecutive_failures = 0;
         state.pending_burn_amount = 0;
 
-        msg!("Cycle #{} complete: {} ASDF burned", state.total_buybacks, tokens_to_burn);
+        let (whole, frac) = format_tokens(tokens_to_burn);
+        msg!("Cycle #{} complete: {}.{:06} tokens burned ({} units)",
+            state.total_buybacks, whole, frac, tokens_to_burn);
 
         emit!(CycleCompleted {
             cycle_number: state.total_buybacks,
@@ -432,7 +434,8 @@ pub mod asdf_dat {
 
         ctx.accounts.dat_asdf_account.reload()?;
         let tokens_bought = ctx.accounts.dat_asdf_account.amount;
-        msg!("✅ Bought: {} tokens", tokens_bought);
+        let (whole, frac) = format_tokens(tokens_bought);
+        msg!("✅ Bought: {}.{:06} tokens ({} units)", whole, frac, tokens_bought);
 
         state.last_cycle_sol = final_amount;
 
@@ -459,7 +462,8 @@ pub mod asdf_dat {
         state.consecutive_failures = 0;
         state.pending_burn_amount = 0;
 
-        msg!("✅ Burned: {} tokens", tokens_bought);
+        let (whole_burned, frac_burned) = format_tokens(tokens_bought);
+        msg!("✅ Burned: {}.{:06} tokens ({} units)", whole_burned, frac_burned, tokens_bought);
         msg!("💊 #{}", state.total_buybacks);
 
         emit!(CycleCompleted {
@@ -847,6 +851,15 @@ pub fn apply_slippage(amount: u64, bps: u16) -> u64 {
     let final_val = result.min(u64::MAX as u128) as u64;
     msg!("apply_slippage: final_val={}", final_val);
     final_val
+}
+
+/// Format token amount with decimals for readable logs
+/// Most tokens have 6 decimals, so we divide by 1_000_000
+pub fn format_tokens(amount: u64) -> (u64, u64) {
+    const DECIMALS: u64 = 1_000_000; // 6 decimals
+    let whole = amount / DECIMALS;
+    let fractional = amount % DECIMALS;
+    (whole, fractional)
 }
 
 // ACCOUNTS
