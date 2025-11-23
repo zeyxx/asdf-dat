@@ -154,17 +154,18 @@ pub mod asdf_dat {
         let state = &ctx.accounts.dat_state;
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
 
-        ctx.accounts.pool_wsol_account.reload()?;
         ctx.accounts.pool_asdf_account.reload()?;
 
         // Use native SOL balance (lamports) instead of WSOL
         let rent_exempt_minimum = 890880; // Keep minimum for rent
         let collected_lamports = ctx.accounts.dat_authority.lamports();
         let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
-        let pool_reserves = ctx.accounts.pool_wsol_account.amount;
+
+        // PumpFun stores SOL as native lamports in the bonding curve account, not in a WSOL token account
+        let pool_reserves = ctx.accounts.pool.lamports();
 
         msg!("DAT native SOL balance: {} (total: {})", collected, collected_lamports);
-        msg!("Pool WSOL reserves: {}", pool_reserves);
+        msg!("Pool SOL reserves (bonding curve lamports): {}", pool_reserves);
 
         let capped = collected.min(state.max_fees_per_cycle);
         let max_safe = pool_reserves / 100;
@@ -353,13 +354,14 @@ pub mod asdf_dat {
         // ===== STEP 2: EXECUTE BUY =====
         msg!("Step 2/3: Buying tokens with collected SOL");
 
-        ctx.accounts.pool_wsol_account.reload()?;
         ctx.accounts.pool_asdf_account.reload()?;
 
         let rent_exempt_minimum = 890880;
         let collected_lamports = ctx.accounts.dat_authority.lamports();
         let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
-        let pool_reserves = ctx.accounts.pool_wsol_account.amount;
+
+        // PumpFun stores SOL as native lamports in the bonding curve account, not in a WSOL token account
+        let pool_reserves = ctx.accounts.pool.lamports();
 
         let capped = collected.min(state.max_fees_per_cycle);
         let max_safe = pool_reserves / 100;
