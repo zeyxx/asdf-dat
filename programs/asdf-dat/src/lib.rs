@@ -2,8 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{
-    token::{self, Token, TokenAccount, Mint},
+    token::{self, Token},
     token_2022::{self as token2022},
+    token_interface::{TokenInterface, TokenAccount, Mint},
     associated_token::AssociatedToken,
 };
 
@@ -50,6 +51,12 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
     166, 133, 239, 180, 77, 235, 68, 100, 199, 33, 25, 139, 185, 9, 232, 164,
     228, 205, 74, 123, 166, 139, 114, 13, 221, 225, 162, 93, 101, 11, 19, 102
 ]); // BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
+
+// TESTING MODE CONFIGURATION
+// Set to `false` before deploying to production/mainnet
+// When true: disables cycle interval, AM/PM protection, and min fees checks
+// When false: all safety constraints are enforced
+pub const TESTING_MODE: bool = true;
 
 #[program]
 pub mod asdf_dat {
@@ -99,36 +106,42 @@ pub mod asdf_dat {
 
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
 
-        // TEMPORARY: Min cycle interval disabled for testing
-        // require!(
-        //     clock.unix_timestamp - state.last_cycle_timestamp >= state.min_cycle_interval,
-        //     ErrorCode::CycleTooSoon
-        // );
+        // Enforce minimum cycle interval (disabled in testing mode)
+        if !TESTING_MODE {
+            require!(
+                clock.unix_timestamp - state.last_cycle_timestamp >= state.min_cycle_interval,
+                ErrorCode::CycleTooSoon
+            );
+        }
 
         state.last_cycle_timestamp = clock.unix_timestamp;
 
-        // TEMPORARY: AM/PM protection disabled for testing
-        // let hour = (clock.unix_timestamp / 3600) % 24;
-        // let is_am = hour < 12;
-        // let today = (clock.unix_timestamp / 86400) * 86400;
+        // Enforce AM/PM execution limits (disabled in testing mode)
+        if !TESTING_MODE {
+            let hour = (clock.unix_timestamp / 3600) % 24;
+            let is_am = hour < 12;
+            let today = (clock.unix_timestamp / 86400) * 86400;
 
-        // let valid = if is_am {
-        //     if state.last_am_execution < today {
-        //         state.last_am_execution = clock.unix_timestamp;
-        //         true
-        //     } else { false }
-        // } else {
-        //     if state.last_pm_execution < today {
-        //         state.last_pm_execution = clock.unix_timestamp;
-        //         true
-        //     } else { false }
-        // };
+            let valid = if is_am {
+                if state.last_am_execution < today {
+                    state.last_am_execution = clock.unix_timestamp;
+                    true
+                } else { false }
+            } else {
+                if state.last_pm_execution < today {
+                    state.last_pm_execution = clock.unix_timestamp;
+                    true
+                } else { false }
+            };
 
-        // require!(valid, ErrorCode::AlreadyExecutedThisPeriod);
+            require!(valid, ErrorCode::AlreadyExecutedThisPeriod);
+        }
 
-        // TEMPORARY: Min fees threshold disabled for testing
-        // let vault_balance = ctx.accounts.creator_vault.lamports();
-        // require!(vault_balance >= state.min_fees_threshold, ErrorCode::InsufficientFees);
+        // Enforce minimum fees threshold (disabled in testing mode)
+        if !TESTING_MODE {
+            let vault_balance = ctx.accounts.creator_vault.lamports();
+            require!(vault_balance >= state.min_fees_threshold, ErrorCode::InsufficientFees);
+        }
 
         let seeds = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
         execute_collect_fees_cpi(ctx, seeds)?;
@@ -875,23 +888,23 @@ pub struct ExecuteBuy<'info> {
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
     #[account(mut)]
-    pub dat_asdf_account: Account<'info, TokenAccount>,
+    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Pool
     #[account(mut)]
     pub pool: AccountInfo<'info>,
     #[account(mut)]
-    pub asdf_mint: Account<'info, Mint>,
+    pub asdf_mint: InterfaceAccount<'info, Mint>,
     #[account(mut)]
-    pub pool_asdf_account: Account<'info, TokenAccount>,
+    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
-    pub pool_wsol_account: Account<'info, TokenAccount>,
+    pub pool_wsol_account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Config
     pub pump_global_config: AccountInfo<'info>,
     /// CHECK: Recipient
     #[account(mut)]
     pub protocol_fee_recipient: AccountInfo<'info>,
     #[account(mut)]
-    pub protocol_fee_recipient_ata: Account<'info, TokenAccount>,
+    pub protocol_fee_recipient_ata: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Creator vault (PDA from token creator)
     #[account(mut)]
     pub creator_vault: AccountInfo<'info>,
@@ -908,7 +921,7 @@ pub struct ExecuteBuy<'info> {
     pub fee_config: AccountInfo<'info>,
     /// CHECK: Fee program
     pub fee_program: AccountInfo<'info>,
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
@@ -920,10 +933,10 @@ pub struct BurnAndUpdate<'info> {
     #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
     #[account(mut)]
-    pub dat_asdf_account: Account<'info, TokenAccount>,
+    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
-    pub asdf_mint: Account<'info, Mint>,
-    pub token_program: Program<'info, Token>,
+    pub asdf_mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Interface<'info, TokenInterface>,
 }
 
 /// Execute full DAT cycle: COLLECT → BUY → BURN (all in one transaction)
@@ -942,18 +955,18 @@ pub struct ExecuteFullCycle<'info> {
 
     // Token accounts
     #[account(mut)]
-    pub dat_asdf_account: Account<'info, TokenAccount>,
+    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
 
     // Pool and mint accounts
     /// CHECK: Pool (bonding curve)
     #[account(mut)]
     pub pool: AccountInfo<'info>,
     #[account(mut)]
-    pub asdf_mint: Account<'info, Mint>,
+    pub asdf_mint: InterfaceAccount<'info, Mint>,
     #[account(mut)]
-    pub pool_asdf_account: Account<'info, TokenAccount>,
+    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
     #[account(mut)]
-    pub pool_wsol_account: Account<'info, TokenAccount>,
+    pub pool_wsol_account: InterfaceAccount<'info, TokenAccount>,
 
     // PumpFun program accounts
     /// CHECK: Config
@@ -962,7 +975,7 @@ pub struct ExecuteFullCycle<'info> {
     #[account(mut)]
     pub protocol_fee_recipient: AccountInfo<'info>,
     #[account(mut)]
-    pub protocol_fee_recipient_ata: Account<'info, TokenAccount>,
+    pub protocol_fee_recipient_ata: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Event auth
     pub pump_event_authority: AccountInfo<'info>,
     /// CHECK: Pump program
@@ -978,7 +991,7 @@ pub struct ExecuteFullCycle<'info> {
     pub fee_program: AccountInfo<'info>,
 
     // System programs
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
 
@@ -1032,7 +1045,7 @@ pub struct CreatePumpfunToken<'info> {
     pub global: AccountInfo<'info>,
     /// CHECK: Metaplex
     pub mpl_token_metadata: AccountInfo<'info>,
-    pub token_program: Program<'info, Token>,
+    pub token_program: Interface<'info, TokenInterface>,
     pub associated_token_program: Program<'info, AssociatedToken>,
     pub system_program: Program<'info, System>,
     /// CHECK: Rent
