@@ -229,10 +229,28 @@ async function main() {
   );
 
   // Associated bonding curve (Token2022 ATA)
-  const associatedBondingCurve = await PublicKey.createWithSeed(
-    bondingCurve,
-    "token-account",
-    TOKEN_2022_PROGRAM
+  const [associatedBondingCurve] = PublicKey.findProgramAddressSync(
+    [
+      bondingCurve.toBuffer(),
+      TOKEN_2022_PROGRAM.toBuffer(),
+      mint.publicKey.toBuffer(),
+    ],
+    ASSOCIATED_TOKEN_PROGRAM
+  );
+
+  // Mayhem-specific PDAs
+  const [mayhemState] = PublicKey.findProgramAddressSync(
+    [Buffer.from("mayhem-state"), mint.publicKey.toBuffer()],
+    MAYHEM_PROGRAM
+  );
+
+  const [mayhemTokenVault] = PublicKey.findProgramAddressSync(
+    [
+      solVault.toBuffer(),
+      TOKEN_2022_PROGRAM.toBuffer(),
+      mint.publicKey.toBuffer(),
+    ],
+    ASSOCIATED_TOKEN_PROGRAM
   );
 
   log("✅", "All PDAs derived", colors.green);
@@ -263,6 +281,8 @@ async function main() {
         mayhemProgram: MAYHEM_PROGRAM,
         globalParams,
         solVault,
+        mayhemState,
+        mayhemTokenVault,
         eventAuthority,
         pumpProgram: PUMP_PROGRAM,
       })
