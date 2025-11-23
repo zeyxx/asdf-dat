@@ -390,6 +390,7 @@ pub mod asdf_dat {
             AccountMeta::new(ctx.accounts.asdf_mint.key(), false),
             AccountMeta::new(ctx.accounts.pool.key(), false),
             AccountMeta::new(ctx.accounts.pool_asdf_account.key(), false),
+            AccountMeta::new(ctx.accounts.pool_wsol_account.key(), false), // Added: pool WSOL account
             AccountMeta::new(ctx.accounts.dat_asdf_account.key(), false),
             AccountMeta::new(ctx.accounts.dat_authority.key(), true),
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
@@ -417,6 +418,7 @@ pub mod asdf_dat {
                 ctx.accounts.asdf_mint.to_account_info(),
                 ctx.accounts.pool.to_account_info(),
                 ctx.accounts.pool_asdf_account.to_account_info(),
+                ctx.accounts.pool_wsol_account.to_account_info(), // Added: pool WSOL account
                 ctx.accounts.dat_asdf_account.to_account_info(),
                 ctx.accounts.dat_authority.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),

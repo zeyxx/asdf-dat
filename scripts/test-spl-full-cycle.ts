@@ -146,7 +146,7 @@ async function main() {
   }
 
   // Check DAT state
-  const stateAccount = await program.account.datState.fetch(datState);
+  const stateAccount: any = await (program.account as any).datState.fetch(datState);
   log("📊", `Total Burned (before): ${(Number(stateAccount.totalBurned) / 1e6).toLocaleString()} tokens`, colors.cyan);
   log("📊", `Total SOL Collected (before): ${(Number(stateAccount.totalSolCollected) / 1e9).toFixed(6)} SOL`, colors.cyan);
   log("📊", `Total Buybacks: ${stateAccount.totalBuybacks}`, colors.cyan);
@@ -294,7 +294,7 @@ async function main() {
     log("💎", `Tokens remaining: ${tokenBalance}`, tokenBalance === 0 ? colors.green : colors.yellow);
 
     // Check updated state
-    const stateAccountAfter = await program.account.datState.fetch(datState);
+    const stateAccountAfter: any = await (program.account as any).datState.fetch(datState);
     const totalBurned = Number(stateAccountAfter.totalBurned) / 1e6;
     const totalSol = Number(stateAccountAfter.totalSolCollected) / 1e9;
 
