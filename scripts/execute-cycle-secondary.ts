@@ -62,21 +62,28 @@ function loadIdl(): Idl {
 }
 
 async function main() {
-  // Get token file from command line or default
-  const tokenFile = process.argv[2];
+  // Parse command line arguments
+  const args = process.argv.slice(2);
+  const tokenFile = args.find(a => !a.startsWith("--"));
+  const allocatedArg = args.find(a => a.startsWith("--allocated="));
+  const allocatedLamports = allocatedArg ? BigInt(allocatedArg.split("=")[1]) : null;
 
   if (!tokenFile) {
     console.clear();
     log("❌", "Veuillez fournir le fichier du token secondaire", colors.red);
-    log("💡", "Usage: npx ts-node scripts/execute-cycle-secondary.ts <token-file.json>", colors.yellow);
+    log("💡", "Usage: npx ts-node scripts/execute-cycle-secondary.ts <token-file.json> [--allocated=LAMPORTS]", colors.yellow);
     log("", "", colors.reset);
-    log("📝", "Exemple:", colors.cyan);
-    log("  ", "npx ts-node scripts/execute-cycle-secondary.ts devnet-token-mayhem.json", colors.reset);
+    log("📝", "Exemples:", colors.cyan);
+    log("  ", "Standalone mode:  npx ts-node scripts/execute-cycle-secondary.ts devnet-token-mayhem.json", colors.reset);
+    log("  ", "Allocated mode:   npx ts-node scripts/execute-cycle-secondary.ts devnet-token-mayhem.json --allocated=5000000", colors.reset);
     process.exit(1);
   }
 
   console.clear();
-  logSection("💎 SECONDARY TOKEN CYCLE (COLLECT → BUY → BURN)");
+
+  // Determine mode
+  const mode = allocatedLamports ? "ALLOCATED (ECOSYSTEM ORCHESTRATED)" : "STANDALONE";
+  logSection(`💎 SECONDARY TOKEN CYCLE - ${mode}`);
 
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
@@ -97,6 +104,13 @@ async function main() {
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
   const tokenCreator = new PublicKey(tokenInfo.creator);
   const isMayhem = tokenInfo.tokenProgram === "Token2022";
+
+  if (allocatedLamports) {
+    log("💰", `Allocated amount: ${(Number(allocatedLamports) / 1e9).toFixed(6)} SOL (${allocatedLamports} lamports)`, colors.cyan);
+    log("ℹ️", "Mode: Ecosystem orchestrator pre-calculated amount", colors.cyan);
+  } else {
+    log("ℹ️", "Mode: Standalone (collect → buy → burn)", colors.cyan);
+  }
 
   log("🪙", `Token: ${tokenInfo.name} (${tokenInfo.symbol})`, colors.cyan);
   log("🔗", `Mint: ${tokenMint.toString()}`, colors.cyan);
@@ -205,7 +219,7 @@ async function main() {
   const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
 
   // ========================================================================
-  logSection("STEP 1/3: COLLECT FEES (SECONDARY TOKEN MODE)");
+  // STEP 1/3: COLLECT FEES (SECONDARY TOKEN MODE)
   // ========================================================================
 
   const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
@@ -213,38 +227,45 @@ async function main() {
     PUMP_PROGRAM
   );
 
-  try {
-    const tx1 = await program.methods
-      .collectFees(false) // is_root_token = false
-      .accounts({
-        datState,
-        tokenStats,
-        tokenMint,
-        datAuthority,
-        creatorVault,
-        pumpEventAuthority,
-        pumpSwapProgram: PUMP_PROGRAM,
-        rootTreasury, // Pass it but won't be used (is_root_token=false)
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc();
+  if (!allocatedLamports) {
+    // STANDALONE MODE: Collect fees from creator vault
+    logSection("STEP 1/3: COLLECT FEES (STANDALONE MODE)");
 
-    log("✅", "Fees collected from creator vault!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx1}?cluster=devnet`, colors.cyan);
+    try {
+      const tx1 = await program.methods
+        .collectFees(false, false) // is_root_token = false, for_ecosystem = false
+        .accounts({
+          datState,
+          tokenStats,
+          datAuthority,
+          creatorVault,
+          rootTreasury, // Pass it but won't be used (is_root_token=false)
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
 
-    // Check updated balances
-    const vaultAfter = await connection.getAccountInfo(creatorVault);
-    const authorityAfter = await connection.getAccountInfo(datAuthority);
+      log("✅", "Fees collected from creator vault!", colors.green);
+      log("🔗", `TX: https://explorer.solana.com/tx/${tx1}?cluster=devnet`, colors.cyan);
 
-    log("💰", `Creator Vault (after): ${vaultAfter ? (vaultAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
-    log("💰", `DAT Authority (after collect): ${authorityAfter ? (authorityAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
-  } catch (error: any) {
-    log("❌", `Error collect_fees: ${error.message}`, colors.red);
-    if (error.logs) {
-      console.log("\n📋 Logs:");
-      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+      // Check updated balances
+      const vaultAfter = await connection.getAccountInfo(creatorVault);
+      const authorityAfter = await connection.getAccountInfo(datAuthority);
+
+      log("💰", `Creator Vault (after): ${vaultAfter ? (vaultAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
+      log("💰", `DAT Authority (after collect): ${authorityAfter ? (authorityAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
+    } catch (error: any) {
+      log("❌", `Error collect_fees: ${error.message}`, colors.red);
+      if (error.logs) {
+        console.log("\n📋 Logs:");
+        error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+      }
+      process.exit(1);
     }
-    process.exit(1);
+  } else {
+    // ALLOCATED MODE: Skip collect_fees (already done by orchestrator)
+    logSection("STEP 1/3: COLLECT FEES - SKIPPED (ALLOCATED MODE)");
+    log("ℹ️", "In allocated mode, fees were already collected by ecosystem orchestrator", colors.cyan);
+    log("💰", `Using pre-allocated amount: ${(Number(allocatedLamports) / 1e9).toFixed(6)} SOL`, colors.green);
   }
 
   // ========================================================================
@@ -334,11 +355,12 @@ async function main() {
 
   try {
     // Try calling the method
-    log("🔍", "Calling execute_buy...", colors.cyan);
+    const allocatedBN = allocatedLamports ? { some: allocatedLamports } : null;
+    log("🔍", `Calling execute_buy(is_secondary=true, allocated=${allocatedLamports ? allocatedLamports.toString() : "null"})...`, colors.cyan);
 
     // Build transaction manually for better error handling
     const tx = await program.methods
-      .executeBuy(true)
+      .executeBuy(true, allocatedBN) // is_secondary=true, allocated_lamports
       .accounts(accounts)
       .transaction();
 
@@ -365,6 +387,31 @@ async function main() {
 
     if (sentToRoot > 0) {
       log("🏆", `SOL sent to root treasury: ${sentToRoot.toFixed(6)} SOL (${toRootPercentage}%)`, colors.magenta);
+    }
+
+    // If allocated mode, finalize the cycle (reset pending_fees, increment cycles_participated)
+    if (allocatedLamports) {
+      logSection("STEP 2.5/3: FINALIZE ALLOCATED CYCLE");
+      log("🔄", "Calling finalize_allocated_cycle to update TokenStats...", colors.cyan);
+
+      try {
+        const finalizeTx = await program.methods
+          .finalizeAllocatedCycle()
+          .accounts({
+            tokenStats,
+          })
+          .rpc();
+
+        log("✅", "Cycle finalized (pending_fees reset, cycles_participated incremented)!", colors.green);
+        log("🔗", `TX: https://explorer.solana.com/tx/${finalizeTx}?cluster=devnet`, colors.cyan);
+      } catch (finalizeError: any) {
+        log("❌", `Error finalizing cycle: ${finalizeError.message}`, colors.red);
+        if (finalizeError.logs) {
+          console.log("\n📋 Logs:");
+          finalizeError.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+        }
+        // Don't exit - continue to burn step
+      }
     }
   } catch (error: any) {
     // Check if this is the known InsufficientFundsForRent error that happens AFTER successful execution
@@ -457,13 +504,24 @@ async function main() {
   }
 
   // ========================================================================
-  logSection("🎉 SECONDARY TOKEN CYCLE COMPLETED!");
+  logSection(`🎉 SECONDARY TOKEN CYCLE COMPLETED! (${mode})`);
   // ========================================================================
 
-  log("✅", "collect_fees: Collected from creator vault", colors.green);
-  log("✅", `execute_buy: Bought with ${keepPercentage}%, sent ${toRootPercentage}% to root`, colors.green);
-  log("✅", "burn_and_update: Tokens burned", colors.green);
-  log("💎", "Secondary token cycle successful!", colors.magenta);
+  if (allocatedLamports) {
+    // Allocated mode summary
+    log("ℹ️", "Mode: ALLOCATED (Ecosystem Orchestrated)", colors.cyan);
+    log("✅", `execute_buy: Bought with allocated ${(Number(allocatedLamports) / 1e9).toFixed(6)} SOL`, colors.green);
+    log("✅", `finalize_allocated_cycle: TokenStats updated`, colors.green);
+    log("✅", "burn_and_update: Tokens burned", colors.green);
+    log("💎", "Allocated cycle successful!", colors.magenta);
+  } else {
+    // Standalone mode summary
+    log("ℹ️", "Mode: STANDALONE", colors.cyan);
+    log("✅", "collect_fees: Collected from creator vault", colors.green);
+    log("✅", `execute_buy: Bought with ${keepPercentage}%, sent ${toRootPercentage}% to root`, colors.green);
+    log("✅", "burn_and_update: Tokens burned", colors.green);
+    log("💎", "Secondary token cycle successful!", colors.magenta);
+  }
   log("🏆", "Root token is accumulating fees from this token!", colors.cyan);
 }
 
