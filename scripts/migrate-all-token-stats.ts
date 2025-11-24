@@ -154,6 +154,7 @@ async function migrateTokenStats(
         tokenStats,
         mint: token.mint,
         admin: adminKeypair.publicKey,
+        systemProgram: SystemProgram.programId,
       })
       .signers([adminKeypair])
       .rpc();
