@@ -219,6 +219,10 @@ export type AsdfDat = {
         {
           "name": "isRootToken",
           "type": "bool"
+        },
+        {
+          "name": "forEcosystem",
+          "type": "bool"
         }
       ]
     },
@@ -640,8 +644,62 @@ export type AsdfDat = {
         {
           "name": "isSecondaryToken",
           "type": "bool"
+        },
+        {
+          "name": "allocatedLamports",
+          "type": {
+            "option": "u64"
+          }
         }
       ]
+    },
+    {
+      "name": "finalizeAllocatedCycle",
+      "discriminator": [
+        153,
+        68,
+        114,
+        53,
+        231,
+        193,
+        206,
+        43
+      ],
+      "accounts": [
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_stats.mint",
+                "account": "tokenStats"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "initialize",
@@ -761,6 +819,76 @@ export type AsdfDat = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrateTokenStats",
+      "discriminator": [
+        79,
+        11,
+        103,
+        60,
+        105,
+        128,
+        13,
+        202
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_stats.mint",
+                "account": "tokenStats"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
         }
       ],
       "args": []
@@ -1054,6 +1182,83 @@ export type AsdfDat = {
           }
         }
       ]
+    },
+    {
+      "name": "updatePendingFees",
+      "discriminator": [
+        26,
+        208,
+        168,
+        145,
+        149,
+        206,
+        83,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amountLamports",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1174,6 +1379,19 @@ export type AsdfDat = {
         13,
         63,
         130
+      ]
+    },
+    {
+      "name": "pendingFeesUpdated",
+      "discriminator": [
+        119,
+        148,
+        105,
+        59,
+        66,
+        52,
+        54,
+        125
       ]
     },
     {
@@ -1627,6 +1845,30 @@ export type AsdfDat = {
       }
     },
     {
+      "name": "pendingFeesUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "totalPending",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "rootTokenSet",
       "type": {
         "kind": "struct",
@@ -1770,6 +2012,18 @@ export type AsdfDat = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "pendingFeesLamports",
+            "type": "u64"
+          },
+          {
+            "name": "lastFeeUpdateTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "cyclesParticipated",
+            "type": "u64"
           }
         ]
       }
