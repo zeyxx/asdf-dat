@@ -310,3 +310,16 @@ devnet-init-raw.ts
 
 # Git temporary files
 FETCH_HEAD
+
+# Test and validation reports (temporary)
+*test-report*.md
+*validation-report*.md
+ecosystem-test-report*.md
+ecosystem-validation-report*.md
+ecosystem-validation-report*.json
+manual-test-report-*.md
+/tmp/*.log
+
+# Script temporary outputs
+scripts/testing/*.log
+scripts/testing/output/
