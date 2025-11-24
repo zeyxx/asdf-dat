@@ -213,6 +213,10 @@
         {
           "name": "is_root_token",
           "type": "bool"
+        },
+        {
+          "name": "for_ecosystem",
+          "type": "bool"
         }
       ]
     },
@@ -634,8 +638,62 @@
         {
           "name": "is_secondary_token",
           "type": "bool"
+        },
+        {
+          "name": "allocated_lamports",
+          "type": {
+            "option": "u64"
+          }
         }
       ]
+    },
+    {
+      "name": "finalize_allocated_cycle",
+      "discriminator": [
+        153,
+        68,
+        114,
+        53,
+        231,
+        193,
+        206,
+        43
+      ],
+      "accounts": [
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_stats.mint",
+                "account": "TokenStats"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "initialize",
@@ -755,6 +813,76 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_token_stats",
+      "discriminator": [
+        79,
+        11,
+        103,
+        60,
+        105,
+        128,
+        13,
+        202
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_stats.mint",
+                "account": "TokenStats"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
         }
       ],
       "args": []
@@ -1048,6 +1176,83 @@
           }
         }
       ]
+    },
+    {
+      "name": "update_pending_fees",
+      "discriminator": [
+        26,
+        208,
+        168,
+        145,
+        149,
+        206,
+        83,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_lamports",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1168,6 +1373,19 @@
         13,
         63,
         130
+      ]
+    },
+    {
+      "name": "PendingFeesUpdated",
+      "discriminator": [
+        119,
+        148,
+        105,
+        59,
+        66,
+        52,
+        54,
+        125
       ]
     },
     {
@@ -1621,6 +1839,30 @@
       }
     },
     {
+      "name": "PendingFeesUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "total_pending",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "RootTokenSet",
       "type": {
         "kind": "struct",
@@ -1764,6 +2006,18 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "pending_fees_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "last_fee_update_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "cycles_participated",
+            "type": "u64"
           }
         ]
       }

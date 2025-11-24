@@ -272,6 +272,9 @@ fn execute_buy_cpi<'info>(
     Ok(())
 }
 
+// REMOVED: execute_allocated_buy_cpi_wrapper - No longer needed after merging instructions
+// REMOVED: process_allocated_split_and_calculate - Logic integrated into execute_buy
+
 #[program]
 pub mod asdf_dat {
     use super::*;
@@ -581,7 +584,11 @@ pub mod asdf_dat {
         Ok(())
     }
 
-    pub fn execute_buy(ctx: Context<ExecuteBuy>, is_secondary_token: bool) -> Result<()> {
+    pub fn execute_buy(
+        ctx: Context<ExecuteBuy>,
+        is_secondary_token: bool,
+        allocated_lamports: Option<u64>,  // NEW: If Some, use allocated mode (ecosystem orchestration)
+    ) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
@@ -598,8 +605,14 @@ pub mod asdf_dat {
         const MIN_FEES_FOR_SPLIT: u64 = 5_500_000; // Minimum 0.0055 SOL required for secondary token cycles
         const MINIMUM_BUY_AMOUNT: u64 = 100_000; // Minimum buy amount: 0.0001 SOL
 
-        let total_balance = ctx.accounts.dat_authority.lamports();
-        let available_lamports = total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
+        // Use allocated amount if provided (ecosystem mode), otherwise calculate from balance
+        let available_lamports = match allocated_lamports {
+            Some(allocated) => allocated,  // Ecosystem orchestrator mode
+            None => {
+                let total_balance = ctx.accounts.dat_authority.lamports();
+                total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
+            }
+        };
 
         // For secondary tokens, split fees before buying
         if is_secondary_token {
@@ -706,134 +719,24 @@ pub mod asdf_dat {
         state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
         state.last_cycle_sol = max_sol_cost;
 
+        // NOTE: In allocated mode (ecosystem orchestration), the orchestrator should call
+        // finalize_allocated_cycle() separately to update token_stats after this instruction
+
         msg!("Buyback complete: {} lamports ({} SOL) max cost, received {} tokens", max_sol_cost, max_sol_cost as f64 / 1e9, ctx.accounts.dat_asdf_account.amount);
         Ok(())
     }
 
-    // Execute buy with pre-allocated amount (for ecosystem orchestration)
-    // Used by ecosystem orchestrator after collecting all fees and calculating distribution
-    pub fn execute_buy_allocated(
-        ctx: Context<ExecuteBuyAllocated>,
-        is_secondary_token: bool,
-        allocated_lamports: u64,
-    ) -> Result<()> {
-        let state = &mut ctx.accounts.dat_state;
-        let clock = Clock::get()?;
-        require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
-
-        ctx.accounts.pool_asdf_account.reload()?;
-
-        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
-
-        // Use allocated amount instead of reading dat_authority balance
-        const RENT_EXEMPT_MINIMUM: u64 = 890880;
-        const SAFETY_BUFFER: u64 = 50_000;
-        const ATA_RENT_RESERVE: u64 = 2_100_000;
-        const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
-        const MINIMUM_BUY_AMOUNT: u64 = 100_000;
-
-        let available_lamports = allocated_lamports;
-
-        // For secondary tokens, split fees before buying
-        if is_secondary_token {
-            require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
-
-            if available_lamports < MIN_FEES_FOR_SPLIT {
-                msg!("Insufficient allocated fees for secondary token cycle: {} < {} lamports",
-                     available_lamports, MIN_FEES_FOR_SPLIT);
-                return err!(ErrorCode::InsufficientFees);
-            }
-
-            if let Some(root_treasury) = &ctx.accounts.root_treasury {
-                let sol_for_root = split_fees_to_root(
-                    &ctx.accounts.dat_authority,
-                    root_treasury,
-                    &ctx.accounts.system_program,
-                    available_lamports,
-                    state.fee_split_bps,
-                    seeds,
-                )?;
-
-                if sol_for_root > 0 {
-                    emit!(FeesRedirectedToRoot {
-                        from_token: ctx.accounts.asdf_mint.key(),
-                        to_root: state.root_token_mint.unwrap(),
-                        amount: sol_for_root,
-                        timestamp: clock.unix_timestamp
-                    });
-
-                    state.last_sol_sent_to_root = sol_for_root;
-                    msg!("Allocated mode - Secondary token: {} lamports sent to root treasury", sol_for_root);
-                }
-            }
-        }
-
-        // Get remaining balance after split
-        let remaining_balance = ctx.accounts.dat_authority.lamports();
-
-        let buy_amount = if is_secondary_token {
-            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE)
-        } else {
-            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
-        };
-
-        if buy_amount < MINIMUM_BUY_AMOUNT {
-            msg!("Buy amount too low: {} < {} lamports", buy_amount, MINIMUM_BUY_AMOUNT);
-            return err!(ErrorCode::InsufficientFees);
-        }
-
-        let pool_data_copy = {
-            let pool_data_ref = ctx.accounts.pool.try_borrow_data()?;
-            pool_data_ref.to_vec()
-        };
-
-        let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(
-            buy_amount,
-            &pool_data_copy,
-            state.max_fees_per_cycle,
-            state.slippage_bps,
-        )?;
-
-        msg!("Allocated mode - Max SOL cost: {} lamports ({} SOL)", max_sol_cost, max_sol_cost as f64 / 1e9);
-        msg!("Allocated mode - Desired tokens: {}", desired_tokens);
-
-        execute_buy_cpi(
-            &ctx.accounts.pump_global_config,
-            &ctx.accounts.protocol_fee_recipient,
-            &ctx.accounts.asdf_mint,
-            &ctx.accounts.pool,
-            &ctx.accounts.pool_asdf_account,
-            &ctx.accounts.dat_asdf_account,
-            &ctx.accounts.dat_authority,
-            &ctx.accounts.system_program,
-            &ctx.accounts.token_program,
-            &ctx.accounts.creator_vault,
-            &ctx.accounts.pump_event_authority,
-            &ctx.accounts.pump_swap_program,
-            &ctx.accounts.global_volume_accumulator,
-            &ctx.accounts.user_volume_accumulator,
-            &ctx.accounts.fee_config,
-            &ctx.accounts.fee_program,
-            max_sol_cost,
-            desired_tokens,
-            seeds,
-        )?;
-
-        ctx.accounts.dat_asdf_account.reload()?;
-        let state = &mut ctx.accounts.dat_state;
-        state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
-        state.last_cycle_sol = max_sol_cost;
-
-        // Reset pending fees and increment participation counter
-        ctx.accounts.token_stats.pending_fees_lamports = 0;
-        ctx.accounts.token_stats.cycles_participated = ctx.accounts.token_stats.cycles_participated.saturating_add(1);
-
-        msg!("Allocated buyback complete: {} tokens received, pending_fees reset, cycles_participated: {}",
-            ctx.accounts.dat_asdf_account.amount,
-            ctx.accounts.token_stats.cycles_participated
-        );
+    // Finalize allocated cycle - Reset pending_fees and increment cycles_participated
+    // Called by ecosystem orchestrator after execute_buy with allocated_lamports
+    // This is a separate lightweight instruction to avoid stack overflow
+    pub fn finalize_allocated_cycle(ctx: Context<FinalizeAllocatedCycle>) -> Result<()> {
+        let stats = &mut ctx.accounts.token_stats;
+        stats.pending_fees_lamports = 0;
+        stats.cycles_participated = stats.cycles_participated.saturating_add(1);
+        msg!("Finalized allocated cycle: pending_fees reset, cycles: {}", stats.cycles_participated);
         Ok(())
     }
+
 
     pub fn burn_and_update(ctx: Context<BurnAndUpdate>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
@@ -1462,60 +1365,16 @@ pub struct ExecuteBuy<'info> {
     pub rent: Sysvar<'info, Rent>,
 }
 
+// REMOVED: ExecuteBuyAllocated - Merged into ExecuteBuy with allocated_lamports parameter
+
 #[derive(Accounts)]
-pub struct ExecuteBuyAllocated<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
+pub struct FinalizeAllocatedCycle<'info> {
     #[account(
         mut,
-        seeds = [TOKEN_STATS_SEED, asdf_mint.key().as_ref()],
+        seeds = [TOKEN_STATS_SEED, token_stats.mint.as_ref()],
         bump = token_stats.bump
     )]
     pub token_stats: Account<'info, TokenStats>,
-    /// CHECK: PDA (holds native SOL for buying)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool
-    #[account(mut)]
-    pub pool: AccountInfo<'info>,
-    #[account(mut)]
-    pub asdf_mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
-    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut)]
-    pub pool_wsol_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Config
-    pub pump_global_config: AccountInfo<'info>,
-    /// CHECK: Recipient
-    #[account(mut)]
-    pub protocol_fee_recipient: AccountInfo<'info>,
-    #[account(mut)]
-    pub protocol_fee_recipient_ata: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Creator vault (PDA from token creator)
-    #[account(mut)]
-    pub creator_vault: AccountInfo<'info>,
-    /// CHECK: Event auth
-    pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
-    pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Global volume accumulator (PDA)
-    pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
-    #[account(mut)]
-    pub user_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: Fee config (PDA)
-    pub fee_config: AccountInfo<'info>,
-    /// CHECK: Fee program
-    pub fee_program: AccountInfo<'info>,
-    /// CHECK: Root treasury PDA (optional - only for secondary tokens)
-    #[account(mut)]
-    pub root_treasury: Option<AccountInfo<'info>>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-    /// CHECK: Rent sysvar
-    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
