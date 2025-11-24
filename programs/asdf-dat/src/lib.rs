@@ -334,6 +334,10 @@ pub mod asdf_dat {
         stats.last_cycle_burned = 0;
         stats.is_root_token = false;  // Will be set when assigned as root
         stats.bump = ctx.bumps.token_stats;
+        // Initialize new fields for per-token fee tracking
+        stats.pending_fees_lamports = 0;
+        stats.last_fee_update_timestamp = clock.unix_timestamp;
+        stats.cycles_participated = 0;
 
         emit!(TokenStatsInitialized {
             mint: stats.mint,
@@ -399,7 +403,39 @@ pub mod asdf_dat {
         Ok(())
     }
 
-    pub fn collect_fees(ctx: Context<CollectFees>, is_root_token: bool) -> Result<()> {
+    // Update pending fees for a specific token (admin/monitor only)
+    // Used by off-chain fee monitor to track per-token fee attribution
+    pub fn update_pending_fees(
+        ctx: Context<UpdatePendingFees>,
+        amount_lamports: u64,
+    ) -> Result<()> {
+        let token_stats = &mut ctx.accounts.token_stats;
+        let clock = Clock::get()?;
+
+        // Accumulate pending fees
+        token_stats.pending_fees_lamports = token_stats
+            .pending_fees_lamports
+            .saturating_add(amount_lamports);
+
+        token_stats.last_fee_update_timestamp = clock.unix_timestamp;
+
+        emit!(PendingFeesUpdated {
+            mint: ctx.accounts.mint.key(),
+            amount: amount_lamports,
+            total_pending: token_stats.pending_fees_lamports,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Pending fees updated for mint {}: +{} lamports (total: {})",
+            ctx.accounts.mint.key(),
+            amount_lamports,
+            token_stats.pending_fees_lamports
+        );
+
+        Ok(())
+    }
+
+    pub fn collect_fees(ctx: Context<CollectFees>, is_root_token: bool, for_ecosystem: bool) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
 
@@ -509,7 +545,15 @@ pub mod asdf_dat {
             }
         }
 
-        msg!("Fees collected");
+        // Reset pending fees unless in ecosystem mode (where orchestrator manages distribution)
+        if !for_ecosystem {
+            ctx.accounts.token_stats.pending_fees_lamports = 0;
+            msg!("Pending fees reset (standalone mode)");
+        } else {
+            msg!("Ecosystem mode: pending fees NOT reset (orchestrator will distribute)");
+        }
+
+        msg!("Fees collected (for_ecosystem: {})", for_ecosystem);
         Ok(())
     }
 
@@ -1303,6 +1347,17 @@ pub struct AdminControl<'info> {
 }
 
 #[derive(Accounts)]
+pub struct UpdatePendingFees<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub dat_state: Account<'info, DATState>,
+    #[account(mut, seeds = [TOKEN_STATS_SEED, mint.key().as_ref()], bump)]
+    pub token_stats: Account<'info, TokenStats>,
+    /// CHECK: Token mint being tracked
+    pub mint: AccountInfo<'info>,
+    pub admin: Signer<'info>,
+}
+
+#[derive(Accounts)]
 pub struct TransferAdmin<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
@@ -1467,10 +1522,14 @@ pub struct TokenStats {
     pub last_cycle_burned: u64,    // Tokens burned in last cycle
     pub is_root_token: bool,       // Whether this is the root token
     pub bump: u8,                  // PDA bump seed
+    // NEW: Precise per-token fee tracking for multi-token ecosystems
+    pub pending_fees_lamports: u64,      // Accumulated fees not yet collected (tracking attribution)
+    pub last_fee_update_timestamp: i64,  // Timestamp of last fee update
+    pub cycles_participated: u64,        // Number of ecosystem cycles this token participated in
 }
 
 impl TokenStats {
-    pub const LEN: usize = 32 + 8 * 9 + 1 + 1; // Pubkey(32) + u64(9) + bool(1) + u8(1) = 106
+    pub const LEN: usize = 32 + 8 * 12 + 1 + 1; // Pubkey(32) + u64(12) + bool(1) + u8(1) = 130
 }
 
 // EVENTS
@@ -1562,6 +1621,14 @@ pub struct FeesRedirectedToRoot {
 pub struct RootTreasuryCollected {
     pub root_mint: Pubkey,
     pub amount: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct PendingFeesUpdated {
+    pub mint: Pubkey,
+    pub amount: u64,
+    pub total_pending: u64,
     pub timestamp: i64,
 }
 
