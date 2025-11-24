@@ -109,17 +109,17 @@ fn collect_creator_fee_cpi<'info>(
     Ok(())
 }
 
-/// Helper function to calculate buy parameters (extracted to reduce stack usage)
+/// Helper function to calculate buy amount and slippage (no rent subtraction)
+/// Used AFTER fee split has already accounted for rent
 #[inline(never)]
-fn calculate_buy_params(
-    collected_lamports: u64,
+fn calculate_buy_amount_and_slippage(
+    buy_amount: u64,
     bonding_curve_data: &[u8],
     max_fees_per_cycle: u64,
     slippage_bps: u16,
 ) -> Result<(u64, u64)> {
-    let rent_exempt_minimum = 890880;
-    let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
-    let capped = collected.min(max_fees_per_cycle);
+    // buy_amount already has rent subtracted, just cap it
+    let capped = buy_amount.min(max_fees_per_cycle);
 
     // Deserialize bonding curve manually (skip 8-byte discriminator)
     let (virtual_token_reserves, virtual_sol_reserves) = deserialize_bonding_curve(&bonding_curve_data[8..])?;
@@ -500,17 +500,24 @@ pub mod asdf_dat {
 
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
 
+        // Calculate available balance (after rent) FIRST
+        // Add safety buffer to ensure account stays rent-exempt
+        const RENT_EXEMPT_MINIMUM: u64 = 890880;
+        const SAFETY_BUFFER: u64 = 1_000_000; // Extra 0.001 SOL buffer (Solana requires margin)
+        let total_balance = ctx.accounts.dat_authority.lamports();
+        let available_lamports = total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
+
         // For secondary tokens, split fees before buying
         if is_secondary_token {
             require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
 
             if let Some(root_treasury) = &ctx.accounts.root_treasury {
-                let total_collected = ctx.accounts.dat_authority.lamports();
+                // Split the AVAILABLE balance, not the total
                 let sol_for_root = split_fees_to_root(
                     &ctx.accounts.dat_authority,
                     root_treasury,
                     &ctx.accounts.system_program,
-                    total_collected,
+                    available_lamports, // Use available, not total!
                     state.fee_split_bps,
                     seeds,
                 )?;
@@ -527,8 +534,10 @@ pub mod asdf_dat {
             }
         }
 
-        // Calculate buy parameters using helper to reduce stack
-        let collected_lamports = ctx.accounts.dat_authority.lamports();
+        // Get remaining balance after split (for buy calculation)
+        // Important: Do NOT subtract rent again - it was already subtracted before the split
+        let remaining_balance = ctx.accounts.dat_authority.lamports();
+        let buy_amount = remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
 
         // Get bonding curve account data for PumpFun formula
         // IMPORTANT: Copy the data to avoid AccountBorrowFailed error
@@ -538,8 +547,9 @@ pub mod asdf_dat {
             pool_data_ref.to_vec()
         }; // Borrow is released here
 
-        let (final_amount, min_out) = calculate_buy_params(
-            collected_lamports,
+        // Calculate min tokens out based on PumpFun formula
+        let (final_amount, min_out) = calculate_buy_amount_and_slippage(
+            buy_amount,
             &pool_data_copy,
             state.max_fees_per_cycle,
             state.slippage_bps,

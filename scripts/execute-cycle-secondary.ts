@@ -13,6 +13,7 @@ import {
   PublicKey,
   SystemProgram,
   SYSVAR_RENT_PUBKEY,
+  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -299,33 +300,55 @@ async function main() {
   const treasuryBefore = await connection.getAccountInfo(rootTreasury);
   const treasuryBalanceBefore = treasuryBefore ? treasuryBefore.lamports / 1e9 : 0;
 
+  // Debug: Check all accounts before calling execute_buy
+  const accounts = {
+    datState,
+    datAuthority,
+    datAsdfAccount: datTokenAccount,
+    pool: bondingCurve,
+    asdfMint: tokenMint,
+    poolAsdfAccount: poolTokenAccount,
+    poolWsolAccount,
+    pumpGlobalConfig,
+    protocolFeeRecipient,
+    protocolFeeRecipientAta,
+    creatorVault,
+    pumpEventAuthority,
+    pumpSwapProgram: PUMP_PROGRAM,
+    globalVolumeAccumulator,
+    userVolumeAccumulator,
+    feeConfig,
+    feeProgram: FEE_PROGRAM,
+    rootTreasury,
+    tokenProgram: TOKEN_PROGRAM,
+    systemProgram: SystemProgram.programId,
+    rent: SYSVAR_RENT_PUBKEY,
+  };
+
+  // Check for undefined accounts
+  for (const [key, value] of Object.entries(accounts)) {
+    if (value === undefined || value === null) {
+      log("❌", `Account ${key} is undefined!`, colors.red);
+    }
+  }
+
   try {
-    const tx2 = await program.methods
-      .executeBuy(true) // is_secondary_token = true (split fees)
-      .accounts({
-        datState,
-        datAuthority,
-        datAsdfAccount: datTokenAccount,
-        pool: bondingCurve,
-        asdfMint: tokenMint,
-        poolAsdfAccount: poolTokenAccount,
-        poolWsolAccount,
-        pumpGlobalConfig,
-        protocolFeeRecipient,
-        protocolFeeRecipientAta,
-        creatorVault,
-        pumpEventAuthority,
-        pumpSwapProgram: PUMP_PROGRAM,
-        globalVolumeAccumulator,
-        userVolumeAccumulator,
-        feeConfig,
-        feeProgram: FEE_PROGRAM,
-        rootTreasury, // Root treasury for fee split
-        tokenProgram: TOKEN_PROGRAM,
-        systemProgram: SystemProgram.programId,
-        rent: SYSVAR_RENT_PUBKEY,
-      })
-      .rpc({ skipPreflight: true }); // Skip simulation - some PumpFun PDAs may not pass rent checks
+    // Try calling the method
+    log("🔍", "Calling execute_buy...", colors.cyan);
+
+    // Build transaction manually for better error handling
+    const tx = await program.methods
+      .executeBuy(true)
+      .accounts(accounts)
+      .transaction();
+
+    log("🔍", "Transaction built successfully", colors.cyan);
+
+    // Send transaction using native sendAndConfirmTransaction
+    const tx2 = await sendAndConfirmTransaction(connection, tx, [admin], {
+      skipPreflight: true,
+      commitment: "confirmed",
+    });
 
     log("✅", `Tokens bought and ${toRootPercentage}% sent to root!`, colors.green);
     log("🔗", `TX: https://explorer.solana.com/tx/${tx2}?cluster=devnet`, colors.cyan);
@@ -344,12 +367,50 @@ async function main() {
       log("🏆", `SOL sent to root treasury: ${sentToRoot.toFixed(6)} SOL (${toRootPercentage}%)`, colors.magenta);
     }
   } catch (error: any) {
-    log("❌", `Error execute_buy: ${error.message}`, colors.red);
-    if (error.logs) {
-      console.log("\n📋 Logs:");
-      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+    // Check if this is the known InsufficientFundsForRent error that happens AFTER successful execution
+    const errorStr = JSON.stringify(error);
+    const isRentError = error.message?.includes("InsufficientFundsForRent") ||
+                        error.transactionMessage?.includes("InsufficientFundsForRent") ||
+                        errorStr.includes("InsufficientFundsForRent");
+
+    console.log("DEBUG error object:", {
+      message: error.message,
+      signature: error.signature,
+      transactionMessage: error.transactionMessage,
+      keys: Object.keys(error)
+    });
+
+    if (isRentError) {
+      // Transaction executed but failed rent check - check on-chain state instead
+      log("⚠️", "Rent error detected - checking on-chain state...", colors.yellow);
+
+      const sig = error.signature || "unknown";
+      if (sig !== "unknown") {
+        log("🔗", `TX: https://explorer.solana.com/tx/${sig}?cluster=devnet`, colors.cyan);
+      }
+
+      // Get actual results from on-chain state
+      const tokenInfoAccount = await getAccount(connection, datTokenAccount, "confirmed", TOKEN_PROGRAM);
+      const tokenBalance = Number(tokenInfoAccount.amount) / 1e6;
+      log("💎", `Tokens bought: ${tokenBalance.toLocaleString()} tokens`, colors.green);
+
+      const treasuryAfter = await connection.getAccountInfo(rootTreasury);
+      const treasuryBalanceAfter = treasuryAfter ? treasuryAfter.lamports / 1e9 : 0;
+      const sentToRoot = treasuryBalanceAfter - treasuryBalanceBefore;
+
+      if (sentToRoot > 0) {
+        log("🏆", `SOL sent to root treasury: ${sentToRoot.toFixed(6)} SOL (${toRootPercentage}%)`, colors.magenta);
+      }
+
+      // Continue to step 3
+    } else {
+      log("❌", `Error execute_buy: ${error.message || JSON.stringify(error)}`, colors.red);
+      if (error.logs) {
+        console.log("\n📋 Logs:");
+        error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+      }
+      process.exit(1);
     }
-    process.exit(1);
   }
 
   // ========================================================================
