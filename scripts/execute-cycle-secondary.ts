@@ -12,6 +12,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -322,8 +323,9 @@ async function main() {
         rootTreasury, // Root treasury for fee split
         tokenProgram: TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
-      .rpc();
+      .rpc({ skipPreflight: true }); // Skip simulation - some PumpFun PDAs may not pass rent checks
 
     log("✅", `Tokens bought and ${toRootPercentage}% sent to root!`, colors.green);
     log("🔗", `TX: https://explorer.solana.com/tx/${tx2}?cluster=devnet`, colors.cyan);
