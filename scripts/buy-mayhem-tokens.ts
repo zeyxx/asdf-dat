@@ -22,8 +22,8 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 async function main() {
-  const NUM_BUYS = 5;
-  const BUY_AMOUNT_SOL = 0.01; // 0.01 SOL per buy
+  const NUM_BUYS = 1; // Single buy per call for volume generation
+  const BUY_AMOUNT_SOL = 0.1; // Amount per buy (INCREASED for rent fix)
 
   // Accept token file from command line or default
   const tokenFile = process.argv[2] || "devnet-token-mayhem.json";
@@ -92,7 +92,7 @@ async function main() {
         user: buyer.publicKey,
         solAmount,
         amount: tokenAmount,
-        slippage: 10,
+        slippage: 15, // Reasonable slippage: 15%
         tokenProgram: TOKEN_2022_PROGRAM_ID,
       });
 
