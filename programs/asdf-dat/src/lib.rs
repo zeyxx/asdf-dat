@@ -526,12 +526,24 @@ pub mod asdf_dat {
         // Add safety buffer to ensure account stays rent-exempt
         const RENT_EXEMPT_MINIMUM: u64 = 890880;
         const SAFETY_BUFFER: u64 = 50_000; // Extra 0.00005 SOL buffer (minimal margin for safety)
+        const ATA_RENT_RESERVE: u64 = 2_100_000; // Reserve for ATA fee_recipient creation (~0.0021 SOL)
+        const MIN_FEES_FOR_SPLIT: u64 = 5_500_000; // Minimum 0.0055 SOL required for secondary token cycles
+        const MINIMUM_BUY_AMOUNT: u64 = 100_000; // Minimum buy amount: 0.0001 SOL
+
         let total_balance = ctx.accounts.dat_authority.lamports();
         let available_lamports = total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
 
         // For secondary tokens, split fees before buying
         if is_secondary_token {
             require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
+
+            // Validate minimum fees before attempting split (prevents InsufficientFundsForRent)
+            if available_lamports < MIN_FEES_FOR_SPLIT {
+                msg!("Insufficient fees for secondary token cycle: {} < {} lamports",
+                     available_lamports, MIN_FEES_FOR_SPLIT);
+                msg!("Required: ~0.0055 SOL minimum (covers rent + ATA creation + split)");
+                return err!(ErrorCode::InsufficientFees);
+            }
 
             if let Some(root_treasury) = &ctx.accounts.root_treasury {
                 // Split the AVAILABLE balance, not the total
@@ -561,9 +573,23 @@ pub mod asdf_dat {
         }
 
         // Get remaining balance after split (for buy calculation)
-        // Important: Do NOT subtract rent again - it was already subtracted before the split
         let remaining_balance = ctx.accounts.dat_authority.lamports();
-        let buy_amount = remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
+
+        // Calculate buy_amount differently for secondary vs root tokens
+        let buy_amount = if is_secondary_token {
+            // Secondary: rent already subtracted before split, just reserve for ATA
+            // After split, we need to keep rent + buffer + ATA reserve
+            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE)
+        } else {
+            // Root: no split happened, subtract rent + buffer normally
+            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
+        };
+
+        // Verify we have enough for the buy operation (minimum 0.0001 SOL)
+        if buy_amount < MINIMUM_BUY_AMOUNT {
+            msg!("Buy amount too low: {} < {} lamports (minimum ~0.0001 SOL)", buy_amount, MINIMUM_BUY_AMOUNT);
+            return err!(ErrorCode::InsufficientFees);
+        }
 
         // Get bonding curve account data for PumpFun formula
         // IMPORTANT: Copy the data to avoid AccountBorrowFailed error
