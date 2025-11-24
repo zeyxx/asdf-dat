@@ -441,23 +441,93 @@ pub mod asdf_dat {
     // Migrate existing TokenStats accounts to include new fields
     // Call this once per existing token to initialize the new fields
     pub fn migrate_token_stats(ctx: Context<MigrateTokenStats>) -> Result<()> {
-        let stats = &mut ctx.accounts.token_stats;
+        use anchor_lang::solana_program::program::invoke;
+        use anchor_lang::solana_program::system_instruction;
+
+        let token_stats_account = &ctx.accounts.token_stats;
+        let mint = &ctx.accounts.mint;
+
+        // Verify PDA
+        let (expected_pda, bump) = Pubkey::find_program_address(
+            &[TOKEN_STATS_SEED, mint.key().as_ref()],
+            &crate::ID
+        );
+        require!(token_stats_account.key() == expected_pda, ErrorCode::InvalidParameter);
+        msg!("PDA verified: bump = {}", bump);
+
         let clock = Clock::get()?;
 
-        // Only migrate if fields are uninitialized (pending_fees = 0 and timestamp = 0)
-        if stats.pending_fees_lamports == 0 && stats.last_fee_update_timestamp == 0 {
-            stats.pending_fees_lamports = 0;
-            stats.last_fee_update_timestamp = clock.unix_timestamp;
-            // Migrate cycles_participated from total_buybacks
-            stats.cycles_participated = stats.total_buybacks;
+        // Check current account size
+        let current_data = token_stats_account.try_borrow_data()?;
+        let current_size = current_data.len();
 
-            msg!("TokenStats migrated for mint {}: cycles_participated set to {}",
-                stats.mint,
-                stats.cycles_participated
-            );
-        } else {
-            msg!("TokenStats already migrated for mint {}", stats.mint);
+        // Old size: 8 (discriminator) + 106 (old struct without 3 new fields) = 114 bytes
+        // New size: 8 (discriminator) + 130 (new struct with 3 new fields) = 138 bytes
+        const OLD_SIZE: usize = 114;
+        const NEW_SIZE: usize = 138;
+
+        if current_size >= NEW_SIZE {
+            msg!("TokenStats already migrated (size: {})", current_size);
+            return Ok(());
         }
+
+        if current_size != OLD_SIZE {
+            msg!("Unexpected TokenStats size: {}. Expected {} or {}", current_size, OLD_SIZE, NEW_SIZE);
+            return err!(ErrorCode::InvalidParameter);
+        }
+
+        msg!("Migrating TokenStats from size {} to {}", OLD_SIZE, NEW_SIZE);
+
+        // Read old data (copy before realloc)
+        let mut old_data = vec![0u8; OLD_SIZE];
+        old_data.copy_from_slice(&current_data[..OLD_SIZE]);
+        drop(current_data); // Release borrow
+
+        // Reallocate account
+        let rent = Rent::get()?;
+        let new_lamports = rent.minimum_balance(NEW_SIZE);
+        let current_lamports = token_stats_account.lamports();
+
+        if new_lamports > current_lamports {
+            let lamports_diff = new_lamports - current_lamports;
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.admin.key,
+                    token_stats_account.key,
+                    lamports_diff,
+                ),
+                &[
+                    ctx.accounts.admin.to_account_info(),
+                    token_stats_account.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+
+        // Realloc the account to new size
+        {
+            let mut lamports = token_stats_account.lamports.borrow_mut();
+            **lamports = new_lamports;
+        }
+        token_stats_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::InvalidParameter)?;
+
+        // Write data back with new fields
+        let mut new_data = token_stats_account.try_borrow_mut_data()?;
+        new_data[..OLD_SIZE].copy_from_slice(&old_data);
+
+        // Add new fields at the end (after byte 114)
+        // pending_fees_lamports: u64 = 0
+        new_data[114..122].copy_from_slice(&0u64.to_le_bytes());
+        // last_fee_update_timestamp: i64 = current timestamp
+        new_data[122..130].copy_from_slice(&clock.unix_timestamp.to_le_bytes());
+        // cycles_participated: u64 = total_buybacks (read from old data at offset 72)
+        let total_buybacks = u64::from_le_bytes(old_data[80..88].try_into().unwrap());
+        new_data[130..138].copy_from_slice(&total_buybacks.to_le_bytes());
+
+        msg!("TokenStats migrated successfully: pending_fees=0, timestamp={}, cycles_participated={}",
+            clock.unix_timestamp,
+            total_buybacks
+        );
 
         Ok(())
     }
@@ -1425,9 +1495,13 @@ pub struct UpdatePendingFees<'info> {
 pub struct MigrateTokenStats<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
-    #[account(mut, seeds = [TOKEN_STATS_SEED, token_stats.mint.key().as_ref()], bump = token_stats.bump)]
-    pub token_stats: Account<'info, TokenStats>,
+    #[account(mut)]
+    /// CHECK: Manual PDA verification and deserialization for migration
+    pub token_stats: AccountInfo<'info>,
+    /// CHECK: Mint address for PDA derivation
+    pub mint: AccountInfo<'info>,
     pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Accounts)]

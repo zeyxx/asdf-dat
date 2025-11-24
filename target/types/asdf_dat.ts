@@ -856,39 +856,18 @@ export type AsdfDat = {
         },
         {
           "name": "tokenStats",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  116,
-                  111,
-                  107,
-                  101,
-                  110,
-                  95,
-                  115,
-                  116,
-                  97,
-                  116,
-                  115,
-                  95,
-                  118,
-                  49
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "token_stats.mint",
-                "account": "tokenStats"
-              }
-            ]
-          }
+          "writable": true
+        },
+        {
+          "name": "mint"
         },
         {
           "name": "admin",
           "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": []
