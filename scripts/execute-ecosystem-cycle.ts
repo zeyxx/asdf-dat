@@ -61,6 +61,7 @@ interface TokenConfig {
   symbol: string;
   mint: PublicKey;
   bondingCurve: PublicKey;
+  creator: PublicKey;
   isRoot: boolean;
   isToken2022: boolean;
 }
@@ -130,6 +131,7 @@ async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[
         symbol: config.symbol,
         mint: new PublicKey(tokenData.mint),
         bondingCurve: new PublicKey(tokenData.bondingCurve),
+        creator: new PublicKey(tokenData.creator),
         isRoot: config.isRoot,
         isToken2022: config.isToken2022,
       });
@@ -241,9 +243,8 @@ async function collectAllVaultFees(
     program.programId
   );
 
-  // Fetch current state to get creator
-  const state: any = await (program.account as any).datState.fetch(datState);
-  const creator = state.admin; // Creator is typically the admin
+  // Use token creator from config (not admin, each token has its own creator)
+  const creator = rootToken.creator;
 
   // Derive creator vault PDA (from PumpFun program)
   const [creatorVault] = PublicKey.findProgramAddressSync(
@@ -255,6 +256,12 @@ async function collectAllVaultFees(
   const [rootTreasury] = PublicKey.findProgramAddressSync(
     [ROOT_TREASURY_SEED, rootToken.mint.toBuffer()],
     program.programId
+  );
+
+  // Derive pump event authority
+  const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
+    [Buffer.from('__event_authority')],
+    PUMP_PROGRAM
   );
 
   // Check vault balance before collection
@@ -275,8 +282,11 @@ async function collectAllVaultFees(
       .accounts({
         datState,
         tokenStats,
+        tokenMint: rootToken.mint,
         datAuthority,
         creatorVault,
+        pumpEventAuthority,
+        pumpSwapProgram: PUMP_PROGRAM,
         rootTreasury,
         systemProgram: SystemProgram.programId,
       })
@@ -569,8 +579,7 @@ async function executeRootCycle(
       program.programId
     );
 
-    const state: any = await (program.account as any).datState.fetch(datState);
-    const creator = state.admin;
+    const creator = rootToken.creator;
     const [creatorVault] = PublicKey.findProgramAddressSync(
       [Buffer.from('creator-vault'), creator.toBuffer()],
       PUMP_PROGRAM
@@ -636,6 +645,11 @@ async function executeRootCycle(
       FEE_PROGRAM
     );
 
+    const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from('__event_authority')],
+      PUMP_PROGRAM
+    );
+
     // Step 5a: Collect fees from root treasury
     log('  💰', 'Collecting fees from root treasury...', colors.cyan);
 
@@ -644,8 +658,11 @@ async function executeRootCycle(
       .accounts({
         datState,
         tokenStats,
+        tokenMint: rootToken.mint,
         datAuthority,
         creatorVault,
+        pumpEventAuthority,
+        pumpSwapProgram: PUMP_PROGRAM,
         rootTreasury,
         systemProgram: SystemProgram.programId,
       })
