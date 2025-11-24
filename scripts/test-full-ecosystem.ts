@@ -255,7 +255,7 @@ async function main() {
 
     // Step 1: collect_fees
     try {
-      await program.methods
+      await (program.methods as any)
         .collectFees(false)
         .accounts({
           datState,
