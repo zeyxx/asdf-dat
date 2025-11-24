@@ -1,8 +1,6 @@
 /**
- * Buy SPL Tokens to Generate Fees
- *
- * Makes multiple small purchases to accumulate fees in the creator vault
- * Required before running the DAT cycle test
+ * Buy SPL Tokens (Simplified)
+ * Uses the same account order as our working CPI in lib.rs
  */
 
 import {
@@ -10,13 +8,12 @@ import {
   Keypair,
   PublicKey,
   Transaction,
+  TransactionInstruction,
   SystemProgram,
   sendAndConfirmTransaction,
-  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
   createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
@@ -25,9 +22,7 @@ import BN from "bn.js";
 
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
-const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
-// Buy instruction discriminator from PumpFun IDL
 const BUY_DISCRIMINATOR = Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]);
 
 const colors = {
@@ -44,10 +39,9 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 async function main() {
-  const NUM_BUYS = 3;
-  const BUY_AMOUNT_SOL = 0.001; // Small amount per buy
+  const NUM_BUYS = 5;
+  const BUY_AMOUNT_SOL = 0.005; // Larger buys to generate more fees
 
-  // Accept token file from command line or default to SPL
   const tokenFile = process.argv[2] || "devnet-token-spl.json";
 
   console.log("\n" + "=".repeat(60));
@@ -67,7 +61,6 @@ async function main() {
   const balance = await connection.getBalance(buyer.publicKey);
   log("💰", `Balance: ${(balance / 1e9).toFixed(4)} SOL`, balance > 0.01 * 1e9 ? colors.green : colors.yellow);
 
-  // Load SPL token info
   const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
@@ -76,7 +69,7 @@ async function main() {
   log("🪙", `Token Mint: ${tokenMint.toString()}`, colors.cyan);
   log("📈", `Bonding Curve: ${bondingCurve.toString()}`, colors.cyan);
 
-  // Derive accounts
+  // Derive PDAs (same as lib.rs)
   const [global] = PublicKey.findProgramAddressSync(
     [Buffer.from("global")],
     PUMP_PROGRAM
@@ -85,37 +78,6 @@ async function main() {
   const [creatorVault] = PublicKey.findProgramAddressSync(
     [Buffer.from("creator-vault"), creator.toBuffer()],
     PUMP_PROGRAM
-  );
-
-  // Fee recipient for devnet
-  const feeRecipient = new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
-
-  const buyerTokenAccount = await getAssociatedTokenAddress(
-    tokenMint,
-    buyer.publicKey,
-    false,
-    TOKEN_PROGRAM_ID
-  );
-
-  const bondingCurveTokenAccount = await getAssociatedTokenAddress(
-    tokenMint,
-    bondingCurve,
-    true,
-    TOKEN_PROGRAM_ID
-  );
-
-  const bondingCurveWsolAccount = await getAssociatedTokenAddress(
-    WSOL_MINT,
-    bondingCurve,
-    true,
-    TOKEN_PROGRAM_ID
-  );
-
-  const feeRecipientWsolAccount = await getAssociatedTokenAddress(
-    WSOL_MINT,
-    feeRecipient,
-    true,
-    TOKEN_PROGRAM_ID
   );
 
   const [eventAuthority] = PublicKey.findProgramAddressSync(
@@ -136,6 +98,23 @@ async function main() {
   const [feeConfig] = PublicKey.findProgramAddressSync(
     [Buffer.from("fee_config"), PUMP_PROGRAM.toBuffer()],
     FEE_PROGRAM
+  );
+
+  // Fee recipient (same as lib.rs)
+  const feeRecipient = new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
+
+  const buyerTokenAccount = await getAssociatedTokenAddress(
+    tokenMint,
+    buyer.publicKey,
+    false,
+    TOKEN_PROGRAM_ID
+  );
+
+  const bondingCurveTokenAccount = await getAssociatedTokenAddress(
+    tokenMint,
+    bondingCurve,
+    true,
+    TOKEN_PROGRAM_ID
   );
 
   // Check creator vault before
@@ -163,54 +142,52 @@ async function main() {
         )
       );
 
-      // Build buy instruction data
-      const amount = new BN(1_000_000); // 1 token (6 decimals)
+      // Build instruction data: [discriminator(8)][token_amount(8)][max_sol_cost(8)][track_volume(1)]
+      const tokenAmount = new BN(1_000_000); // 1 token (6 decimals)
       const maxSolCost = new BN(Math.floor(BUY_AMOUNT_SOL * 1e9));
 
       const data = Buffer.concat([
         BUY_DISCRIMINATOR,
-        amount.toArrayLike(Buffer, "le", 8),
+        tokenAmount.toArrayLike(Buffer, "le", 8),
         maxSolCost.toArrayLike(Buffer, "le", 8),
         Buffer.from([0]), // track_volume: None
       ]);
 
-      // Build buy instruction accounts (based on PumpFun IDL)
-      const buyIx = {
+      // Account order MUST match lib.rs execute_buy_cpi
+      const buyIx = new TransactionInstruction({
         programId: PUMP_PROGRAM,
         keys: [
-          { pubkey: global, isSigner: false, isWritable: false },
-          { pubkey: feeRecipient, isSigner: false, isWritable: true },
-          { pubkey: tokenMint, isSigner: false, isWritable: false },
-          { pubkey: bondingCurve, isSigner: false, isWritable: true },
-          { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: bondingCurveWsolAccount, isSigner: false, isWritable: true },
-          { pubkey: buyerTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: buyer.publicKey, isSigner: true, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-          { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
-          { pubkey: eventAuthority, isSigner: false, isWritable: false },
-          { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
-          { pubkey: creatorVault, isSigner: false, isWritable: true },
-          { pubkey: globalVolumeAccumulator, isSigner: false, isWritable: true },
-          { pubkey: userVolumeAccumulator, isSigner: false, isWritable: true },
-          { pubkey: feeConfig, isSigner: false, isWritable: false },
-          { pubkey: FEE_PROGRAM, isSigner: false, isWritable: false },
-          { pubkey: feeRecipientWsolAccount, isSigner: false, isWritable: true },
+          { pubkey: global, isSigner: false, isWritable: false },                    // 0 - global
+          { pubkey: feeRecipient, isSigner: false, isWritable: true },               // 1 - fee_recipient
+          { pubkey: tokenMint, isSigner: false, isWritable: false },                 // 2 - mint
+          { pubkey: bondingCurve, isSigner: false, isWritable: true },               // 3 - bonding_curve
+          { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },   // 4 - associated_bonding_curve
+          { pubkey: buyerTokenAccount, isSigner: false, isWritable: true },          // 5 - associated_user
+          { pubkey: buyer.publicKey, isSigner: true, isWritable: true },             // 6 - user (SIGNER)
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },   // 7 - system_program
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },          // 8 - token_program
+          { pubkey: creatorVault, isSigner: false, isWritable: true },               // 9 - creator_vault
+          { pubkey: eventAuthority, isSigner: false, isWritable: false },            // 10 - event_authority
+          { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },              // 11 - program
+          { pubkey: globalVolumeAccumulator, isSigner: false, isWritable: true },    // 12 - global_volume_accumulator
+          { pubkey: userVolumeAccumulator, isSigner: false, isWritable: true },      // 13 - user_volume_accumulator
+          { pubkey: feeConfig, isSigner: false, isWritable: false },                 // 14 - fee_config
+          { pubkey: FEE_PROGRAM, isSigner: false, isWritable: false },               // 15 - fee_program
         ],
         data,
-      };
+      });
 
       tx.add(buyIx);
 
       const sig = await sendAndConfirmTransaction(connection, tx, [buyer], {
         commitment: "confirmed",
+        skipPreflight: true, // Skip simulation like execute-cycle-secondary
       });
 
       log("✅", `Buy ${i + 1} successful!`, colors.green);
       log("🔗", `TX: https://explorer.solana.com/tx/${sig}?cluster=devnet`, colors.cyan);
 
-      // Wait a bit between buys
+      // Wait between buys
       if (i < NUM_BUYS - 1) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
@@ -219,10 +196,8 @@ async function main() {
 
       if (error.logs) {
         console.log("\n📋 Logs:");
-        error.logs.slice(-5).forEach((l: string) => console.log(`   ${l}`));
+        error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
       }
-
-      // Continue with next buy
     }
   }
 
@@ -238,14 +213,14 @@ async function main() {
   log("🏦", `Creator Vault (after): ${vaultBalanceAfter.toFixed(6)} SOL`, colors.green);
   log("📈", `Fees Generated: ${(vaultBalanceAfter - vaultBalanceBefore).toFixed(6)} SOL`, colors.cyan);
 
-  if (vaultBalanceAfter > 0.0001) {
+  if (vaultBalanceAfter > 0.001) {
     console.log("\n" + "=".repeat(60));
     console.log(`${colors.bright}${colors.green}✅ READY FOR DAT CYCLE TEST${colors.reset}`);
     console.log("=".repeat(60) + "\n");
 
-    log("🔥", "Run: npx ts-node scripts/test-spl-full-cycle.ts", colors.green);
+    log("🔥", "Run: npx ts-node scripts/execute-cycle-secondary.ts", colors.green);
   } else {
-    log("⚠️", "WARNING: Very low fees. May need more trades.", colors.yellow);
+    log("⚠️", "Need more fees. Try buying more tokens.", colors.yellow);
   }
 }
 

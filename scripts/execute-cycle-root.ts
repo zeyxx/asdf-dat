@@ -12,6 +12,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -19,6 +20,7 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
   getAssociatedTokenAddress,
   getAccount,
+  createAssociatedTokenAccountIdempotentInstruction,
 } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
@@ -27,6 +29,7 @@ import path from "path";
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 const colors = {
   reset: "\x1b[0m",
@@ -183,6 +186,7 @@ async function main() {
 
   const datTokenAccount = await getAssociatedTokenAddress(tokenMint, datAuthority, true, TOKEN_PROGRAM);
   const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, bondingCurve, true, TOKEN_PROGRAM);
+  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
 
   // ========================================================================
   logSection("STEP 1/3: COLLECT FEES (ROOT TOKEN MODE)");
@@ -257,6 +261,15 @@ async function main() {
   );
 
   try {
+    // Create protocol fee recipient ATA if it doesn't exist
+    const createAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+      admin.publicKey,
+      protocolFeeRecipientAta,
+      protocolFeeRecipient,
+      tokenMint,
+      TOKEN_PROGRAM
+    );
+
     const tx2 = await program.methods
       .executeBuy(false) // is_secondary_token = false (root keeps 100%)
       .accounts({
@@ -266,6 +279,7 @@ async function main() {
         pool: bondingCurve,
         asdfMint: tokenMint,
         poolAsdfAccount: poolTokenAccount,
+        poolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
@@ -276,10 +290,12 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-         // Not used for root token
+        rootTreasury, // Not used for root token but required by struct
         tokenProgram: TOKEN_PROGRAM,
         systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
+      .preInstructions([createAtaIx])
       .rpc();
 
     log("✅", "Tokens bought with 100% of fees!", colors.green);

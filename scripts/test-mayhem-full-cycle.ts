@@ -10,6 +10,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_2022_PROGRAM_ID,
@@ -208,20 +209,49 @@ async function main() {
 
   // ========================================================================
   console.log(`\n${"=".repeat(70)}`);
-  console.log(`${colors.bright}${colors.magenta}🔄 EXECUTE FULL CYCLE (1 TRANSACTION)${colors.reset}`);
+  console.log(`${colors.bright}${colors.magenta}🔄 STEP 1/3: COLLECT FEES${colors.reset}`);
   console.log(`${"=".repeat(70)}\n`);
   // ========================================================================
 
   try {
-    const tx = await program.methods
-      .executeFullCycle()
+    const tx1 = await program.methods
+      .collectFees(true) // is_root_token = true (Mayhem is the root token)
       .accounts({
         datState,
         tokenStats,
+        tokenMint,
         datAuthority,
         creatorVault,
-        wsolMint: WSOL_MINT,
-        datWsolAccount,
+        pumpEventAuthority,
+        pumpSwapProgram: PUMP_PROGRAM,
+        rootTreasury: datAuthority, // Dummy value, not used for root token
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    log("✅", "Fees collected from creator vault!", colors.green);
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx1}?cluster=devnet`, colors.cyan);
+  } catch (error: any) {
+    log("❌", `Error collect_fees: ${error.message}`, colors.red);
+    if (error.logs) {
+      console.log("\n📋 Logs:");
+      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+    }
+    process.exit(1);
+  }
+
+  // ========================================================================
+  console.log(`\n${"=".repeat(70)}`);
+  console.log(`${colors.bright}${colors.magenta}🔄 STEP 2/3: EXECUTE BUY${colors.reset}`);
+  console.log(`${"=".repeat(70)}\n`);
+  // ========================================================================
+
+  try {
+    const tx2 = await program.methods
+      .executeBuy(false) // is_secondary_token = false (this is the root token)
+      .accounts({
+        datState,
+        datAuthority,
         datAsdfAccount: datTokenAccount,
         pool: bondingCurve,
         asdfMint: tokenMint,
@@ -230,19 +260,52 @@ async function main() {
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
+        creatorVault,
         pumpEventAuthority,
         pumpSwapProgram: PUMP_PROGRAM,
         globalVolumeAccumulator,
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
+        rootTreasury: datAuthority, // Dummy value, not used for root token
         tokenProgram: TOKEN_2022_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .rpc();
 
-    log("✅", "CYCLE COMPLET RÉUSSI EN 1 SEULE TRANSACTION!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    log("✅", "Tokens bought!", colors.green);
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx2}?cluster=devnet`, colors.cyan);
+  } catch (error: any) {
+    log("❌", `Error execute_buy: ${error.message}`, colors.red);
+    if (error.logs) {
+      console.log("\n📋 Logs:");
+      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+    }
+    process.exit(1);
+  }
+
+  // ========================================================================
+  console.log(`\n${"=".repeat(70)}`);
+  console.log(`${colors.bright}${colors.magenta}🔄 STEP 3/3: BURN AND UPDATE${colors.reset}`);
+  console.log(`${"=".repeat(70)}\n`);
+  // ========================================================================
+
+  try {
+    const tx3 = await program.methods
+      .burnAndUpdate()
+      .accounts({
+        datState,
+        tokenStats,
+        datAuthority,
+        datAsdfAccount: datTokenAccount,
+        asdfMint: tokenMint,
+        tokenProgram: TOKEN_2022_PROGRAM_ID,
+      })
+      .rpc();
+
+    log("✅", "Tokens burned!", colors.green);
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx3}?cluster=devnet`, colors.cyan);
 
     // Check balances after
     log("\n📊", "État APRÈS le cycle:", colors.green);

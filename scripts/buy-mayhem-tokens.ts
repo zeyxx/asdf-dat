@@ -22,12 +22,17 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 async function main() {
-  const NUM_BUYS = 10;
-  const BUY_AMOUNT_SOL = 0.05; // 0.05 SOL per buy
+  const NUM_BUYS = 5;
+  const BUY_AMOUNT_SOL = 0.01; // 0.01 SOL per buy
+
+  // Accept token file from command line or default
+  const tokenFile = process.argv[2] || "devnet-token-mayhem.json";
 
   console.log("\n" + "=".repeat(70));
   console.log(`${colors.bright}${colors.cyan}🛒 BUY TOKEN2022 (MAYHEM MODE)${colors.reset}`);
   console.log("=".repeat(70) + "\n");
+
+  log("📄", `Token file: ${tokenFile}`, colors.cyan);
 
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
   const sdk = new OnlinePumpSdk(connection);
@@ -42,7 +47,7 @@ async function main() {
   log("💰", `Balance: ${(balance / 1e9).toFixed(4)} SOL`, balance > 0.5 * 1e9 ? colors.green : colors.yellow);
 
   // Load Token2022 info
-  const tokenInfo = JSON.parse(fs.readFileSync("devnet-token-mayhem.json", "utf-8"));
+  const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
   const creator = new PublicKey(tokenInfo.creator);
 

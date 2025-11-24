@@ -109,14 +109,15 @@ fn collect_creator_fee_cpi<'info>(
     Ok(())
 }
 
-/// Helper function to calculate buy amount and slippage (no rent subtraction)
-/// Used AFTER fee split has already accounted for rent
+/// Helper function to calculate buy parameters for PumpFun
+/// Returns (max_sol_cost, desired_tokens)
+/// PumpFun buy instruction expects: token_amount (how many tokens we want) and max_sol_cost (max SOL we'll pay)
 #[inline(never)]
 fn calculate_buy_amount_and_slippage(
     buy_amount: u64,
     bonding_curve_data: &[u8],
     max_fees_per_cycle: u64,
-    slippage_bps: u16,
+    _slippage_bps: u16, // Reserved for future use
 ) -> Result<(u64, u64)> {
     // buy_amount already has rent subtracted, just cap it
     let capped = buy_amount.min(max_fees_per_cycle);
@@ -145,15 +146,22 @@ fn calculate_buy_amount_and_slippage(
         return Ok((0, 0));
     }
 
+    // Calculate how many tokens we expect to receive with our SOL
     // Use PumpFun's exact formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
-    let expected = calculate_tokens_out_pumpfun(
+    let expected_tokens = calculate_tokens_out_pumpfun(
         final_amount,
         virtual_sol_reserves,
         virtual_token_reserves,
     )?;
-    let min_out = apply_slippage(expected, slippage_bps);
 
-    Ok((final_amount, min_out))
+    // Apply a safety margin (use 97% of expected to account for slippage/price movement)
+    // PumpFun will calculate the exact SOL cost and fail if it exceeds max_sol_cost
+    let target_tokens = (expected_tokens as u128 * 97 / 100) as u64;
+
+    msg!("Expected tokens: {}, Target tokens (97%): {}", expected_tokens, target_tokens);
+
+    // Return (max_sol_cost, desired_token_amount)
+    Ok((final_amount, target_tokens))
 }
 
 /// Helper function to split fees for secondary tokens (extracted to reduce stack usage)
@@ -206,17 +214,17 @@ fn execute_buy_cpi<'info>(
     user_volume_accumulator: &AccountInfo<'info>,
     fee_config: &AccountInfo<'info>,
     fee_program: &AccountInfo<'info>,
-    final_amount: u64,
-    min_out: u64,
+    max_sol_cost: u64,
+    desired_tokens: u64,
     seeds: &[&[u8]],
 ) -> Result<()> {
-    // Use Box to allocate on heap instead of stack
+    // Build PumpFun buy instruction data:
+    // [discriminator(8)][token_amount(8)][max_sol_cost(8)][track_volume(1)]
     let mut data = Vec::new();
-    data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
-    data.extend_from_slice(&min_out.to_le_bytes());
-    // Fixed: Use final_amount directly instead of multiplying by 200
-    data.extend_from_slice(&final_amount.to_le_bytes());
-    data.push(0);
+    data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]); // buy discriminator
+    data.extend_from_slice(&desired_tokens.to_le_bytes());        // how many tokens we want
+    data.extend_from_slice(&max_sol_cost.to_le_bytes());          // maximum SOL we'll pay
+    data.push(0);                                                  // track_volume: None
 
     let instruction = Box::new(Instruction {
         program_id: PUMP_PROGRAM,
@@ -298,6 +306,7 @@ pub mod asdf_dat {
         state.pending_burn_amount = 0;
         state.root_token_mint = None;        // No root token by default
         state.fee_split_bps = 5520;          // 55.2% keep, 44.8% to root
+        state.last_sol_sent_to_root = 0;
 
         emit!(DATInitialized {
             admin: state.admin,
@@ -458,7 +467,19 @@ pub mod asdf_dat {
             if let Some(root_treasury) = &ctx.accounts.root_treasury {
                 let treasury_amt = root_treasury.lamports();
                 if treasury_amt > 0 {
-                    invoke(
+                    // Root treasury is a PDA: seeds = ["root_treasury", root_token_mint, bump]
+                    let root_mint = state.root_token_mint.unwrap();
+                    let (expected_treasury, bump) = Pubkey::find_program_address(
+                        &[ROOT_TREASURY_SEED, root_mint.as_ref()],
+                        ctx.program_id
+                    );
+                    require!(expected_treasury == *root_treasury.key, ErrorCode::InvalidRootTreasury);
+
+                    // Create seeds with bump for signing
+                    let bump_slice = &[bump];
+                    let treasury_seeds: &[&[u8]] = &[ROOT_TREASURY_SEED, root_mint.as_ref(), bump_slice];
+
+                    invoke_signed(
                         &anchor_lang::solana_program::system_instruction::transfer(
                             root_treasury.key,
                             ctx.accounts.dat_authority.key,
@@ -468,7 +489,8 @@ pub mod asdf_dat {
                             root_treasury.to_account_info(),
                             ctx.accounts.dat_authority.to_account_info(),
                             ctx.accounts.system_program.to_account_info()
-                        ]
+                        ],
+                        &[treasury_seeds]
                     )?;
 
                     // Track SOL received from other tokens
@@ -503,7 +525,7 @@ pub mod asdf_dat {
         // Calculate available balance (after rent) FIRST
         // Add safety buffer to ensure account stays rent-exempt
         const RENT_EXEMPT_MINIMUM: u64 = 890880;
-        const SAFETY_BUFFER: u64 = 1_000_000; // Extra 0.001 SOL buffer (Solana requires margin)
+        const SAFETY_BUFFER: u64 = 50_000; // Extra 0.00005 SOL buffer (minimal margin for safety)
         let total_balance = ctx.accounts.dat_authority.lamports();
         let available_lamports = total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
 
@@ -529,6 +551,10 @@ pub mod asdf_dat {
                         amount: sol_for_root,
                         timestamp: clock.unix_timestamp
                     });
+
+                    // Track sent amount in state for burn_and_update to record in stats
+                    state.last_sol_sent_to_root = sol_for_root;
+
                     msg!("Secondary token: {} lamports sent to root treasury", sol_for_root);
                 }
             }
@@ -547,16 +573,16 @@ pub mod asdf_dat {
             pool_data_ref.to_vec()
         }; // Borrow is released here
 
-        // Calculate min tokens out based on PumpFun formula
-        let (final_amount, min_out) = calculate_buy_amount_and_slippage(
+        // Calculate buy parameters for PumpFun: (max_sol_cost, desired_tokens)
+        let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(
             buy_amount,
             &pool_data_copy,
             state.max_fees_per_cycle,
             state.slippage_bps,
         )?;
 
-        msg!("Final buy amount: {} lamports ({} SOL)", final_amount, final_amount as f64 / 1e9);
-        msg!("Min tokens out: {}", min_out);
+        msg!("Max SOL cost: {} lamports ({} SOL)", max_sol_cost, max_sol_cost as f64 / 1e9);
+        msg!("Desired tokens: {}", desired_tokens);
 
         // Use helper to reduce stack usage
         execute_buy_cpi(
@@ -576,17 +602,17 @@ pub mod asdf_dat {
             &ctx.accounts.user_volume_accumulator,
             &ctx.accounts.fee_config,
             &ctx.accounts.fee_program,
-            final_amount,
-            min_out,
+            max_sol_cost,
+            desired_tokens,
             seeds,
         )?;
 
         ctx.accounts.dat_asdf_account.reload()?;
         let state = &mut ctx.accounts.dat_state;
         state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
-        state.last_cycle_sol = final_amount;
+        state.last_cycle_sol = max_sol_cost;
 
-        msg!("Buyback complete: {} lamports ({} SOL) spent", final_amount, final_amount as f64 / 1e9);
+        msg!("Buyback complete: {} lamports ({} SOL) max cost, received {} tokens", max_sol_cost, max_sol_cost as f64 / 1e9, ctx.accounts.dat_asdf_account.amount);
         Ok(())
     }
 
@@ -621,10 +647,20 @@ pub mod asdf_dat {
         token_stats.last_cycle_sol = state.last_cycle_sol;
         token_stats.last_cycle_burned = tokens_to_burn;
 
-        // Update global state
+        // Update total_sol_sent_to_root if this was a secondary token cycle
+        if state.last_sol_sent_to_root > 0 {
+            token_stats.total_sol_sent_to_root =
+                token_stats.total_sol_sent_to_root.saturating_add(state.last_sol_sent_to_root);
+            msg!("Token stats updated: {} lamports sent to root (total: {})",
+                state.last_sol_sent_to_root,
+                token_stats.total_sol_sent_to_root);
+        }
+
+        // Update global state and reset tracking variables
         state.last_cycle_burned = tokens_to_burn;
         state.consecutive_failures = 0;
         state.pending_burn_amount = 0;
+        state.last_sol_sent_to_root = 0;  // Reset for next cycle
 
         let (whole, frac) = format_tokens(tokens_to_burn);
         msg!("Cycle #{} complete: {}.{:06} tokens burned ({} units)",
@@ -1152,6 +1188,7 @@ pub struct CollectFees<'info> {
     /// CHECK: Pump program
     pub pump_swap_program: AccountInfo<'info>,
     /// CHECK: Root treasury PDA (optional - only for root token)
+    #[account(mut)]
     pub root_treasury: Option<AccountInfo<'info>>,
     pub system_program: Program<'info, System>,
 }
@@ -1381,11 +1418,12 @@ pub struct DATState {
     pub pending_burn_amount: u64,
     pub root_token_mint: Option<Pubkey>,  // Token principal qui reçoit 44.8% des autres
     pub fee_split_bps: u16,                // Basis points: 5520 = 55.2% keep, 44.8% to root
-    pub _reserved: [u8; 30],               // Reduced from 64 to accommodate new fields
+    pub last_sol_sent_to_root: u64,        // Track SOL sent to root in last cycle (for stats update)
+    pub _reserved: [u8; 22],               // Reduced from 30 to accommodate last_sol_sent_to_root
 }
 
 impl DATState {
-    pub const LEN: usize = 32 * 5 + 8 * 13 + 4 * 2 + 1 * 5 + 2 + 33 + 2 + 30; // Added Option<Pubkey>(33) + u16(2), reduced reserved to 30
+    pub const LEN: usize = 32 * 5 + 8 * 14 + 4 * 2 + 1 * 5 + 2 + 33 + 2 + 22; // Added u64(8), reduced reserved to 22
 }
 
 // Per-token statistics tracking
@@ -1535,6 +1573,8 @@ pub enum ErrorCode {
     InvalidPool,
     #[msg("Invalid root token")]
     InvalidRootToken,
+    #[msg("Invalid root treasury")]
+    InvalidRootTreasury,
     #[msg("Invalid fee split basis points")]
     InvalidFeeSplit,
     #[msg("Insufficient pool liquidity")]
