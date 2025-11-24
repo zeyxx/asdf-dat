@@ -201,6 +201,7 @@
         },
         {
           "name": "root_treasury",
+          "writable": true,
           "optional": true
         },
         {
@@ -623,6 +624,10 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -1309,8 +1314,18 @@
     },
     {
       "code": 6015,
+      "name": "InvalidRootTreasury",
+      "msg": "Invalid root treasury"
+    },
+    {
+      "code": 6016,
       "name": "InvalidFeeSplit",
       "msg": "Invalid fee split basis points"
+    },
+    {
+      "code": 6017,
+      "name": "InsufficientPoolLiquidity",
+      "msg": "Insufficient pool liquidity"
     }
   ],
   "types": [
@@ -1530,11 +1545,15 @@
             "type": "u16"
           },
           {
+            "name": "last_sol_sent_to_root",
+            "type": "u64"
+          },
+          {
             "name": "_reserved",
             "type": {
               "array": [
                 "u8",
-                30
+                22
               ]
             }
           }

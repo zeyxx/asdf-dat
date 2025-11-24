@@ -15,6 +15,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -30,6 +31,7 @@ import path from "path";
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 const colors = {
   reset: "\x1b[0m",
@@ -249,6 +251,7 @@ async function main() {
 
     const datTokenAccount = await getAssociatedTokenAddress(token.mint, datAuthority, true, token.tokenProgram);
     const poolTokenAccount = await getAssociatedTokenAddress(token.mint, token.bondingCurve, true, token.tokenProgram);
+    const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, token.bondingCurve, true, TOKEN_PROGRAM_ID);
 
     // Step 1: collect_fees
     try {
@@ -309,6 +312,7 @@ async function main() {
           pool: token.bondingCurve,
           asdfMint: token.mint,
           poolAsdfAccount: poolTokenAccount,
+          poolWsolAccount,
           pumpGlobalConfig,
           protocolFeeRecipient,
           protocolFeeRecipientAta,
@@ -322,6 +326,7 @@ async function main() {
           rootTreasury,
           tokenProgram: token.tokenProgram,
           systemProgram: SystemProgram.programId,
+          rent: SYSVAR_RENT_PUBKEY,
         })
         .rpc();
 
@@ -421,6 +426,7 @@ async function main() {
   // Step 2: execute_buy (root)
   const rootDatTokenAccount = await getAssociatedTokenAddress(rootToken.mint, datAuthority, true, rootToken.tokenProgram);
   const rootPoolTokenAccount = await getAssociatedTokenAddress(rootToken.mint, rootToken.bondingCurve, true, rootToken.tokenProgram);
+  const rootPoolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, rootToken.bondingCurve, true, TOKEN_PROGRAM_ID);
 
   const [pumpGlobalConfig] = PublicKey.findProgramAddressSync(
     [Buffer.from("global")],
@@ -455,6 +461,7 @@ async function main() {
         pool: rootToken.bondingCurve,
         asdfMint: rootToken.mint,
         poolAsdfAccount: rootPoolTokenAccount,
+        poolWsolAccount: rootPoolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
@@ -465,9 +472,10 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury: null,
+        rootTreasury: datAuthority, // Dummy value, not used for root token
         tokenProgram: rootToken.tokenProgram,
         systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .rpc();
 

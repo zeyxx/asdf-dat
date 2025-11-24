@@ -207,6 +207,7 @@ export type AsdfDat = {
         },
         {
           "name": "rootTreasury",
+          "writable": true,
           "optional": true
         },
         {
@@ -629,6 +630,10 @@ export type AsdfDat = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
@@ -1315,8 +1320,18 @@ export type AsdfDat = {
     },
     {
       "code": 6015,
+      "name": "invalidRootTreasury",
+      "msg": "Invalid root treasury"
+    },
+    {
+      "code": 6016,
       "name": "invalidFeeSplit",
       "msg": "Invalid fee split basis points"
+    },
+    {
+      "code": 6017,
+      "name": "insufficientPoolLiquidity",
+      "msg": "Insufficient pool liquidity"
     }
   ],
   "types": [
@@ -1536,11 +1551,15 @@ export type AsdfDat = {
             "type": "u16"
           },
           {
+            "name": "lastSolSentToRoot",
+            "type": "u64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                30
+                22
               ]
             }
           }

@@ -47,7 +47,8 @@ async function main() {
   log("👤", `Payer: ${payer.publicKey.toString()}`, colors.cyan);
 
   // Load token info
-  const tokenInfo = JSON.parse(fs.readFileSync("devnet-token-spl.json", "utf-8"));
+  const tokenFile = process.argv[2] || "devnet-token-spl.json";
+  const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
   const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
   const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");

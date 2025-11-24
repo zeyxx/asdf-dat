@@ -12,6 +12,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_RENT_PUBKEY,
 } from "@solana/web3.js";
 import {
   TOKEN_PROGRAM_ID,
@@ -106,6 +107,7 @@ async function main() {
 
   const datTokenAccount = await getAssociatedTokenAddress(tokenMint, datAuthority, true);
   const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, bondingCurve, true);
+  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
 
   // Derive creator vault
   const tokenCreator = new PublicKey(tokenInfo.creator);
@@ -229,6 +231,7 @@ async function main() {
         pool: bondingCurve,
         asdfMint: tokenMint,
         poolAsdfAccount: poolTokenAccount,
+        poolWsolAccount,
         pumpGlobalConfig,
         protocolFeeRecipient,
         protocolFeeRecipientAta,
@@ -239,9 +242,10 @@ async function main() {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-         // Not used for non-root token
+        rootTreasury: datAuthority, // Dummy value, not used for non-secondary token
         tokenProgram: TOKEN_PROGRAM_ID,
         systemProgram: SystemProgram.programId,
+        rent: SYSVAR_RENT_PUBKEY,
       })
       .rpc();
 

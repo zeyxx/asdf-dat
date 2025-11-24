@@ -3,6 +3,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
@@ -197,6 +198,9 @@ async function main() {
         eventAuthority,
         pumpProgram: PUMP_PROGRAM,
       })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ])
       .signers([mint])
       .rpc();
 
