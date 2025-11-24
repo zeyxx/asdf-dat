@@ -33,10 +33,14 @@
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",
+    "@types/chai": "^5.2.3",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
     "@types/mime-types": "^3.0.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.5",
+    "chai": "^6.2.1",
+    "mocha": "^11.7.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }
