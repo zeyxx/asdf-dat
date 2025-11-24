@@ -34,6 +34,21 @@ pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
 pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
 pub const ROOT_TREASURY_SEED: &[u8] = b"root_treasury";
 
+/// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
+fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
+    require!(data.len() >= 24, ErrorCode::InvalidPool);
+
+    // Read virtual_token_reserves (bytes 0-7)
+    let virtual_token_reserves = u64::from_le_bytes(data[0..8].try_into().unwrap());
+
+    // Read virtual_sol_reserves (bytes 8-15)
+    let virtual_sol_reserves = u64::from_le_bytes(data[8..16].try_into().unwrap());
+
+    msg!("Bonding curve: virtual_token={}, virtual_sol={}", virtual_token_reserves, virtual_sol_reserves);
+
+    Ok((virtual_token_reserves, virtual_sol_reserves))
+}
+
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
     Pubkey::new_from_array([81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219, 29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216]),
 ];
@@ -98,21 +113,45 @@ fn collect_creator_fee_cpi<'info>(
 #[inline(never)]
 fn calculate_buy_params(
     collected_lamports: u64,
-    pool_reserves: u64,
-    pool_token_amount: u64,
-    token_supply: u64,
+    bonding_curve_data: &[u8],
     max_fees_per_cycle: u64,
     slippage_bps: u16,
 ) -> Result<(u64, u64)> {
     let rent_exempt_minimum = 890880;
     let collected = collected_lamports.saturating_sub(rent_exempt_minimum);
     let capped = collected.min(max_fees_per_cycle);
-    let max_safe = pool_reserves / 100;
+
+    // Deserialize bonding curve manually (skip 8-byte discriminator)
+    let (virtual_token_reserves, virtual_sol_reserves) = deserialize_bonding_curve(&bonding_curve_data[8..])?;
+
+    // Minimum pool liquidity check: require at least 0.01 SOL in virtual reserves
+    const MIN_POOL_LIQUIDITY: u64 = 10_000_000; // 0.01 SOL
+    require!(
+        virtual_sol_reserves >= MIN_POOL_LIQUIDITY,
+        ErrorCode::InsufficientPoolLiquidity
+    );
+
+    // Require pool has tokens
+    require!(
+        virtual_token_reserves > 0,
+        ErrorCode::InsufficientPoolLiquidity
+    );
+
+    let max_safe = virtual_sol_reserves / 100;
     let final_amount = capped.min(max_safe);
 
-    let expected = calculate_tokens_out(final_amount, pool_reserves, pool_token_amount, token_supply)?;
-    let safe_expected = expected / 10;
-    let min_out = apply_slippage(safe_expected, slippage_bps);
+    // Only attempt calculation if we have something to buy
+    if final_amount == 0 {
+        return Ok((0, 0));
+    }
+
+    // Use PumpFun's exact formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
+    let expected = calculate_tokens_out_pumpfun(
+        final_amount,
+        virtual_sol_reserves,
+        virtual_token_reserves,
+    )?;
+    let min_out = apply_slippage(expected, slippage_bps);
 
     Ok((final_amount, min_out))
 }
@@ -175,28 +214,29 @@ fn execute_buy_cpi<'info>(
     let mut data = Vec::new();
     data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]);
     data.extend_from_slice(&min_out.to_le_bytes());
-    data.extend_from_slice(&final_amount.saturating_mul(200).to_le_bytes());
+    // Fixed: Use final_amount directly instead of multiplying by 200
+    data.extend_from_slice(&final_amount.to_le_bytes());
     data.push(0);
 
     let instruction = Box::new(Instruction {
         program_id: PUMP_PROGRAM,
         accounts: vec![
-            AccountMeta::new_readonly(pump_global_config.key(), false),
-            AccountMeta::new(protocol_fee_recipient.key(), false),
-            AccountMeta::new(asdf_mint.key(), false),
-            AccountMeta::new(pool.key(), false),
-            AccountMeta::new(pool_asdf_account.key(), false),
-            AccountMeta::new(dat_asdf_account.key(), false),
-            AccountMeta::new(dat_authority.key(), true),
-            AccountMeta::new_readonly(system_program.key(), false),
-            AccountMeta::new_readonly(token_program.key(), false),
-            AccountMeta::new(creator_vault.key(), false),
-            AccountMeta::new_readonly(pump_event_authority.key(), false),
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-            AccountMeta::new_readonly(global_volume_accumulator.key(), false),
-            AccountMeta::new(user_volume_accumulator.key(), false),
-            AccountMeta::new_readonly(fee_config.key(), false),
-            AccountMeta::new_readonly(fee_program.key(), false),
+            AccountMeta::new_readonly(pump_global_config.key(), false),          // 0 - global
+            AccountMeta::new(protocol_fee_recipient.key(), false),                // 1 - fee_recipient
+            AccountMeta::new(asdf_mint.key(), false),                             // 2 - mint
+            AccountMeta::new(pool.key(), false),                                  // 3 - bonding_curve
+            AccountMeta::new(pool_asdf_account.key(), false),                     // 4 - associated_bonding_curve
+            AccountMeta::new(dat_asdf_account.key(), false),                      // 5 - associated_user
+            AccountMeta::new(dat_authority.key(), true),                          // 6 - user (SIGNER)
+            AccountMeta::new_readonly(system_program.key(), false),               // 7 - system_program
+            AccountMeta::new_readonly(token_program.key(), false),                // 8 - token_program
+            AccountMeta::new(creator_vault.key(), false),                         // 9 - creator_vault
+            AccountMeta::new_readonly(pump_event_authority.key(), false),         // 10 - event_authority
+            AccountMeta::new_readonly(PUMP_PROGRAM, false),                       // 11 - program
+            AccountMeta::new_readonly(global_volume_accumulator.key(), false),    // 12 - global_volume_accumulator
+            AccountMeta::new(user_volume_accumulator.key(), false),               // 13 - user_volume_accumulator
+            AccountMeta::new_readonly(fee_config.key(), false),                   // 14 - fee_config
+            AccountMeta::new_readonly(fee_program.key(), false),                  // 15 - fee_program
         ],
         data,
     });
@@ -489,18 +529,23 @@ pub mod asdf_dat {
 
         // Calculate buy parameters using helper to reduce stack
         let collected_lamports = ctx.accounts.dat_authority.lamports();
-        let pool_reserves = ctx.accounts.pool.lamports();
+
+        // Get bonding curve account data for PumpFun formula
+        // IMPORTANT: Copy the data to avoid AccountBorrowFailed error
+        // We need to release the borrow before calling execute_buy_cpi
+        let pool_data_copy = {
+            let pool_data_ref = ctx.accounts.pool.try_borrow_data()?;
+            pool_data_ref.to_vec()
+        }; // Borrow is released here
 
         let (final_amount, min_out) = calculate_buy_params(
             collected_lamports,
-            pool_reserves,
-            ctx.accounts.pool_asdf_account.amount,
-            ctx.accounts.asdf_mint.supply,
+            &pool_data_copy,
             state.max_fees_per_cycle,
             state.slippage_bps,
         )?;
 
-        msg!("Final buy amount: {} SOL", final_amount);
+        msg!("Final buy amount: {} lamports ({} SOL)", final_amount, final_amount as f64 / 1e9);
         msg!("Min tokens out: {}", min_out);
 
         // Use helper to reduce stack usage
@@ -531,7 +576,7 @@ pub mod asdf_dat {
         state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
         state.last_cycle_sol = final_amount;
 
-        msg!("Buyback complete: {} SOL spent", final_amount);
+        msg!("Buyback complete: {} lamports ({} SOL) spent", final_amount, final_amount as f64 / 1e9);
         Ok(())
     }
 
@@ -902,14 +947,59 @@ fn validate_pool_creator<'info>(pool: &AccountInfo<'info>, dat_authority: &Pubke
     Ok(())
 }
 
+/// Calculate tokens out using PumpFun's exact formula with virtual reserves
+/// Formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
+pub fn calculate_tokens_out_pumpfun(
+    sol_in: u64,
+    virtual_sol_reserves: u64,
+    virtual_token_reserves: u64,
+) -> Result<u64> {
+    // Input validation
+    require!(virtual_sol_reserves > 0, ErrorCode::InsufficientPoolLiquidity);
+    require!(virtual_token_reserves > 0, ErrorCode::InsufficientPoolLiquidity);
+
+    let sol = sol_in as u128;
+    let vsol = virtual_sol_reserves as u128;
+    let vtoken = virtual_token_reserves as u128;
+
+    msg!("PumpFun calc: sol_in={}, virtual_sol={}, virtual_token={}", sol_in, virtual_sol_reserves, virtual_token_reserves);
+
+    // PumpFun formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
+    let numerator = sol.saturating_mul(vtoken);
+    let denominator = vsol.saturating_add(sol);
+
+    require!(denominator > 0, ErrorCode::MathOverflow);
+
+    let tokens_out = numerator / denominator;
+    let result = tokens_out.min(u64::MAX as u128) as u64;
+
+    msg!("PumpFun calc result: {} tokens", result);
+
+    Ok(result)
+}
+
 pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: u64) -> Result<u64> {
+    // Input validation
+    require!(quote_res > 0, ErrorCode::InsufficientPoolLiquidity);
+    require!(base_res > 0, ErrorCode::InsufficientPoolLiquidity);
+    require!(supply > 0, ErrorCode::InvalidPool);
+
     let sol = sol_in as u128;
     let quote = quote_res as u128;
     let base = base_res as u128;
     let sup = supply as u128;
-    
-    let mcap = quote.saturating_mul(sup).saturating_div(base);
-    
+
+    msg!("calculate_tokens_out: sol_in={}, quote_res={}, base_res={}, supply={}", sol_in, quote_res, base_res, supply);
+
+    // Safe mcap calculation with overflow protection
+    let mcap = if base == 0 {
+        0
+    } else {
+        quote.saturating_mul(sup).saturating_div(base)
+    };
+
+    msg!("calculate_tokens_out: mcap={}", mcap);
+
     let fee_bps = match mcap {
         0..=85_000_000_000 => 125,
         85_000_000_001..=300_000_000_000 => 120,
@@ -938,12 +1028,27 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
         19_000_000_001..=20_000_000_000_000 => 33,
         _ => 30,
     };
-    
+
+    msg!("calculate_tokens_out: fee_bps={}", fee_bps);
+
     let with_fee = sol.checked_mul(10000 - fee_bps as u128).ok_or(ErrorCode::MathOverflow)?;
+    msg!("calculate_tokens_out: with_fee={}", with_fee);
+
     let num = with_fee.checked_mul(base).ok_or(ErrorCode::MathOverflow)?;
-    let denom = quote.checked_mul(10000).ok_or(ErrorCode::MathOverflow)?.checked_add(with_fee).ok_or(ErrorCode::MathOverflow)?;
+    msg!("calculate_tokens_out: num={}", num);
+
+    let quote_10k = quote.checked_mul(10000).ok_or(ErrorCode::MathOverflow)?;
+    msg!("calculate_tokens_out: quote_10k={}", quote_10k);
+
+    let denom = quote_10k.checked_add(with_fee).ok_or(ErrorCode::MathOverflow)?;
+    msg!("calculate_tokens_out: denom={}", denom);
+
+    // Prevent division by zero
+    require!(denom > 0, ErrorCode::MathOverflow);
+
     let out = num.checked_div(denom).ok_or(ErrorCode::MathOverflow)?;
-    
+    msg!("calculate_tokens_out: out={}", out);
+
     Ok(out as u64)
 }
 
@@ -1087,6 +1192,8 @@ pub struct ExecuteBuy<'info> {
     pub root_treasury: Option<AccountInfo<'info>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
+    /// CHECK: Rent sysvar
+    pub rent: Sysvar<'info, Rent>,
 }
 
 #[derive(Accounts)]
@@ -1420,4 +1527,6 @@ pub enum ErrorCode {
     InvalidRootToken,
     #[msg("Invalid fee split basis points")]
     InvalidFeeSplit,
+    #[msg("Insufficient pool liquidity")]
+    InsufficientPoolLiquidity,
 }
