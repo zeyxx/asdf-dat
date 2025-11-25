@@ -50,6 +50,7 @@ An automated system for collecting Pump.fun trading fees and executing buyback-a
 ## Features
 
 - **Multi-Token Ecosystem** - Unlimited secondary token support
+- **Token-Agnostic Architecture** - Both SPL and Token-2022 can serve as root or secondary
 - **Hierarchical Fee Distribution** - 44.8% of secondary fees → root token
 - **Dynamic Allocation** - Proportional distribution based on pending fees
 - **Mayhem Mode** - Token-2022 support with extensions
