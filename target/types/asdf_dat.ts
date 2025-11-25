@@ -667,6 +667,24 @@ export type AsdfDat = {
       ],
       "accounts": [
         {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "tokenStats",
           "writable": true,
           "pda": {
@@ -697,9 +715,21 @@ export type AsdfDat = {
               }
             ]
           }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer required - only admin can finalize allocated cycles"
+          ],
+          "signer": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "actuallyParticipated",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -951,7 +981,29 @@ export type AsdfDat = {
       "accounts": [
         {
           "name": "datState",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer required to prevent DoS attacks"
+          ],
+          "signer": true
         }
       ],
       "args": [
@@ -1057,6 +1109,79 @@ export type AsdfDat = {
           "type": "u32"
         }
       ]
+    },
+    {
+      "name": "resetValidatorSlot",
+      "docs": [
+        "ADMIN ONLY - Reset validator slot to current slot",
+        "Used when validator has been inactive for too long (slot delta > 1000)",
+        "This allows the validator daemon to resume operation without redeploying"
+      ],
+      "discriminator": [
+        248,
+        5,
+        115,
+        210,
+        236,
+        36,
+        129,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "resume",
@@ -1172,6 +1297,62 @@ export type AsdfDat = {
           "type": "pubkey"
         }
       ]
+    },
+    {
+      "name": "syncValidatorSlot",
+      "docs": [
+        "Sync validator slot to current slot (permissionless)",
+        "",
+        "This instruction allows anyone to reset the last_validated_slot to the current slot",
+        "when the validator state has become stale (> MAX_SLOT_RANGE behind current slot).",
+        "This is useful after periods of inactivity to allow the daemon to resume operation.",
+        "",
+        "Note: This does NOT affect fee attribution - it simply allows new validations to proceed.",
+        "Any fees from the skipped slots are lost (this is acceptable for inactivity periods)."
+      ],
+      "discriminator": [
+        232,
+        176,
+        142,
+        149,
+        203,
+        18,
+        131,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "transferAdmin",
@@ -1637,6 +1818,19 @@ export type AsdfDat = {
         89,
         226
       ]
+    },
+    {
+      "name": "validatorSlotReset",
+      "discriminator": [
+        134,
+        36,
+        141,
+        149,
+        129,
+        175,
+        252,
+        175
+      ]
     }
   ],
   "errors": [
@@ -1742,21 +1936,26 @@ export type AsdfDat = {
     },
     {
       "code": 6020,
+      "name": "validatorNotStale",
+      "msg": "Validator not stale - sync not needed"
+    },
+    {
+      "code": 6021,
       "name": "feeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "tooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "invalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "mintMismatch",
       "msg": "Mint mismatch between accounts"
     }
@@ -2300,6 +2499,30 @@ export type AsdfDat = {
           },
           {
             "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatorSlotReset",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "oldSlot",
+            "type": "u64"
+          },
+          {
+            "name": "newSlot",
             "type": "u64"
           },
           {

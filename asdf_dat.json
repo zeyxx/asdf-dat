@@ -1100,6 +1100,79 @@
       ]
     },
     {
+      "name": "reset_validator_slot",
+      "docs": [
+        "ADMIN ONLY - Reset validator slot to current slot",
+        "Used when validator has been inactive for too long (slot delta > 1000)",
+        "This allows the validator daemon to resume operation without redeploying"
+      ],
+      "discriminator": [
+        248,
+        5,
+        115,
+        210,
+        236,
+        36,
+        129,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "ValidatorState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "resume",
       "discriminator": [
         1,
@@ -1677,6 +1750,19 @@
         189,
         89,
         226
+      ]
+    },
+    {
+      "name": "ValidatorSlotReset",
+      "discriminator": [
+        134,
+        36,
+        141,
+        149,
+        129,
+        175,
+        252,
+        175
       ]
     }
   ],
@@ -2341,6 +2427,30 @@
           },
           {
             "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorSlotReset",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_slot",
+            "type": "u64"
+          },
+          {
+            "name": "new_slot",
             "type": "u64"
           },
           {
