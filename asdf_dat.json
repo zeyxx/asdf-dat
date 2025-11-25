@@ -718,7 +718,12 @@
           "signer": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "actually_participated",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -1286,6 +1291,62 @@
           "type": "pubkey"
         }
       ]
+    },
+    {
+      "name": "sync_validator_slot",
+      "docs": [
+        "Sync validator slot to current slot (permissionless)",
+        "",
+        "This instruction allows anyone to reset the last_validated_slot to the current slot",
+        "when the validator state has become stale (> MAX_SLOT_RANGE behind current slot).",
+        "This is useful after periods of inactivity to allow the daemon to resume operation.",
+        "",
+        "Note: This does NOT affect fee attribution - it simply allows new validations to proceed.",
+        "Any fees from the skipped slots are lost (this is acceptable for inactivity periods)."
+      ],
+      "discriminator": [
+        232,
+        176,
+        142,
+        149,
+        203,
+        18,
+        131,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "validator_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "ValidatorState"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
     },
     {
       "name": "transfer_admin",
@@ -1869,21 +1930,26 @@
     },
     {
       "code": 6020,
+      "name": "ValidatorNotStale",
+      "msg": "Validator not stale - sync not needed"
+    },
+    {
+      "code": 6021,
       "name": "FeeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "TooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "InvalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "MintMismatch",
       "msg": "Mint mismatch between accounts"
     }

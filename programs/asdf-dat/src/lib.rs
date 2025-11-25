@@ -910,17 +910,21 @@ pub mod asdf_dat {
             }
         }
 
-        // Get remaining balance after split (for buy calculation)
-        let remaining_balance = ctx.accounts.dat_authority.lamports();
-
-        // Calculate buy_amount differently for secondary vs root tokens
-        let buy_amount = if is_secondary_token {
-            // Secondary: rent already subtracted before split, just reserve for ATA
-            // After split, we need to keep rent + buffer + ATA reserve
-            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE)
+        // Calculate buy_amount based on mode (orchestrated vs autonomous)
+        // CRITICAL FIX: In orchestrated mode, use allocation not total balance
+        let buy_amount = if let Some(allocated) = allocated_lamports {
+            // ORCHESTRATED MODE: calculate from allocation
+            if is_secondary_token {
+                // After split: remaining = allocated * fee_split_bps / 10000
+                ((allocated * state.fee_split_bps as u64) / 10000).saturating_sub(ATA_RENT_RESERVE)
+            } else {
+                allocated.saturating_sub(SAFETY_BUFFER)
+            }
         } else {
-            // Root: no split happened, subtract rent + buffer normally
-            remaining_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
+            // AUTONOMOUS MODE: use total balance
+            let bal = ctx.accounts.dat_authority.lamports();
+            let reserve = if is_secondary_token { RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE } else { RENT_EXEMPT_MINIMUM + SAFETY_BUFFER };
+            bal.saturating_sub(reserve)
         };
 
         // Verify we have enough for the buy operation (minimum 0.0001 SOL)
