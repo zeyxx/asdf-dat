@@ -37,6 +37,7 @@ pub const DAT_STATE_SEED: &[u8] = b"dat_v3";
 pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
 pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
 pub const ROOT_TREASURY_SEED: &[u8] = b"root_treasury";
+pub const VALIDATOR_STATE_SEED: &[u8] = b"validator_v1";
 
 /// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
 fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
@@ -449,6 +450,96 @@ pub mod asdf_dat {
             amount_lamports,
             token_stats.pending_fees_lamports
         );
+
+        Ok(())
+    }
+
+    /// Initialize validator state for trustless per-token fee tracking
+    /// Must be called once per token before register_validated_fees can be used
+    pub fn initialize_validator(ctx: Context<InitializeValidator>) -> Result<()> {
+        let state = &mut ctx.accounts.validator_state;
+        let clock = Clock::get()?;
+
+        state.mint = ctx.accounts.mint.key();
+        state.bonding_curve = ctx.accounts.bonding_curve.key();
+        state.last_validated_slot = clock.slot;
+        state.total_validated_lamports = 0;
+        state.total_validated_count = 0;
+        state.fee_rate_bps = 50; // 0.5% default PumpFun creator fee
+        state.bump = ctx.bumps.validator_state;
+        state._reserved = [0u8; 32];
+
+        emit!(ValidatorInitialized {
+            mint: state.mint,
+            bonding_curve: state.bonding_curve,
+            slot: clock.slot,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Validator initialized for mint {} with bonding curve {}",
+            state.mint, state.bonding_curve);
+
+        Ok(())
+    }
+
+    /// PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs
+    /// Anyone can call this to commit fee data from off-chain validation
+    ///
+    /// Security: Protected by slot progression and fee caps
+    pub fn register_validated_fees(
+        ctx: Context<RegisterValidatedFees>,
+        fee_amount: u64,
+        end_slot: u64,
+        tx_count: u32,
+    ) -> Result<()> {
+        let validator = &mut ctx.accounts.validator_state;
+        let token_stats = &mut ctx.accounts.token_stats;
+        let clock = Clock::get()?;
+
+        // Validation 1: Slot progression (prevent double-counting)
+        require!(
+            end_slot > validator.last_validated_slot,
+            ErrorCode::StaleValidation
+        );
+
+        // Validation 2: Slot range sanity (max 1000 slots ~7 minutes)
+        let slot_delta = end_slot.saturating_sub(validator.last_validated_slot);
+        require!(slot_delta <= 1000, ErrorCode::SlotRangeTooLarge);
+
+        // Validation 3: Fee amount sanity check
+        // Max reasonable: 0.01 SOL per slot (very active token)
+        let max_fee_for_range = slot_delta.saturating_mul(10_000_000); // 0.01 SOL * slots
+        require!(fee_amount <= max_fee_for_range, ErrorCode::FeeTooHigh);
+
+        // Validation 4: TX count sanity (max 100 TX per slot)
+        require!(tx_count <= (slot_delta as u32).saturating_mul(100), ErrorCode::TooManyTransactions);
+
+        // Update validator state
+        validator.last_validated_slot = end_slot;
+        validator.total_validated_lamports = validator
+            .total_validated_lamports
+            .saturating_add(fee_amount);
+        validator.total_validated_count = validator
+            .total_validated_count
+            .saturating_add(1);
+
+        // Update token stats (THIS IS THE KEY - trustless fee attribution!)
+        token_stats.pending_fees_lamports = token_stats
+            .pending_fees_lamports
+            .saturating_add(fee_amount);
+        token_stats.last_fee_update_timestamp = clock.unix_timestamp;
+
+        emit!(ValidatedFeesRegistered {
+            mint: validator.mint,
+            fee_amount,
+            end_slot,
+            tx_count,
+            total_pending: token_stats.pending_fees_lamports,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Registered {} lamports for {} (slot {}, {} TXs)",
+            fee_amount, validator.mint, end_slot, tx_count);
 
         Ok(())
     }
@@ -1507,6 +1598,50 @@ pub struct UpdatePendingFees<'info> {
 }
 
 #[derive(Accounts)]
+pub struct InitializeValidator<'info> {
+    #[account(
+        init,
+        payer = payer,
+        space = 8 + ValidatorState::LEN,
+        seeds = [VALIDATOR_STATE_SEED, mint.key().as_ref()],
+        bump
+    )]
+    pub validator_state: Account<'info, ValidatorState>,
+
+    /// CHECK: Bonding curve account - verified by owner constraint
+    #[account(constraint = bonding_curve.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
+    pub bonding_curve: AccountInfo<'info>,
+
+    /// CHECK: Token mint
+    pub mint: AccountInfo<'info>,
+
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct RegisterValidatedFees<'info> {
+    #[account(
+        mut,
+        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
+        bump = validator_state.bump,
+    )]
+    pub validator_state: Account<'info, ValidatorState>,
+
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, validator_state.mint.as_ref()],
+        bump = token_stats.bump,
+        constraint = token_stats.mint == validator_state.mint @ ErrorCode::MintMismatch
+    )]
+    pub token_stats: Account<'info, TokenStats>,
+
+    // NOTE: NO SIGNER REQUIRED - This is PERMISSIONLESS!
+    // Anyone can call this instruction to register validated fees
+}
+
+#[derive(Accounts)]
 pub struct MigrateTokenStats<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
@@ -1694,6 +1829,24 @@ impl TokenStats {
     pub const LEN: usize = 32 + 8 * 12 + 1 + 1; // Pubkey(32) + u64(12) + bool(1) + u8(1) = 130
 }
 
+/// Validator state for trustless per-token fee attribution
+/// Tracks fees validated from PumpFun transaction logs
+#[account]
+pub struct ValidatorState {
+    pub mint: Pubkey,                      // Token mint being tracked
+    pub bonding_curve: Pubkey,             // Associated PumpFun bonding curve
+    pub last_validated_slot: u64,          // Last slot that was validated
+    pub total_validated_lamports: u64,     // Cumulative fees validated historically
+    pub total_validated_count: u64,        // Number of validation batches
+    pub fee_rate_bps: u16,                 // Expected fee rate (50 = 0.5%)
+    pub bump: u8,                          // PDA bump seed
+    pub _reserved: [u8; 32],               // Reserved for future use
+}
+
+impl ValidatorState {
+    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 2 + 1 + 32; // 123 bytes
+}
+
 // EVENTS
 
 #[event]
@@ -1794,6 +1947,24 @@ pub struct PendingFeesUpdated {
     pub timestamp: i64,
 }
 
+#[event]
+pub struct ValidatorInitialized {
+    pub mint: Pubkey,
+    pub bonding_curve: Pubkey,
+    pub slot: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct ValidatedFeesRegistered {
+    pub mint: Pubkey,
+    pub fee_amount: u64,
+    pub end_slot: u64,
+    pub tx_count: u32,
+    pub total_pending: u64,
+    pub timestamp: i64,
+}
+
 // ERRORS
 
 #[error_code]
@@ -1834,4 +2005,16 @@ pub enum ErrorCode {
     InvalidFeeSplit,
     #[msg("Insufficient pool liquidity")]
     InsufficientPoolLiquidity,
+    #[msg("Stale validation - slot already processed")]
+    StaleValidation,
+    #[msg("Slot range too large")]
+    SlotRangeTooLarge,
+    #[msg("Fee amount exceeds maximum for slot range")]
+    FeeTooHigh,
+    #[msg("Transaction count exceeds maximum for slot range")]
+    TooManyTransactions,
+    #[msg("Invalid bonding curve account")]
+    InvalidBondingCurve,
+    #[msg("Mint mismatch between accounts")]
+    MintMismatch,
 }

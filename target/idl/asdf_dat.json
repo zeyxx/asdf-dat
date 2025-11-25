@@ -818,6 +818,70 @@
       "args": []
     },
     {
+      "name": "initialize_validator",
+      "docs": [
+        "Initialize validator state for trustless per-token fee tracking",
+        "Must be called once per token before register_validated_fees can be used"
+      ],
+      "discriminator": [
+        1,
+        208,
+        135,
+        238,
+        15,
+        185,
+        20,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "validator_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bonding_curve"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "migrate_token_stats",
       "discriminator": [
         79,
@@ -887,6 +951,103 @@
       "args": [
         {
           "name": "error_code",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "register_validated_fees",
+      "docs": [
+        "PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs",
+        "Anyone can call this to commit fee data from off-chain validation",
+        "",
+        "Security: Protected by slot progression and fee caps"
+      ],
+      "discriminator": [
+        47,
+        27,
+        53,
+        254,
+        49,
+        113,
+        142,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "validator_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "ValidatorState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "ValidatorState"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "fee_amount",
+          "type": "u64"
+        },
+        {
+          "name": "end_slot",
+          "type": "u64"
+        },
+        {
+          "name": "tx_count",
           "type": "u32"
         }
       ]
@@ -1260,6 +1421,19 @@
         202,
         236
       ]
+    },
+    {
+      "name": "ValidatorState",
+      "discriminator": [
+        217,
+        140,
+        124,
+        163,
+        31,
+        187,
+        1,
+        89
+      ]
     }
   ],
   "events": [
@@ -1431,6 +1605,32 @@
         165,
         233
       ]
+    },
+    {
+      "name": "ValidatedFeesRegistered",
+      "discriminator": [
+        34,
+        96,
+        18,
+        102,
+        182,
+        197,
+        131,
+        53
+      ]
+    },
+    {
+      "name": "ValidatorInitialized",
+      "discriminator": [
+        196,
+        120,
+        107,
+        225,
+        211,
+        189,
+        89,
+        226
+      ]
     }
   ],
   "errors": [
@@ -1523,6 +1723,36 @@
       "code": 6017,
       "name": "InsufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
+    },
+    {
+      "code": 6018,
+      "name": "StaleValidation",
+      "msg": "Stale validation - slot already processed"
+    },
+    {
+      "code": 6019,
+      "name": "SlotRangeTooLarge",
+      "msg": "Slot range too large"
+    },
+    {
+      "code": 6020,
+      "name": "FeeTooHigh",
+      "msg": "Fee amount exceeds maximum for slot range"
+    },
+    {
+      "code": 6021,
+      "name": "TooManyTransactions",
+      "msg": "Transaction count exceeds maximum for slot range"
+    },
+    {
+      "code": 6022,
+      "name": "InvalidBondingCurve",
+      "msg": "Invalid bonding curve account"
+    },
+    {
+      "code": 6023,
+      "name": "MintMismatch",
+      "msg": "Mint mismatch between accounts"
     }
   ],
   "types": [
@@ -2013,6 +2243,111 @@
           {
             "name": "timestamp",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatedFeesRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_amount",
+            "type": "u64"
+          },
+          {
+            "name": "end_slot",
+            "type": "u64"
+          },
+          {
+            "name": "tx_count",
+            "type": "u32"
+          },
+          {
+            "name": "total_pending",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonding_curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorState",
+      "docs": [
+        "Validator state for trustless per-token fee attribution",
+        "Tracks fees validated from PumpFun transaction logs"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bonding_curve",
+            "type": "pubkey"
+          },
+          {
+            "name": "last_validated_slot",
+            "type": "u64"
+          },
+          {
+            "name": "total_validated_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "total_validated_count",
+            "type": "u64"
+          },
+          {
+            "name": "fee_rate_bps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }

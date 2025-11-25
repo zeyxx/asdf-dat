@@ -15,7 +15,17 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // Import all items from crate root for nested test modules
+    #[allow(unused_imports)]
+    use crate::{
+        // Constants
+        MIN_FEES_TO_CLAIM, MAX_FEES_PER_CYCLE, INITIAL_SLIPPAGE_BPS, MIN_CYCLE_INTERVAL,
+        DAT_STATE_SEED, DAT_AUTHORITY_SEED, TOKEN_STATS_SEED, ROOT_TREASURY_SEED,
+        // Functions
+        calculate_tokens_out_pumpfun, deserialize_bonding_curve,
+        // Types
+        ErrorCode,
+    };
 
     // ========================================================================
     // 1. MATH FUNCTION TESTS
