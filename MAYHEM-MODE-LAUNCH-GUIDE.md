@@ -90,6 +90,16 @@ NETWORK=mainnet npm run init
 
 ### Étape 4: Lancement ! 🚀
 
+**⚠️ CRITICAL: Désactiver TESTING_MODE pour mainnet**
+
+Avant de compiler, édite `programs/asdf-dat/src/lib.rs` ligne 59 :
+```rust
+// Change de true à false !
+pub const TESTING_MODE: bool = false;  // ← DOIT ÊTRE FALSE POUR MAINNET
+```
+
+Pourquoi ? TESTING_MODE désactive les contraintes de sécurité (intervalles, limites AM/PM, seuils de fees).
+
 ```bash
 # Compiler le programme (si pas déjà fait)
 anchor build
@@ -133,6 +143,7 @@ npx ts-node scripts/launch-mayhem-token.ts
 ## ⚠️ Points Importants
 
 ### Sécurité
+- ✅ **CRITICAL: Set `TESTING_MODE = false` dans lib.rs avant build mainnet**
 - ✅ Garde `mainnet-wallet.json` en sécurité (JAMAIS commit!)
 - ✅ Backup tous les fichiers importants
 - ✅ Teste d'abord sur devnet si possible (mode normal uniquement)
@@ -192,6 +203,7 @@ Si problèmes :
 
 ## 🎯 Checklist Pré-Lancement
 
+- [ ] **🔴 TESTING_MODE mis à `false` dans lib.rs (ligne 59)**
 - [ ] Image du token prête
 - [ ] Métadonnées uploadées (IPFS/Arweave)
 - [ ] URI de métadonnées mis à jour dans le script

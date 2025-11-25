@@ -1,245 +1,368 @@
-# ASDF DAT - Automated Buyback and Burn System
+# ASDF-DAT Ecosystem
 
-Automated system for collecting PumpFun trading fees and executing buyback-and-burn cycles on Solana.
+**Automated Buyback & Burn Protocol for Solana**
 
-## 🏗️ **Architecture**
+An automated system for collecting Pump.fun trading fees and executing buyback-and-burn cycles, with multi-token support and hierarchical redistribution.
 
-### Program (Solana/Rust)
-- **Program ID**: `ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz`
-- **Location**: `programs/asdf-dat/src/lib.rs`
-- **Framework**: Anchor 0.31.1
-
-### Supported Instructions (11 total)
-
-**Core Operations:**
-1. `initialize` - Setup DAT state and authority PDAs
-2. `collect_fees` - Collect SOL from PumpFun creator vault (2x daily: AM/PM)
-3. `execute_buy` - Buy ASDF tokens with collected SOL
-4. `burn_and_update` - Burn tokens and update statistics
-5. `record_failure` - Log failed cycles on-chain
-
-**Admin Controls:**
-6. `emergency_pause` - Pause all operations
-7. `resume` - Resume after pause
-8. `update_parameters` - Adjust fees, slippage, intervals
-9. `transfer_admin` - Transfer admin authority
-10. `create_pumpfun_token` - Create tokens via CPI
-
-## 📁 **Project Structure**
-
-```
-asdf-dat/
-├── programs/asdf-dat/      # Solana program (Rust)
-│   └── src/lib.rs
-├── src/                     # TypeScript application
-│   ├── bot.ts              # Automated bot
-│   ├── dashboard.tsx       # UI dashboard
-│   └── index.ts
-├── scripts/                 # Essential setup scripts
-│   ├── init.ts             # Initialize DAT protocol
-│   ├── create-token.ts     # Create PumpFun token
-│   ├── init-all-accounts.ts
-│   ├── setup-ata.ts
-│   └── find-creator-vault.ts
-├── tests/scripts/           # Test scripts
-│   ├── test-dat-cycle.ts   # Full cycle test
-│   ├── buy-normal-wallet.ts
-│   └── simulate-fees.ts
-├── docs/                    # Documentation
-│   ├── setup/              # Setup guides
-│   └── guides/             # User guides
-├── config/                  # Configuration files
-│   └── devnet-dat-deployment.json
-├── devnet-config.json       # Active devnet config
-├── devnet-token-info.json   # Token metadata
-└── devnet-wallet.json       # Admin wallet (gitignored)
-```
-
-## 🚀 **Quick Start (Devnet)**
-
-### 1. Prerequisites
-
-```bash
-# Install dependencies
-npm install
-
-# Setup Solana CLI
-solana config set --url devnet
-solana-keygen new -o devnet-wallet.json
-solana airdrop 2 devnet-wallet.json
-```
-
-### 2. Deploy Program
-
-```bash
-# Build
-anchor build
-
-# Deploy
-anchor deploy --provider.cluster devnet
-
-# Note the Program ID and update in lib.rs
-```
-
-### 3. Initialize Protocol
-
-```bash
-# Initialize DAT state and authority
-npm run init
-
-# This creates:
-# - DAT State PDA (seed: "dat_v3")
-# - DAT Authority PDA (seed: "auth_v3")
-```
-
-### 4. Create Token
-
-```bash
-# Create PumpFun token with DAT Authority as creator
-npm run create-token
-
-# Saves token info to devnet-token-info.json
-```
-
-### 5. Test Cycle
-
-```bash
-# Run complete cycle test
-npx ts-node tests/scripts/test-dat-cycle.ts
-
-# This executes:
-# 1. collect_fees (requires 0.01+ SOL in creator vault)
-# 2. execute_buy (buys ASDF tokens)
-# 3. burn_and_update (burns tokens, updates stats)
-```
-
-### 6. Run Bot (Production)
-
-```bash
-npm run bot
-
-# Bot monitors and executes cycles automatically
-# - Runs twice daily (AM/PM)
-# - Validates fee thresholds
-# - Records failures on-chain
-```
-
-## 📋 **Available NPM Scripts**
-
-```bash
-npm run build          # Compile TypeScript & build Anchor program
-npm run clean          # Remove build artifacts
-npm run test           # Run Anchor tests
-
-# Setup
-npm run init           # Initialize DAT protocol
-npm run create-token   # Create PumpFun token
-npm run init-accounts  # Initialize all accounts
-npm run setup-ata      # Setup associated token accounts
-
-# Utilities
-npm run find-vault     # Find creator vault PDA
-
-# Production
-npm run bot            # Run automated bot
-```
-
-## 🔧 **Configuration**
-
-### Environment Variables (`.env`)
-
-```bash
-RPC_URL=https://api.devnet.solana.com
-WALLET_PATH=./devnet-wallet.json
-PROGRAM_ID=ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz
-```
-
-### Config Files
-
-- `config/devnet-dat-deployment.json` - DAT deployment info
-- `devnet-config.json` - Active configuration
-- `devnet-token-info.json` - Token metadata
-
-## 🔐 **Security**
-
-**⚠️ NEVER commit these files:**
-- `devnet-wallet.json`
-- `mainnet-wallet.json`
-- `ASDF*.json` (program keypairs)
-- Any file with private keys
-
-These are automatically ignored via `.gitignore`.
-
-## 🧪 **Testing**
-
-### Unit Tests
-```bash
-anchor test
-```
-
-### Integration Tests
-```bash
-# Test full cycle
-npx ts-node tests/scripts/test-dat-cycle.ts
-
-# Test buy functionality
-npx ts-node tests/scripts/buy-with-idl.ts
-
-# Simulate fees
-npx ts-node tests/scripts/simulate-fees.ts
-```
-
-## 📊 **Program Constants**
-
-- **ASDF Mint**: `9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump`
-- **Min Fees**: 10 SOL (10,000,000 lamports)
-- **Max Fees/Cycle**: 1 SOL (1,000,000,000 lamports)
-- **Slippage**: 5% (500 bps)
-- **Cycle Interval**: 60 seconds minimum
-
-## 🛠️ **Development**
-
-### Build from Source
-
-```bash
-# Clone repository
-git clone https://github.com/zeyxx/asdf-dat.git
-cd asdf-dat
-
-# Install dependencies
-npm install
-
-# Build program
-anchor build
-
-# Compile TypeScript
-npm run compile
-```
-
-### Rust Dependencies
-- `anchor-lang` = "0.31.1"
-- `anchor-spl` = "0.31.1"
-
-### TypeScript Dependencies
-- `@coral-xyz/anchor` = "0.30.1" (compatible with 0.31.1)
-- `@solana/web3.js` = "^1.95.0"
-- `@solana/spl-token` = "^0.4.8"
-
-## 📖 **Documentation**
-
-- [Setup Guide](docs/setup/wsl-setup.sh)
-- [Quick Start](docs/guides/quick-start-test.md)
-- [E2E Testing](docs/guides/e2e-testing.md)
-- [PumpFun Guide](PUMPFUN_DEVNET_GUIDE.md)
-
-## 🤝 **Contributing**
-
-This is a private project. For questions or issues, contact the team.
-
-## 📜 **License**
-
-See [LICENSE](LICENSE) file for details.
+[![Solana](https://img.shields.io/badge/Solana-Devnet-green)](https://solana.com)
+[![Anchor](https://img.shields.io/badge/Anchor-0.31.1-blue)](https://anchor-lang.com)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://typescriptlang.org)
 
 ---
 
-**⚡ Built with [Anchor](https://www.anchor-lang.com/) on [Solana](https://solana.com/)**
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ASDF-DAT ECOSYSTEM                           │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
+│  │  ROOT TOKEN  │◄───│  SECONDARY   │◄───│   MAYHEM     │      │
+│  │   (DATSPL)   │    │   (DATS2)    │    │   (DATM)     │      │
+│  │    100%      │    │  55.2%/44.8% │    │  55.2%/44.8% │      │
+│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
+│         │                   │                   │               │
+│         └─────────┬─────────┴─────────┬─────────┘               │
+│                   ▼                   ▼                         │
+│           ┌──────────────────────────────────┐                  │
+│           │     ECOSYSTEM ORCHESTRATOR       │                  │
+│           │   Dynamic Balance Allocation     │                  │
+│           └──────────────┬───────────────────┘                  │
+│                          ▼                                      │
+│           ┌──────────────────────────────────┐                  │
+│           │      SOLANA SMART CONTRACT       │                  │
+│           │   ASDfNfUHwVGfrg3SV7SQYWhaVxnrCU │                  │
+│           └──────────────────────────────────┘                  │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Economic Flow
+
+1. **Trading Fees** → Collected from Pump.fun creator vaults
+2. **Fee Split** → Secondary tokens send 44.8% to root treasury
+3. **Buyback** → SOL used to buy tokens on the bonding curve
+4. **Burn** → Purchased tokens are burned, reducing supply
+
+---
+
+## Features
+
+- **Multi-Token Ecosystem** - Unlimited secondary token support
+- **Hierarchical Fee Distribution** - 44.8% of secondary fees → root token
+- **Dynamic Allocation** - Proportional distribution based on pending fees
+- **Mayhem Mode** - Token-2022 support with extensions
+- **Graceful Deferral** - Tokens with insufficient allocation deferred to next cycle
+- **Emergency Controls** - Pause/Resume for critical situations
+
+---
+
+## Quick Start (Devnet)
+
+### Prerequisites
+
+```bash
+# Install dependencies
+npm install
+
+# Configure Solana CLI
+solana config set --url devnet
+```
+
+### Generate Test Volume
+
+```bash
+# Generate trades (buys + sells) to accumulate fees
+npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
+npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 10 0.1
+npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 10 0.1
+```
+
+### Execute Ecosystem Cycle
+
+```bash
+# Full cycle: collect → distribute → buyback → burn (all tokens)
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
+```
+
+### Check Statistics
+
+```bash
+# Current token state
+npx ts-node scripts/check-current-stats.ts
+
+# DAT protocol state
+npx ts-node scripts/check-dat-state.ts
+```
+
+---
+
+## Project Structure
+
+```
+asdf-dat/
+├── programs/asdf-dat/          # Solana Smart Contract (Rust)
+│   └── src/
+│       ├── lib.rs              # Main program (2,164 LOC)
+│       └── tests.rs            # Unit tests
+│
+├── scripts/                    # Operation scripts (56 files)
+│   ├── execute-ecosystem-cycle.ts   # Main orchestrator
+│   ├── generate-volume.ts           # Trade generation
+│   ├── check-*.ts                   # Monitoring scripts
+│   ├── buy-*.ts / sell-*.ts         # Trading operations
+│   └── init-*.ts / create-*.ts      # Initialization
+│
+├── src/                        # TypeScript applications
+│   ├── bot.ts                  # Automated bot
+│   ├── dashboard.ts            # Web dashboard
+│   └── index.ts                # CLI entry point
+│
+├── lib/                        # Daemons and utilities
+│   ├── fee-monitor.ts          # Fee monitoring
+│   └── validator-daemon.ts     # Validator synchronization
+│
+├── tests/                      # Integration tests
+├── docs/                       # Documentation
+│
+├── devnet-token-spl.json       # Root token config
+├── devnet-token-secondary.json # Secondary token config
+├── devnet-token-mayhem.json    # Mayhem token config
+└── asdf_dat.json               # Program IDL
+```
+
+---
+
+## Smart Contract Instructions (21 total)
+
+### Core Operations
+| Instruction | Description |
+|-------------|-------------|
+| `initialize` | Initialize DAT state and authority PDAs |
+| `initialize_token_stats` | Create per-token tracking |
+| `collect_fees` | Collect SOL from Pump.fun vault |
+| `execute_buy` | Buy tokens with collected SOL |
+| `burn_and_update` | Burn tokens and update stats |
+| `finalize_allocated_cycle` | Finalize an orchestrated cycle |
+
+### Ecosystem Management
+| Instruction | Description |
+|-------------|-------------|
+| `set_root_token` | Configure root token for fee split |
+| `update_fee_split` | Adjust distribution ratio (1000-9000 bps) |
+| `register_validated_fees` | Register daemon-validated fees |
+| `sync_validator_slot` | Synchronize validator state |
+
+### Token Creation
+| Instruction | Description |
+|-------------|-------------|
+| `create_pumpfun_token` | Create standard SPL token |
+| `create_pumpfun_token_mayhem` | Create Mayhem token (Token-2022) |
+
+### Administration
+| Instruction | Description |
+|-------------|-------------|
+| `emergency_pause` | Pause all operations |
+| `resume` | Resume after pause |
+| `update_parameters` | Modify system parameters |
+| `transfer_admin` | Transfer admin authority |
+
+---
+
+## Configuration
+
+### Token Configs
+
+Each token is configured via a JSON file:
+
+```json
+{
+  "mint": "rxeo277TLJfPYX6zaSfbtyHWY7BkTREL9AidoNi38jr",
+  "bondingCurve": "HDHVCfjbnxX3EzAhDpHj1Coiooq7yEPBXp74CDtkvCap",
+  "creator": "4nS8cak3SUafTXsmaZVi1SEVoL67tNotsnmHG1RH7Jjd",
+  "symbol": "DATSPL",
+  "isRoot": true,
+  "mayhemMode": false,
+  "network": "devnet"
+}
+```
+
+### Environment Variables
+
+```bash
+# .env
+RPC_URL=https://api.devnet.solana.com
+WALLET_PATH=./devnet-wallet.json
+```
+
+---
+
+## Fee Distribution
+
+### Secondary Tokens (55.2% / 44.8%)
+
+```
+Received allocation: 100%
+    │
+    ├── 55.2% → Secondary token buyback
+    │
+    └── 44.8% → Root Treasury
+                    │
+                    └── Root token buyback
+```
+
+### Root Token (100%)
+
+```
+Collected fees: 100%
+    │
+    └── 100% → Root token buyback
+```
+
+---
+
+## Main Scripts
+
+### Ecosystem Cycle
+```bash
+# Execute full cycle on all tokens
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
+```
+
+### Volume Generation
+```bash
+# Generate trades to accumulate fees
+# Args: <token-config> <rounds> <amount-sol>
+npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
+```
+
+### Monitoring
+```bash
+# Token statistics
+npx ts-node scripts/check-current-stats.ts
+
+# Protocol state
+npx ts-node scripts/check-dat-state.ts
+
+# Vault balance
+npx ts-node scripts/check-creator-vault.ts devnet-token-spl.json
+```
+
+### Token Sales
+```bash
+# Sell all SPL tokens
+npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
+
+# Sell Mayhem tokens
+npx ts-node scripts/sell-mayhem-tokens.ts devnet-token-mayhem.json
+```
+
+---
+
+## Security
+
+### TESTING_MODE
+
+```rust
+// programs/asdf-dat/src/lib.rs:97
+pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE false FOR MAINNET
+```
+
+| Mode | Cycle Interval | AM/PM Limits | Min Fees |
+|------|----------------|--------------|----------|
+| `true` (devnet) | Disabled | Disabled | Disabled |
+| `false` (mainnet) | 60s min | Enforced | 10 SOL |
+
+### Sensitive Files (gitignored)
+
+- `devnet-wallet.json` / `mainnet-wallet.json`
+- `wallet.json`
+- `ASDF*.json` (program keypairs)
+- `*.key` / `*.pem`
+
+---
+
+## Mainnet Deployment
+
+### Checklist
+
+- [ ] `TESTING_MODE = false` in lib.rs
+- [ ] New program keypair (never reuse devnet)
+- [ ] Mainnet RPC endpoint configured
+- [ ] Secure mainnet wallet
+- [ ] Mainnet token configs created
+- [ ] Tests on mainnet-beta completed
+- [ ] Monitoring/alerting configured
+
+### Commands
+
+```bash
+# Build with TESTING_MODE = false
+anchor build
+
+# Deploy mainnet
+anchor deploy --provider.cluster mainnet
+
+# Update IDL
+cp target/idl/asdf_dat.json .
+```
+
+---
+
+## Dependencies
+
+### Rust
+- `anchor-lang` = "0.31.1"
+- `anchor-spl` = "0.31.1"
+
+### TypeScript
+- `@coral-xyz/anchor` = "0.31.1"
+- `@solana/web3.js` = "^1.91.0"
+- `@pump-fun/pump-sdk` = "^1.22.1"
+- `@pump-fun/pump-swap-sdk` = "^1.7.7"
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [AUDIT-REPORT-2025-11-25.md](AUDIT-REPORT-2025-11-25.md) | Complete professional audit |
+| [PRODUCTION-WORKFLOW.md](PRODUCTION-WORKFLOW.md) | Production guide |
+| [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) | Quick start guide |
+| [PUMPFUN_DEVNET_GUIDE.md](PUMPFUN_DEVNET_GUIDE.md) | Pump.fun integration |
+| [MAYHEM-MODE-LAUNCH-GUIDE.md](MAYHEM-MODE-LAUNCH-GUIDE.md) | Mayhem Mode guide |
+
+---
+
+## Metrics
+
+| Component | Files | Lines |
+|-----------|-------|-------|
+| Smart Contract | 2 | 2,559 |
+| Scripts | 56 | 13,748 |
+| Utilities | 5 | 1,509 |
+| Documentation | 20+ | 4,835+ |
+| **Total** | **89+** | **~23,000** |
+
+---
+
+## Addresses (Devnet)
+
+| Element | Address |
+|---------|---------|
+| **Program ID** | `ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ` |
+| **PumpSwap** | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
+| **Pump.fun** | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` |
+| **Token-2022** | `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` |
+
+---
+
+## License
+
+Private project. Contact the team for inquiries.
+
+---
+
+**Built with [Anchor](https://anchor-lang.com) on [Solana](https://solana.com)**

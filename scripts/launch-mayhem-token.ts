@@ -19,14 +19,20 @@ import {
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { NFTStorage, File } from "nft.storage";
+import * as mime from "mime-types";
 
 // ==================== CONFIGURATION ====================
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const TOKEN_2022_PROGRAM = new PublicKey("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const MAYHEM_PROGRAM = new PublicKey("MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e");
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+
+// NFT.Storage API Key - Get yours at https://nft.storage
+// Set via environment variable: export NFT_STORAGE_API_KEY="your-key"
+const NFT_STORAGE_API_KEY = process.env.NFT_STORAGE_API_KEY || "";
 
 // Token metadata - CUSTOMIZE THIS!
 const TOKEN_METADATA = {
@@ -40,7 +46,7 @@ const TOKEN_METADATA = {
 };
 
 // Network - IMPORTANT: Mayhem Mode is MAINNET ONLY!
-const NETWORK = "mainnet-beta"; // or "devnet" for testing regular mode
+const NETWORK: "mainnet-beta" | "devnet" = "mainnet-beta"; // or "devnet" for testing regular mode
 const RPC_URL = NETWORK === "mainnet-beta"
   ? "https://api.mainnet-beta.solana.com"
   : "https://api.devnet.solana.com";
@@ -95,14 +101,78 @@ function loadIdl(): Idl {
 }
 
 async function uploadMetadata(metadata: typeof TOKEN_METADATA): Promise<string> {
-  // TODO: Upload to IPFS or Arweave
-  // For now, return a placeholder URI
-  // You should use a service like NFT.storage, Pinata, or Arweave
+  log("📤", "Uploading metadata to IPFS...", colors.yellow);
 
-  log("⚠️", "Metadata upload not implemented - using placeholder", colors.yellow);
-  log("💡", "Upload your metadata to IPFS/Arweave and update this function", colors.yellow);
+  // Check if NFT_STORAGE_API_KEY is set
+  if (!NFT_STORAGE_API_KEY) {
+    log("⚠️", "NFT_STORAGE_API_KEY not set - using placeholder", colors.yellow);
+    log("💡", "Get a free API key at https://nft.storage", colors.yellow);
+    log("💡", "Set it with: export NFT_STORAGE_API_KEY='your-key'", colors.yellow);
+    return "https://placeholder.com/metadata.json";
+  }
 
-  return "https://placeholder.com/metadata.json";
+  try {
+    const client = new NFTStorage({ token: NFT_STORAGE_API_KEY });
+
+    // Upload image first
+    let imageUri: string;
+
+    if (metadata.image && fs.existsSync(metadata.image)) {
+      log("📸", `Uploading image: ${metadata.image}`, colors.cyan);
+
+      const imageData = fs.readFileSync(metadata.image);
+      const mimeType = mime.lookup(metadata.image) || "image/png";
+      const imageFile = new File([imageData], path.basename(metadata.image), { type: mimeType });
+
+      const imageCID = await client.storeBlob(imageFile);
+      imageUri = `https://nftstorage.link/ipfs/${imageCID}`;
+
+      log("✅", `Image uploaded: ${imageUri}`, colors.green);
+    } else {
+      log("⚠️", `Image file not found: ${metadata.image}`, colors.yellow);
+      imageUri = "https://placeholder.com/image.png";
+    }
+
+    // Create metadata JSON
+    const metadataJson = {
+      name: metadata.name,
+      symbol: metadata.symbol,
+      description: metadata.description,
+      image: imageUri,
+      external_url: metadata.website,
+      attributes: [],
+      properties: {
+        files: [{ uri: imageUri, type: mime.lookup(metadata.image || "image.png") || "image/png" }],
+        category: "image",
+        creators: [],
+      },
+      social_links: {
+        twitter: metadata.twitter,
+        telegram: metadata.telegram,
+        website: metadata.website,
+      },
+    };
+
+    log("📄", "Uploading metadata JSON...", colors.cyan);
+
+    // Upload metadata JSON
+    const metadataFile = new File(
+      [JSON.stringify(metadataJson, null, 2)],
+      "metadata.json",
+      { type: "application/json" }
+    );
+
+    const metadataCID = await client.storeBlob(metadataFile);
+    const metadataUri = `https://nftstorage.link/ipfs/${metadataCID}`;
+
+    log("✅", `Metadata uploaded: ${metadataUri}`, colors.green);
+
+    return metadataUri;
+  } catch (error: any) {
+    log("❌", `Error uploading metadata: ${error.message}`, colors.red);
+    log("⚠️", "Falling back to placeholder", colors.yellow);
+    return "https://placeholder.com/metadata.json";
+  }
 }
 
 // ==================== MAIN FUNCTION ====================
@@ -229,10 +299,28 @@ async function main() {
   );
 
   // Associated bonding curve (Token2022 ATA)
-  const associatedBondingCurve = await PublicKey.createWithSeed(
-    bondingCurve,
-    "token-account",
-    TOKEN_2022_PROGRAM
+  const [associatedBondingCurve] = PublicKey.findProgramAddressSync(
+    [
+      bondingCurve.toBuffer(),
+      TOKEN_2022_PROGRAM.toBuffer(),
+      mint.publicKey.toBuffer(),
+    ],
+    ASSOCIATED_TOKEN_PROGRAM
+  );
+
+  // Mayhem-specific PDAs
+  const [mayhemState] = PublicKey.findProgramAddressSync(
+    [Buffer.from("mayhem-state"), mint.publicKey.toBuffer()],
+    MAYHEM_PROGRAM
+  );
+
+  const [mayhemTokenVault] = PublicKey.findProgramAddressSync(
+    [
+      solVault.toBuffer(),
+      TOKEN_2022_PROGRAM.toBuffer(),
+      mint.publicKey.toBuffer(),
+    ],
+    ASSOCIATED_TOKEN_PROGRAM
   );
 
   log("✅", "All PDAs derived", colors.green);
@@ -263,6 +351,8 @@ async function main() {
         mayhemProgram: MAYHEM_PROGRAM,
         globalParams,
         solVault,
+        mayhemState,
+        mayhemTokenVault,
         eventAuthority,
         pumpProgram: PUMP_PROGRAM,
       })

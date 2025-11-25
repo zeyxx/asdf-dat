@@ -3,13 +3,13 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
+asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
 
 [programs.devnet]
-asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
+asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
 
 [programs.mainnet]
-asdf_dat = "EJdSbSXMXQLp7WLqgVYjJ6a6BqMw6t8MzfavWQBZM6a2"
+asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
 
 [registry]
 url = "https://api.apr.dev"

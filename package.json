@@ -13,22 +13,34 @@
     "init-accounts": "ts-node scripts/init-all-accounts.ts",
     "setup-ata": "ts-node scripts/setup-ata.ts",
     "find-vault": "ts-node scripts/find-creator-vault.ts",
-    "bot": "ts-node src/bot.ts"
+    "bot": "ts-node src/bot.ts",
+    "dashboard": "ts-node src/index.ts dashboard",
+    "start": "ts-node src/index.ts all",
+    "validate-mayhem": "ts-node scripts/validate-mayhem-readiness.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
+    "@pump-fun/pump-sdk": "^1.22.1",
     "@pump-fun/pump-swap-sdk": "^1.7.7",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
     "axios": "^1.13.2",
     "dotenv": "^16.4.1",
     "express": "^5.1.0",
+    "mime-types": "^3.0.2",
+    "nft.storage": "^7.2.0",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.2.0",
+    "@types/chai": "^5.2.3",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.5",
+    "@types/mime-types": "^3.0.1",
+    "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.5",
+    "chai": "^6.2.1",
+    "mocha": "^11.7.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
   }

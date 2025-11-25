@@ -7,7 +7,7 @@ import { AnchorProvider, Program, Wallet, Idl, BN } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 function loadIdl(): Idl {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
