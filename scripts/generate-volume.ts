@@ -75,8 +75,10 @@ async function main() {
   const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
   const poolWsolAta = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
 
-  // Protocol fee recipient
-  const protocolFeeRecipient = new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs");
+  // Protocol fee recipient - different for SPL vs Token2022 (Mayhem Mode)
+  const SPL_FEE_RECIPIENT = "6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs";
+  const MAYHEM_FEE_RECIPIENT = "GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS";
+  const protocolFeeRecipient = new PublicKey(isMayhem ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT);
   const protocolAta = await getAssociatedTokenAddress(tokenMint, protocolFeeRecipient, true, TOKEN_PROGRAM);
 
   // Creator vault
