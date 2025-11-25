@@ -42,6 +42,30 @@ const PUMP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr
 const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
+// ============================================================================
+// Scalability Constants (aligned with lib.rs execute_buy)
+// ============================================================================
+// These values must match the on-chain constants for proper allocation validation
+const RENT_EXEMPT_MINIMUM = 890_880;      // ~0.00089 SOL
+const SAFETY_BUFFER = 50_000;             // ~0.00005 SOL
+const ATA_RENT_RESERVE = 2_100_000;       // ~0.0021 SOL (for secondary ATA creation)
+const MINIMUM_BUY_AMOUNT = 100_000;       // ~0.0001 SOL
+
+// Fee split ratio: Secondary tokens send 44.8% to root, keeping 55.2% (fee_split_bps = 5520)
+const SECONDARY_KEEP_RATIO = 0.552;
+
+// Minimum allocation required per token type
+const MIN_ALLOCATION_ROOT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + MINIMUM_BUY_AMOUNT;
+// = 890,880 + 50,000 + 100,000 = 1,040,880 lamports (~0.00104 SOL)
+
+// CRITICAL FIX: MIN_ALLOCATION_SECONDARY must account for the 44.8% split to root treasury
+// The allocated amount must be large enough that AFTER the split, there's enough for rent+buffer+ata+min_buy
+const MIN_AFTER_SPLIT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE + MINIMUM_BUY_AMOUNT;
+// = 890,880 + 50,000 + 2,100,000 + 100,000 = 3,140,880 lamports
+
+const MIN_ALLOCATION_SECONDARY = Math.ceil(MIN_AFTER_SPLIT / SECONDARY_KEEP_RATIO);
+// = 3,140,880 / 0.552 = 5,690,000 lamports (~0.00569 SOL)
+
 // ANSI colors
 const colors = {
   reset: '\x1b[0m',
@@ -102,6 +126,158 @@ function logSection(title: string) {
 
 function formatSOL(lamports: number): string {
   return (lamports / LAMPORTS_PER_SOL).toFixed(6);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================================
+// Scalability Validation
+// ============================================================================
+
+interface EcosystemValidation {
+  canProceed: boolean;
+  secondaryCount: number;
+  minRequired: number;
+  available: number;
+  message: string;
+}
+
+/**
+ * Pre-flight validation to check if collected fees are sufficient for all tokens
+ * This is an early warning system before attempting distribution
+ */
+function validateMinimumEcosystemFees(
+  tokens: TokenConfig[],
+  totalPending: number
+): EcosystemValidation {
+  const secondaryCount = tokens.filter(t => !t.isRoot).length;
+  const minRequired = secondaryCount * MIN_ALLOCATION_SECONDARY;
+
+  if (totalPending < minRequired) {
+    return {
+      canProceed: false,
+      secondaryCount,
+      minRequired,
+      available: totalPending,
+      message: `Pending fees (${formatSOL(totalPending)} SOL) < minimum required (${formatSOL(minRequired)} SOL) for ${secondaryCount} secondary tokens`
+    };
+  }
+
+  return {
+    canProceed: true,
+    secondaryCount,
+    minRequired,
+    available: totalPending,
+    message: `OK: ${formatSOL(totalPending)} SOL >= ${formatSOL(minRequired)} SOL minimum for ${secondaryCount} tokens`
+  };
+}
+
+/**
+ * Calculate minimum SOL needed for ecosystem with N secondary tokens
+ */
+function calculateMinimumEcosystemFees(secondaryCount: number): number {
+  return secondaryCount * MIN_ALLOCATION_SECONDARY;
+}
+
+// ============================================================================
+// Daemon Synchronization (Scalability Fix)
+// ============================================================================
+
+/**
+ * Wait for validator daemon to sync all secondary tokens' pending_fees
+ * This ensures all tokens have their fees registered before the cycle executes
+ *
+ * @param program - Anchor program instance
+ * @param tokens - Array of token configs to check
+ * @param maxWaitMs - Maximum time to wait (default 60s)
+ * @returns true if all tokens have pending_fees > 0, false if timeout
+ */
+async function waitForDaemonSync(
+  program: Program,
+  tokens: TokenConfig[],
+  maxWaitMs: number = 60000
+): Promise<{ synced: boolean; tokensWithFees: string[]; tokensWithoutFees: string[] }> {
+  logSection('PRE-FLIGHT: DAEMON SYNCHRONIZATION CHECK');
+
+  const secondaryTokens = tokens.filter(t => !t.isRoot);
+  const startTime = Date.now();
+  let iteration = 0;
+
+  while (Date.now() - startTime < maxWaitMs) {
+    iteration++;
+    const tokensWithFees: string[] = [];
+    const tokensWithoutFees: string[] = [];
+
+    for (const token of secondaryTokens) {
+      try {
+        const [tokenStatsPDA] = PublicKey.findProgramAddressSync(
+          [TOKEN_STATS_SEED, token.mint.toBuffer()],
+          program.programId
+        );
+
+        const tokenStats: any = await (program.account as any).tokenStats.fetch(tokenStatsPDA);
+        const pendingFees = tokenStats.pendingFeesLamports.toNumber();
+
+        if (pendingFees > 0) {
+          tokensWithFees.push(token.symbol);
+        } else {
+          tokensWithoutFees.push(token.symbol);
+        }
+      } catch (error) {
+        tokensWithoutFees.push(token.symbol);
+      }
+    }
+
+    if (tokensWithoutFees.length === 0) {
+      log('✅', `All ${secondaryTokens.length} secondary tokens have pending fees`, colors.green);
+      for (const symbol of tokensWithFees) {
+        log('  ✓', `${symbol}: pending_fees > 0`, colors.green);
+      }
+      return { synced: true, tokensWithFees, tokensWithoutFees };
+    }
+
+    if (iteration === 1) {
+      log('⏳', `Waiting for daemon to sync ${tokensWithoutFees.length} token(s)...`, colors.yellow);
+      for (const symbol of tokensWithoutFees) {
+        log('  ⏳', `${symbol}: pending_fees = 0 (waiting)`, colors.yellow);
+      }
+      for (const symbol of tokensWithFees) {
+        log('  ✓', `${symbol}: pending_fees > 0`, colors.green);
+      }
+    }
+
+    await sleep(5000); // Wait 5s before retry
+  }
+
+  // Timeout - proceed with available tokens
+  const finalTokensWithFees: string[] = [];
+  const finalTokensWithoutFees: string[] = [];
+
+  for (const token of secondaryTokens) {
+    try {
+      const [tokenStatsPDA] = PublicKey.findProgramAddressSync(
+        [TOKEN_STATS_SEED, token.mint.toBuffer()],
+        program.programId
+      );
+      const tokenStats: any = await (program.account as any).tokenStats.fetch(tokenStatsPDA);
+      if (tokenStats.pendingFeesLamports.toNumber() > 0) {
+        finalTokensWithFees.push(token.symbol);
+      } else {
+        finalTokensWithoutFees.push(token.symbol);
+      }
+    } catch {
+      finalTokensWithoutFees.push(token.symbol);
+    }
+  }
+
+  log('⚠️', `Timeout after ${maxWaitMs / 1000}s - proceeding with ${finalTokensWithFees.length}/${secondaryTokens.length} tokens`, colors.yellow);
+  if (finalTokensWithoutFees.length > 0) {
+    log('ℹ️', `Tokens without pending fees will be DEFERRED: ${finalTokensWithoutFees.join(', ')}`, colors.cyan);
+  }
+
+  return { synced: false, tokensWithFees: finalTokensWithFees, tokensWithoutFees: finalTokensWithoutFees };
 }
 
 // ============================================================================
@@ -311,21 +487,27 @@ async function collectAllVaultFees(
 }
 
 // ============================================================================
-// Step 3: Normalize Allocations
+// Step 3: Normalize Allocations (Scalable Version)
 // ============================================================================
+
+interface ScalableAllocationResult {
+  viable: TokenAllocation[];
+  skipped: TokenAllocation[];
+  ratio: number;
+}
 
 function normalizeAllocations(
   allocations: TokenAllocation[],
   actualCollected: number
-): { secondaries: TokenAllocation[]; ratio: number } {
-  logSection('STEP 3: CALCULATE PROPORTIONAL DISTRIBUTION');
+): ScalableAllocationResult {
+  logSection('STEP 3: CALCULATE PROPORTIONAL DISTRIBUTION (SCALABLE)');
 
   const secondaries = allocations.filter(a => !a.isRoot);
   const totalPending = secondaries.reduce((sum, a) => sum + a.pendingFees, 0);
 
   if (totalPending === 0) {
     log('⚠️', 'No pending fees to distribute', colors.yellow);
-    return { secondaries: [], ratio: 0 };
+    return { viable: [], skipped: [], ratio: 0 };
   }
 
   const ratio = actualCollected / totalPending;
@@ -333,34 +515,74 @@ function normalizeAllocations(
   log('📊', `Total pending: ${formatSOL(totalPending)} SOL`, colors.cyan);
   log('💰', `Actual collected: ${formatSOL(actualCollected)} SOL`, colors.cyan);
   log('📐', `Distribution ratio: ${ratio.toFixed(6)}`, ratio >= 0.95 ? colors.green : colors.yellow);
+  log('🔒', `Min allocation per secondary: ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`, colors.cyan);
 
   if (ratio < 0.95) {
     log('⚠️', 'Collected amount is significantly less than pending fees', colors.yellow);
     log('ℹ️', 'This can happen if fees were spent or if pending_fees tracking is out of sync', colors.cyan);
   }
 
-  // Calculate proportional allocation for each secondary token
-  const normalized = secondaries.map(alloc => ({
+  // Phase 1: Calculate preliminary allocation for each secondary token
+  const preliminary = secondaries.map(alloc => ({
     ...alloc,
     allocation: Math.floor(alloc.pendingFees * ratio),
   }));
 
-  // Display allocation table
-  console.log('\n' + colors.bright + 'Token Allocations:' + colors.reset);
-  console.log('─'.repeat(80));
-  console.log(`${'Token'.padEnd(12)} ${'Pending Fees'.padEnd(20)} ${'Allocated'.padEnd(20)} ${'Ratio'.padEnd(10)}`);
-  console.log('─'.repeat(80));
+  // Phase 2: Filter tokens that meet minimum allocation requirements
+  const viable = preliminary.filter(a => a.allocation >= MIN_ALLOCATION_SECONDARY);
+  const skipped = preliminary.filter(a => a.allocation < MIN_ALLOCATION_SECONDARY);
 
-  for (const alloc of normalized) {
-    const tokenRatio = alloc.pendingFees > 0 ? (alloc.allocation / alloc.pendingFees) : 0;
+  // Phase 3: Redistribute skipped allocations to viable tokens proportionally
+  if (viable.length > 0 && skipped.length > 0) {
+    const skippedTotal = skipped.reduce((sum, a) => sum + a.allocation, 0);
+    const viableTotal = viable.reduce((sum, a) => sum + a.allocation, 0);
+
+    if (viableTotal > 0) {
+      // Redistribute proportionally based on each viable token's share
+      const redistributionRatio = (viableTotal + skippedTotal) / viableTotal;
+      viable.forEach(a => {
+        a.allocation = Math.floor(a.allocation * redistributionRatio);
+      });
+      log('🔄', `Redistributed ${formatSOL(skippedTotal)} SOL from ${skipped.length} deferred tokens`, colors.cyan);
+    }
+  }
+
+  // Display allocation table with status
+  console.log('\n' + colors.bright + 'Token Allocations:' + colors.reset);
+  console.log('─'.repeat(90));
+  console.log(`${'Token'.padEnd(12)} ${'Pending Fees'.padEnd(18)} ${'Allocated'.padEnd(18)} ${'Min Required'.padEnd(18)} ${'Status'.padEnd(12)}`);
+  console.log('─'.repeat(90));
+
+  for (const alloc of preliminary) {
+    const isViable = alloc.allocation >= MIN_ALLOCATION_SECONDARY;
+    const status = isViable ? '✅ VIABLE' : '⏭️ DEFERRED';
+    const statusColor = isViable ? colors.green : colors.yellow;
     console.log(
-      `${alloc.token.symbol.padEnd(12)} ${formatSOL(alloc.pendingFees).padEnd(20)} ` +
-      `${formatSOL(alloc.allocation).padEnd(20)} ${tokenRatio.toFixed(4).padEnd(10)}`
+      `${alloc.token.symbol.padEnd(12)} ${formatSOL(alloc.pendingFees).padEnd(18)} ` +
+      `${formatSOL(alloc.allocation).padEnd(18)} ${formatSOL(MIN_ALLOCATION_SECONDARY).padEnd(18)} ` +
+      `${statusColor}${status}${colors.reset}`
     );
   }
-  console.log('─'.repeat(80) + '\n');
+  console.log('─'.repeat(90));
 
-  return { secondaries: normalized, ratio };
+  // Log deferred tokens for transparency
+  if (skipped.length > 0) {
+    console.log('');
+    log('ℹ️', `${skipped.length} token(s) deferred - will accumulate and process in next cycle:`, colors.yellow);
+    for (const s of skipped) {
+      log('⏭️', `${s.token.symbol}: ${formatSOL(s.allocation)} SOL < ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL minimum`, colors.yellow);
+    }
+  }
+
+  // Summary
+  console.log('');
+  log('📊', `Viable tokens: ${viable.length}/${secondaries.length}`, viable.length > 0 ? colors.green : colors.yellow);
+  if (viable.length > 0) {
+    const totalViableAllocation = viable.reduce((sum, a) => sum + a.allocation, 0);
+    log('💰', `Total viable allocation: ${formatSOL(totalViableAllocation)} SOL`, colors.green);
+  }
+
+  return { viable, skipped, ratio };
 }
 
 // ============================================================================
@@ -404,7 +626,8 @@ async function executeSecondaryWithAllocation(
     );
 
     // Derive other required accounts
-    const creator = state.admin;
+    // Use the token's creator (DAT Authority), NOT the admin wallet
+    const creator = allocation.token.creator;
     const [creatorVault] = PublicKey.findProgramAddressSync(
       [Buffer.from('creator-vault'), creator.toBuffer()],
       PUMP_PROGRAM
@@ -510,10 +733,11 @@ async function executeSecondaryWithAllocation(
     log('  ✅', `Buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
 
     // Step 4b: Finalize allocated cycle (reset pending_fees, increment cycles_participated)
-    log('  🔄', 'Finalizing cycle...', colors.cyan);
+    // Pass true because this token actually participated in the cycle
+    log('  🔄', 'Finalizing cycle (actually_participated=true)...', colors.cyan);
 
     const finalizeTx = await program.methods
-      .finalizeAllocatedCycle()
+      .finalizeAllocatedCycle(true) // Token participated - reset pending_fees
       .accounts({
         datState,
         tokenStats,
@@ -558,6 +782,52 @@ async function executeSecondaryWithAllocation(
     result.error = errorMsg;
     log('  ❌', `Failed: ${errorMsg}`, colors.red);
     return result;
+  }
+}
+
+// ============================================================================
+// Step 4b: Finalize Deferred Tokens (preserve pending_fees)
+// ============================================================================
+
+/**
+ * Finalize deferred tokens with actually_participated=false
+ * This preserves their pending_fees for the next cycle
+ */
+async function finalizeDeferredTokens(
+  program: Program,
+  skippedAllocations: TokenAllocation[],
+  adminKeypair: Keypair
+): Promise<void> {
+  if (skippedAllocations.length === 0) return;
+
+  logSection('FINALIZE DEFERRED TOKENS (PRESERVE PENDING_FEES)');
+
+  for (const allocation of skippedAllocations) {
+    try {
+      const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
+      const [tokenStats] = PublicKey.findProgramAddressSync(
+        [TOKEN_STATS_SEED, allocation.token.mint.toBuffer()],
+        program.programId
+      );
+
+      log('⏭️', `Finalizing ${allocation.token.symbol} (deferred - preserving pending_fees)...`, colors.yellow);
+
+      const finalizeTx = await program.methods
+        .finalizeAllocatedCycle(false) // Token did NOT participate - preserve pending_fees
+        .accounts({
+          datState,
+          tokenStats,
+          admin: adminKeypair.publicKey,
+        })
+        .signers([adminKeypair])
+        .rpc();
+
+      log('  ✅', `${allocation.token.symbol}: pending_fees preserved, TX: ${finalizeTx.slice(0, 16)}...`, colors.green);
+
+    } catch (error) {
+      const errorMsg = (error as Error).message || String(error);
+      log('  ⚠️', `${allocation.token.symbol}: Failed to finalize deferred - ${errorMsg}`, colors.yellow);
+    }
   }
 }
 
@@ -754,7 +1024,7 @@ async function executeRootCycle(
 // ============================================================================
 
 function displayCycleSummary(
-  normalized: { secondaries: TokenAllocation[]; ratio: number },
+  normalized: { viable: TokenAllocation[]; skipped: TokenAllocation[]; ratio: number },
   results: { [key: string]: CycleResult },
   totalCollected: number
 ) {
@@ -764,23 +1034,53 @@ function displayCycleSummary(
   console.log(colors.bright + '💰 Financial Summary:' + colors.reset);
   console.log(`   Total Collected: ${formatSOL(totalCollected)} SOL`);
   console.log(`   Distribution Ratio: ${normalized.ratio.toFixed(6)}`);
+  console.log(`   Min Allocation (Secondary): ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`);
+  console.log('');
+
+  // Scalability stats
+  const totalSecondaries = normalized.viable.length + normalized.skipped.length;
+  console.log(colors.bright + '📈 Scalability Report:' + colors.reset);
+  console.log(`   Total Secondary Tokens: ${totalSecondaries}`);
+  console.log(`   ${colors.green}Viable (processed): ${normalized.viable.length}${colors.reset}`);
+  console.log(`   ${colors.yellow}Deferred (accumulating): ${normalized.skipped.length}${colors.reset}`);
   console.log('');
 
   // Cycle results table
   console.log(colors.bright + '🔄 Cycle Results:' + colors.reset);
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(110));
   console.log(
-    `${'Token'.padEnd(12)} ${'Status'.padEnd(10)} ${'Allocated'.padEnd(15)} ` +
+    `${'Token'.padEnd(12)} ${'Status'.padEnd(14)} ${'Allocated'.padEnd(15)} ` +
     `${'Buy Tx'.padEnd(18)} ${'Finalize Tx'.padEnd(18)} ${'Burn Tx'.padEnd(18)}`
   );
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(110));
 
   let successCount = 0;
   let failureCount = 0;
+  let deferredCount = 0;
 
   for (const [symbol, result] of Object.entries(results)) {
-    const statusIcon = result.success ? '✅' : '❌';
-    const statusColor = result.success ? colors.green : colors.red;
+    const isDeferred = result.error?.startsWith('DEFERRED:');
+    let statusIcon: string;
+    let statusText: string;
+    let statusColor: string;
+
+    if (isDeferred) {
+      statusIcon = '⏭️';
+      statusText = 'Deferred';
+      statusColor = colors.yellow;
+      deferredCount++;
+    } else if (result.success) {
+      statusIcon = '✅';
+      statusText = 'Success';
+      statusColor = colors.green;
+      successCount++;
+    } else {
+      statusIcon = '❌';
+      statusText = 'Failed';
+      statusColor = colors.red;
+      failureCount++;
+    }
+
     const allocation = result.allocation ? formatSOL(result.allocation) : 'N/A';
     const buyTx = result.buyTx ? result.buyTx.slice(0, 16) + '...' : '-';
     const finalizeTx = result.finalizeTx ? result.finalizeTx.slice(0, 16) + '...' : '-';
@@ -788,33 +1088,33 @@ function displayCycleSummary(
 
     console.log(
       statusColor +
-      `${symbol.padEnd(12)} ${(statusIcon + ' ' + (result.success ? 'Success' : 'Failed')).padEnd(18)} ` +
+      `${symbol.padEnd(12)} ${(statusIcon + ' ' + statusText).padEnd(14)} ` +
       `${allocation.padEnd(15)} ${buyTx.padEnd(18)} ${finalizeTx.padEnd(18)} ${burnTx.padEnd(18)}` +
       colors.reset
     );
 
-    if (result.success) {
-      successCount++;
-    } else {
-      failureCount++;
-      if (result.error) {
-        console.log(`     ${colors.red}Error: ${result.error}${colors.reset}`);
-      }
+    // Show error details for failures (not deferrals)
+    if (!result.success && result.error && !isDeferred) {
+      console.log(`     ${colors.red}Error: ${result.error}${colors.reset}`);
     }
   }
 
-  console.log('─'.repeat(100));
+  console.log('─'.repeat(110));
   console.log('');
 
   // Summary stats
   console.log(colors.bright + '📊 Execution Summary:' + colors.reset);
   console.log(`   Total Tokens: ${Object.keys(results).length}`);
   console.log(`   ${colors.green}Successful: ${successCount}${colors.reset}`);
+  console.log(`   ${colors.yellow}Deferred: ${deferredCount}${colors.reset}`);
   console.log(`   ${colors.red}Failed: ${failureCount}${colors.reset}`);
   console.log('');
 
   if (failureCount > 0) {
-    console.log(colors.yellow + '⚠️  Some cycles failed. Review errors above.' + colors.reset);
+    console.log(colors.red + '❌ Some cycles failed. Review errors above.' + colors.reset);
+  } else if (deferredCount > 0) {
+    console.log(colors.yellow + '⏭️  Some tokens deferred due to insufficient allocation.' + colors.reset);
+    console.log(colors.cyan + '   They will accumulate and process in next cycle.' + colors.reset);
   } else {
     console.log(colors.green + '✅ All cycles executed successfully!' + colors.reset);
   }
@@ -874,31 +1174,55 @@ async function main() {
     // Execute the complete ecosystem cycle
     const startTime = Date.now();
 
+    // Pre-flight: Wait for daemon synchronization (optional, 30s timeout)
+    // This helps ensure all tokens have their pending_fees populated
+    const syncResult = await waitForDaemonSync(program, tokens, 30000);
+    if (!syncResult.synced && syncResult.tokensWithoutFees.length > 0) {
+      log('ℹ️', `Proceeding with ${syncResult.tokensWithFees.length} synced tokens`, colors.cyan);
+    }
+
     // Step 1: Query pending fees
     const allocations = await queryPendingFees(program, tokens);
 
     // Step 2: Collect all vault fees
     const totalCollected = await collectAllVaultFees(program, rootToken, adminKeypair);
 
-    // Step 3: Calculate proportional distribution
-    const { secondaries, ratio } = normalizeAllocations(allocations, totalCollected);
+    // Step 3: Calculate proportional distribution (scalable)
+    const { viable, skipped, ratio } = normalizeAllocations(allocations, totalCollected);
 
-    if (secondaries.length === 0) {
+    if (viable.length === 0 && skipped.length > 0) {
+      log('⏭️', `All ${skipped.length} secondary tokens deferred - insufficient fees for minimum allocation.`, colors.yellow);
+      log('ℹ️', `Tokens will accumulate fees and process in next cycle when they reach ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`, colors.cyan);
+    } else if (viable.length === 0) {
       log('⚠️', 'No secondary tokens with pending fees. Skipping secondary cycles.', colors.yellow);
     }
 
     const results: { [key: string]: CycleResult } = {};
 
-    // Step 4: Execute secondary cycles with allocation
-    if (secondaries.length > 0) {
+    // Mark skipped tokens as deferred in results
+    for (const skip of skipped) {
+      results[skip.token.symbol] = {
+        token: skip.token.symbol,
+        success: true, // Not a failure, just deferred
+        pendingFees: skip.pendingFees,
+        allocation: skip.allocation,
+        error: `DEFERRED: ${formatSOL(skip.allocation)} SOL < ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL minimum`,
+      };
+    }
+
+    // Step 4: Execute secondary cycles with allocation (only viable tokens)
+    if (viable.length > 0) {
       logSection('STEP 4: EXECUTE SECONDARY TOKEN CYCLES');
 
-      for (const allocation of secondaries) {
+      for (const allocation of viable) {
         const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
         results[allocation.token.symbol] = result;
         console.log(''); // Spacing between tokens
       }
     }
+
+    // Step 4b: Finalize deferred tokens (preserve their pending_fees for next cycle)
+    await finalizeDeferredTokens(program, skipped, adminKeypair);
 
     // Step 5: Execute root cycle
     const rootResult = await executeRootCycle(program, rootToken, adminKeypair);
@@ -908,7 +1232,7 @@ async function main() {
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
 
-    displayCycleSummary({ secondaries, ratio }, results, totalCollected);
+    displayCycleSummary({ viable, skipped, ratio }, results, totalCollected);
 
     console.log(colors.bright + `⏱️  Total execution time: ${duration}s` + colors.reset);
     console.log('');
