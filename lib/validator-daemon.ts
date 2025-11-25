@@ -20,6 +20,16 @@ const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
 const VALIDATOR_STATE_SEED = Buffer.from('validator_v1');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 
+// Max slot range allowed by on-chain program (lib.rs:554)
+const MAX_SLOT_RANGE = 1000;
+
+// Adaptive flush threshold: trigger early flush when approaching max slot range
+// 80% of MAX_SLOT_RANGE provides a safety buffer
+const ADAPTIVE_FLUSH_THRESHOLD = 800;
+
+// Adaptive flush check interval (milliseconds)
+const ADAPTIVE_CHECK_INTERVAL = 5000; // 5 seconds
+
 export interface TokenConfig {
   mint: PublicKey;
   bondingCurve: PublicKey;
@@ -51,6 +61,7 @@ export class ValidatorDaemon {
   private flushInterval: number;
   private verbose: boolean;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private adaptiveCheckTimer: ReturnType<typeof setInterval> | null = null;
   private running: boolean = false;
 
   constructor(config: ValidatorDaemonConfig) {
@@ -105,9 +116,14 @@ export class ValidatorDaemon {
       }
     }
 
-    // Start periodic flush
+    // Start periodic flush (normal interval)
     this.flushTimer = setInterval(() => this.flushAllPendingFees(), this.flushInterval);
-    console.log('\n✅ Validator Daemon started successfully\n');
+
+    // Start adaptive flush check (checks every 5s if any token is approaching slot limit)
+    this.adaptiveCheckTimer = setInterval(() => this.checkAdaptiveFlush(), ADAPTIVE_CHECK_INTERVAL);
+
+    console.log('\n✅ Validator Daemon started successfully');
+    console.log(`🔄 Adaptive flush enabled (threshold: ${ADAPTIVE_FLUSH_THRESHOLD} slots)\n`);
   }
 
   /**
@@ -132,6 +148,12 @@ export class ValidatorDaemon {
         if (pending.txSignatures.includes(sigInfo.signature)) continue;
         if (sigInfo.err) continue; // Skip failed transactions
 
+        // Skip transactions older than our start slot to avoid slot range issues
+        const txSlot = sigInfo.slot || slot;
+        if (txSlot < pending.startSlot) {
+          continue; // Skip old transactions
+        }
+
         const fee = await this.extractFeeFromTransaction(
           sigInfo.signature,
           config
@@ -140,7 +162,7 @@ export class ValidatorDaemon {
         if (fee > 0) {
           pending.feeAmount += BigInt(fee);
           pending.txSignatures.push(sigInfo.signature);
-          pending.endSlot = Math.max(pending.endSlot, slot);
+          pending.endSlot = Math.max(pending.endSlot, txSlot);
 
           if (this.verbose) {
             console.log(`💰 ${config.symbol}: +${(fee / 1e9).toFixed(6)} SOL (TX: ${sigInfo.signature.slice(0, 8)}...)`);
@@ -230,16 +252,166 @@ export class ValidatorDaemon {
   }
 
   /**
+   * Read the on-chain validator state to get last_validated_slot
+   */
+  private async getOnChainValidatorState(mintKey: string): Promise<{ lastValidatedSlot: number } | null> {
+    try {
+      const [validatorState] = PublicKey.findProgramAddressSync(
+        [VALIDATOR_STATE_SEED, new PublicKey(mintKey).toBuffer()],
+        this.program.programId
+      );
+
+      const account = await this.connection.getAccountInfo(validatorState);
+      if (!account) return null;
+
+      // ValidatorState layout: discriminator(8) + mint(32) + bonding_curve(32) + last_validated_slot(8) + ...
+      // last_validated_slot is at offset 72 (8 + 32 + 32)
+      const lastValidatedSlot = account.data.readBigUInt64LE(72);
+      return { lastValidatedSlot: Number(lastValidatedSlot) };
+    } catch (error) {
+      if (this.verbose) {
+        console.error(`Error reading validator state for ${mintKey}:`, error);
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Check if any token is approaching the slot limit and needs early flush
+   * This prevents SlotRangeTooLarge errors by proactively flushing
+   */
+  private async checkAdaptiveFlush(): Promise<void> {
+    for (const [mintKey, pending] of this.pendingValidations) {
+      // Skip if no pending fees
+      if (pending.txSignatures.length === 0) continue;
+
+      const config = this.tokens.get(mintKey);
+      if (!config) continue;
+
+      try {
+        // Read on-chain validator state
+        const onChainState = await this.getOnChainValidatorState(mintKey);
+        if (!onChainState) continue;
+
+        const slotDelta = pending.endSlot - onChainState.lastValidatedSlot;
+
+        // If approaching the limit, trigger early flush
+        if (slotDelta >= ADAPTIVE_FLUSH_THRESHOLD) {
+          console.log(`\n⚡ Adaptive flush triggered for ${config.symbol} (slot delta: ${slotDelta} >= ${ADAPTIVE_FLUSH_THRESHOLD})`);
+          await this.flushSingleToken(mintKey, pending, config);
+        } else if (this.verbose && slotDelta > 500) {
+          // Log warning when getting close to threshold
+          console.log(`📊 ${config.symbol}: slot delta ${slotDelta}/${ADAPTIVE_FLUSH_THRESHOLD}`);
+        }
+      } catch (error) {
+        if (this.verbose) {
+          console.error(`Error in adaptive flush check for ${config.symbol}:`, error);
+        }
+      }
+    }
+  }
+
+  /**
+   * Flush a single token's pending fees
+   */
+  private async flushSingleToken(mintKey: string, pending: PendingValidation, config: TokenConfig): Promise<void> {
+    try {
+      const [validatorState] = PublicKey.findProgramAddressSync(
+        [VALIDATOR_STATE_SEED, new PublicKey(mintKey).toBuffer()],
+        this.program.programId
+      );
+
+      const [tokenStats] = PublicKey.findProgramAddressSync(
+        [TOKEN_STATS_SEED, new PublicKey(mintKey).toBuffer()],
+        this.program.programId
+      );
+
+      const feeAmountBN = new BN(pending.feeAmount.toString());
+
+      const tx = await this.program.methods
+        .registerValidatedFees(
+          feeAmountBN,
+          new BN(pending.endSlot),
+          pending.txSignatures.length
+        )
+        .accounts({
+          validatorState,
+          tokenStats,
+        })
+        .rpc();
+
+      console.log(`✅ ${config.symbol}: ${Number(pending.feeAmount) / 1e9} SOL (${pending.txSignatures.length} TXs)`);
+      console.log(`   TX: ${tx}`);
+
+      // Reset pending with new start slot
+      pending.feeAmount = 0n;
+      pending.txSignatures = [];
+      pending.startSlot = pending.endSlot;
+
+    } catch (error: any) {
+      console.error(`❌ Failed to flush ${config.symbol}:`, error.message || error);
+
+      // Handle errors by resetting state
+      if (error.message?.includes('StaleValidation') ||
+          error.message?.includes('SlotRangeTooLarge') ||
+          error.message?.includes('6019') ||
+          error.message?.includes('6018')) {
+        await this.resetPendingState(mintKey, 'Validation error');
+      }
+    }
+  }
+
+  /**
+   * Reset pending state with fresh slots from current slot
+   */
+  private async resetPendingState(mintKey: string, reason: string): Promise<void> {
+    const currentSlot = await this.connection.getSlot();
+    const newPending = this.pendingValidations.get(mintKey);
+    if (newPending) {
+      const config = this.tokens.get(mintKey);
+      console.log(`   ↳ ${reason} - Resetting ${config?.symbol || mintKey} from slot ${currentSlot}`);
+      newPending.feeAmount = 0n;
+      newPending.txSignatures = [];
+      newPending.startSlot = currentSlot;
+      newPending.endSlot = currentSlot;
+    }
+  }
+
+  /**
    * Flush pending fees to on-chain (PERMISSIONLESS call)
    */
   private async flushAllPendingFees(): Promise<void> {
     const tokensToFlush: Array<{ mintKey: string; pending: PendingValidation; config: TokenConfig }> = [];
+
+    // Get current slot for reference
+    const currentSlot = await this.connection.getSlot();
 
     // Collect tokens that need flushing
     for (const [mintKey, pending] of this.pendingValidations) {
       if (pending.feeAmount > 0n) {
         const config = this.tokens.get(mintKey);
         if (config) {
+          // Pre-check: Read on-chain validator state to verify slot range
+          const onChainState = await this.getOnChainValidatorState(mintKey);
+
+          if (onChainState) {
+            const slotDelta = pending.endSlot - onChainState.lastValidatedSlot;
+
+            // If slot range would be too large, reset and skip this flush
+            if (slotDelta > MAX_SLOT_RANGE) {
+              console.log(`⚠️  ${config.symbol}: Slot range too large (${slotDelta} > ${MAX_SLOT_RANGE})`);
+              await this.resetPendingState(mintKey, 'Slot range exceeded');
+              continue;
+            }
+
+            // If our endSlot is behind the on-chain state, reset (stale data)
+            if (pending.endSlot <= onChainState.lastValidatedSlot) {
+              console.log(`⚠️  ${config.symbol}: Stale data (endSlot ${pending.endSlot} <= onChain ${onChainState.lastValidatedSlot})`);
+              await this.resetPendingState(mintKey, 'Stale validation data');
+              continue;
+            }
+          }
+
           tokensToFlush.push({ mintKey, pending, config });
         }
       }
@@ -285,25 +457,24 @@ export class ValidatorDaemon {
         console.log(`✅ ${config.symbol}: ${Number(pending.feeAmount) / 1e9} SOL (${pending.txSignatures.length} TXs)`);
         console.log(`   TX: ${tx}`);
 
-        // Reset pending
+        // Reset pending with new start slot
         const newPending = this.pendingValidations.get(mintKey);
         if (newPending) {
           newPending.feeAmount = 0n;
           newPending.txSignatures = [];
           newPending.startSlot = pending.endSlot;
+          newPending.endSlot = pending.endSlot;
         }
 
       } catch (error: any) {
         console.error(`❌ Failed to flush ${config.symbol}:`, error.message || error);
 
-        // Check if it's a stale validation error (slot already processed)
-        if (error.message?.includes('StaleValidation')) {
-          console.log(`   ↳ Slot already validated, resetting...`);
-          const newPending = this.pendingValidations.get(mintKey);
-          if (newPending) {
-            newPending.feeAmount = 0n;
-            newPending.txSignatures = [];
-          }
+        // Handle specific errors by resetting state
+        if (error.message?.includes('StaleValidation') ||
+            error.message?.includes('SlotRangeTooLarge') ||
+            error.message?.includes('6019') || // SlotRangeTooLarge error code
+            error.message?.includes('6018')) { // StaleValidation error code
+          await this.resetPendingState(mintKey, 'Validation error');
         }
       }
     }
@@ -360,6 +531,12 @@ export class ValidatorDaemon {
     if (this.flushTimer) {
       clearInterval(this.flushTimer);
       this.flushTimer = null;
+    }
+
+    // Clear adaptive check timer
+    if (this.adaptiveCheckTimer) {
+      clearInterval(this.adaptiveCheckTimer);
+      this.adaptiveCheckTimer = null;
     }
 
     // Unsubscribe from all accounts
