@@ -1025,7 +1025,8 @@ async function executeRootCycle(
       program.programId
     );
 
-    const tokenProgram = TOKEN_PROGRAM_ID; // Root is always standard SPL
+    // Dynamic token program selection for root (supports Token-2022/Mayhem as root)
+    const tokenProgram = rootToken.isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
 
     const [datAsdfAccount] = PublicKey.findProgramAddressSync(
       [
@@ -1055,7 +1056,11 @@ async function executeRootCycle(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    const protocolFeeRecipient = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+    // Protocol fee recipient (different for Mayhem vs SPL)
+    const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+    const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+    const protocolFeeRecipient = rootToken.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+
     const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
       [
         protocolFeeRecipient.toBuffer(),
