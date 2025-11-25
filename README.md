@@ -2,7 +2,7 @@
 
 **Automated Buyback & Burn Protocol for Solana**
 
-Un système automatisé de collecte des fees de trading Pump.fun et d'exécution de cycles buyback-and-burn, avec support multi-token et redistribution hiérarchique.
+An automated system for collecting Pump.fun trading fees and executing buyback-and-burn cycles, with multi-token support and hierarchical redistribution.
 
 [![Solana](https://img.shields.io/badge/Solana-Devnet-green)](https://solana.com)
 [![Anchor](https://img.shields.io/badge/Anchor-0.31.1-blue)](https://anchor-lang.com)
@@ -38,135 +38,135 @@ Un système automatisé de collecte des fees de trading Pump.fun et d'exécution
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Flow Économique
+### Economic Flow
 
-1. **Trading Fees** → Collectés depuis Pump.fun creator vaults
-2. **Fee Split** → Tokens secondaires envoient 44.8% au root treasury
-3. **Buyback** → SOL utilisé pour acheter des tokens sur la bonding curve
-4. **Burn** → Tokens achetés sont brûlés, réduisant le supply
+1. **Trading Fees** → Collected from Pump.fun creator vaults
+2. **Fee Split** → Secondary tokens send 44.8% to root treasury
+3. **Buyback** → SOL used to buy tokens on the bonding curve
+4. **Burn** → Purchased tokens are burned, reducing supply
 
 ---
 
-## Caractéristiques
+## Features
 
-- **Multi-Token Ecosystem** - Support illimité de tokens secondaires
-- **Hierarchical Fee Distribution** - 44.8% des fees secondaires → root token
-- **Dynamic Allocation** - Distribution proportionnelle basée sur les pending fees
-- **Mayhem Mode** - Support Token-2022 avec extensions
-- **Graceful Deferral** - Tokens avec allocation insuffisante reportés au cycle suivant
-- **Emergency Controls** - Pause/Resume pour situations critiques
+- **Multi-Token Ecosystem** - Unlimited secondary token support
+- **Hierarchical Fee Distribution** - 44.8% of secondary fees → root token
+- **Dynamic Allocation** - Proportional distribution based on pending fees
+- **Mayhem Mode** - Token-2022 support with extensions
+- **Graceful Deferral** - Tokens with insufficient allocation deferred to next cycle
+- **Emergency Controls** - Pause/Resume for critical situations
 
 ---
 
 ## Quick Start (Devnet)
 
-### Prérequis
+### Prerequisites
 
 ```bash
-# Installer les dépendances
+# Install dependencies
 npm install
 
-# Configurer Solana CLI
+# Configure Solana CLI
 solana config set --url devnet
 ```
 
-### Générer du Volume de Test
+### Generate Test Volume
 
 ```bash
-# Générer des trades (achats + ventes) pour accumuler des fees
+# Generate trades (buys + sells) to accumulate fees
 npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
 npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 10 0.1
 npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 10 0.1
 ```
 
-### Exécuter un Cycle Écosystème
+### Execute Ecosystem Cycle
 
 ```bash
-# Cycle complet : collect → distribute → buyback → burn (tous les tokens)
+# Full cycle: collect → distribute → buyback → burn (all tokens)
 npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
 ```
 
-### Vérifier les Statistiques
+### Check Statistics
 
 ```bash
-# État actuel des tokens
+# Current token state
 npx ts-node scripts/check-current-stats.ts
 
-# État du protocole DAT
+# DAT protocol state
 npx ts-node scripts/check-dat-state.ts
 ```
 
 ---
 
-## Structure du Projet
+## Project Structure
 
 ```
 asdf-dat/
-├── programs/asdf-dat/          # Smart Contract Solana (Rust)
+├── programs/asdf-dat/          # Solana Smart Contract (Rust)
 │   └── src/
-│       ├── lib.rs              # Programme principal (2,164 LOC)
-│       └── tests.rs            # Tests unitaires
+│       ├── lib.rs              # Main program (2,164 LOC)
+│       └── tests.rs            # Unit tests
 │
-├── scripts/                    # Scripts d'opération (56 fichiers)
-│   ├── execute-ecosystem-cycle.ts   # Orchestrateur principal
-│   ├── generate-volume.ts           # Génération de trades
-│   ├── check-*.ts                   # Scripts de monitoring
-│   ├── buy-*.ts / sell-*.ts         # Opérations de trading
-│   └── init-*.ts / create-*.ts      # Initialisation
+├── scripts/                    # Operation scripts (56 files)
+│   ├── execute-ecosystem-cycle.ts   # Main orchestrator
+│   ├── generate-volume.ts           # Trade generation
+│   ├── check-*.ts                   # Monitoring scripts
+│   ├── buy-*.ts / sell-*.ts         # Trading operations
+│   └── init-*.ts / create-*.ts      # Initialization
 │
-├── src/                        # Applications TypeScript
-│   ├── bot.ts                  # Bot automatisé
-│   ├── dashboard.ts            # Dashboard web
-│   └── index.ts                # Point d'entrée CLI
+├── src/                        # TypeScript applications
+│   ├── bot.ts                  # Automated bot
+│   ├── dashboard.ts            # Web dashboard
+│   └── index.ts                # CLI entry point
 │
-├── lib/                        # Daemons et utilitaires
-│   ├── fee-monitor.ts          # Monitoring des fees
-│   └── validator-daemon.ts     # Synchronisation validateur
+├── lib/                        # Daemons and utilities
+│   ├── fee-monitor.ts          # Fee monitoring
+│   └── validator-daemon.ts     # Validator synchronization
 │
-├── tests/                      # Tests d'intégration
+├── tests/                      # Integration tests
 ├── docs/                       # Documentation
 │
-├── devnet-token-spl.json       # Config token root
-├── devnet-token-secondary.json # Config token secondaire
-├── devnet-token-mayhem.json    # Config token mayhem
-└── asdf_dat.json               # IDL du programme
+├── devnet-token-spl.json       # Root token config
+├── devnet-token-secondary.json # Secondary token config
+├── devnet-token-mayhem.json    # Mayhem token config
+└── asdf_dat.json               # Program IDL
 ```
 
 ---
 
-## Instructions Smart Contract (21 total)
+## Smart Contract Instructions (21 total)
 
 ### Core Operations
 | Instruction | Description |
 |-------------|-------------|
-| `initialize` | Initialise DAT state et authority PDAs |
-| `initialize_token_stats` | Crée le tracking par token |
-| `collect_fees` | Collecte SOL depuis Pump.fun vault |
-| `execute_buy` | Achète des tokens avec le SOL collecté |
-| `burn_and_update` | Brûle les tokens et met à jour les stats |
-| `finalize_allocated_cycle` | Finalise un cycle orchestré |
+| `initialize` | Initialize DAT state and authority PDAs |
+| `initialize_token_stats` | Create per-token tracking |
+| `collect_fees` | Collect SOL from Pump.fun vault |
+| `execute_buy` | Buy tokens with collected SOL |
+| `burn_and_update` | Burn tokens and update stats |
+| `finalize_allocated_cycle` | Finalize an orchestrated cycle |
 
 ### Ecosystem Management
 | Instruction | Description |
 |-------------|-------------|
-| `set_root_token` | Configure le token root pour le fee split |
-| `update_fee_split` | Ajuste le ratio de distribution (1000-9000 bps) |
-| `register_validated_fees` | Enregistre les fees validés par le daemon |
-| `sync_validator_slot` | Synchronise l'état du validateur |
+| `set_root_token` | Configure root token for fee split |
+| `update_fee_split` | Adjust distribution ratio (1000-9000 bps) |
+| `register_validated_fees` | Register daemon-validated fees |
+| `sync_validator_slot` | Synchronize validator state |
 
 ### Token Creation
 | Instruction | Description |
 |-------------|-------------|
-| `create_pumpfun_token` | Crée un token SPL standard |
-| `create_pumpfun_token_mayhem` | Crée un token Mayhem (Token-2022) |
+| `create_pumpfun_token` | Create standard SPL token |
+| `create_pumpfun_token_mayhem` | Create Mayhem token (Token-2022) |
 
 ### Administration
 | Instruction | Description |
 |-------------|-------------|
-| `emergency_pause` | Pause toutes les opérations |
-| `resume` | Reprend après une pause |
-| `update_parameters` | Modifie les paramètres système |
-| `transfer_admin` | Transfère l'autorité admin |
+| `emergency_pause` | Pause all operations |
+| `resume` | Resume after pause |
+| `update_parameters` | Modify system parameters |
+| `transfer_admin` | Transfer admin authority |
 
 ---
 
@@ -174,7 +174,7 @@ asdf-dat/
 
 ### Token Configs
 
-Chaque token est configuré via un fichier JSON :
+Each token is configured via a JSON file:
 
 ```json
 {
@@ -188,7 +188,7 @@ Chaque token est configuré via un fichier JSON :
 }
 ```
 
-### Variables d'Environnement
+### Environment Variables
 
 ```bash
 # .env
@@ -200,67 +200,67 @@ WALLET_PATH=./devnet-wallet.json
 
 ## Fee Distribution
 
-### Tokens Secondaires (55.2% / 44.8%)
+### Secondary Tokens (55.2% / 44.8%)
 
 ```
-Allocation reçue: 100%
+Received allocation: 100%
     │
-    ├── 55.2% → Buyback du token secondaire
+    ├── 55.2% → Secondary token buyback
     │
     └── 44.8% → Root Treasury
                     │
-                    └── Buyback du token root
+                    └── Root token buyback
 ```
 
-### Token Root (100%)
+### Root Token (100%)
 
 ```
-Fees collectés: 100%
+Collected fees: 100%
     │
-    └── 100% → Buyback du token root
+    └── 100% → Root token buyback
 ```
 
 ---
 
-## Scripts Principaux
+## Main Scripts
 
-### Cycle Écosystème
+### Ecosystem Cycle
 ```bash
-# Exécute le cycle complet sur tous les tokens
+# Execute full cycle on all tokens
 npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
 ```
 
-### Génération de Volume
+### Volume Generation
 ```bash
-# Génère des trades pour accumuler des fees
+# Generate trades to accumulate fees
 # Args: <token-config> <rounds> <amount-sol>
 npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
 ```
 
 ### Monitoring
 ```bash
-# Statistiques des tokens
+# Token statistics
 npx ts-node scripts/check-current-stats.ts
 
-# État du protocole
+# Protocol state
 npx ts-node scripts/check-dat-state.ts
 
-# Balance du vault
+# Vault balance
 npx ts-node scripts/check-creator-vault.ts devnet-token-spl.json
 ```
 
-### Vente de Tokens
+### Token Sales
 ```bash
-# Vendre tous les tokens SPL
+# Sell all SPL tokens
 npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
 
-# Vendre les tokens Mayhem
+# Sell Mayhem tokens
 npx ts-node scripts/sell-mayhem-tokens.ts devnet-token-mayhem.json
 ```
 
 ---
 
-## Sécurité
+## Security
 
 ### TESTING_MODE
 
@@ -274,7 +274,7 @@ pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE false FOR MAINNET
 | `true` (devnet) | Disabled | Disabled | Disabled |
 | `false` (mainnet) | 60s min | Enforced | 10 SOL |
 
-### Fichiers Sensibles (gitignored)
+### Sensitive Files (gitignored)
 
 - `devnet-wallet.json` / `mainnet-wallet.json`
 - `wallet.json`
@@ -283,22 +283,22 @@ pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE false FOR MAINNET
 
 ---
 
-## Déploiement Mainnet
+## Mainnet Deployment
 
 ### Checklist
 
-- [ ] `TESTING_MODE = false` dans lib.rs
-- [ ] Nouvelle program keypair (ne jamais réutiliser devnet)
-- [ ] RPC endpoint mainnet configuré
-- [ ] Wallet mainnet sécurisé
-- [ ] Token configs mainnet créés
-- [ ] Tests sur mainnet-beta effectués
-- [ ] Monitoring/alerting configuré
+- [ ] `TESTING_MODE = false` in lib.rs
+- [ ] New program keypair (never reuse devnet)
+- [ ] Mainnet RPC endpoint configured
+- [ ] Secure mainnet wallet
+- [ ] Mainnet token configs created
+- [ ] Tests on mainnet-beta completed
+- [ ] Monitoring/alerting configured
 
-### Commandes
+### Commands
 
 ```bash
-# Build avec TESTING_MODE = false
+# Build with TESTING_MODE = false
 anchor build
 
 # Deploy mainnet
@@ -310,7 +310,7 @@ cp target/idl/asdf_dat.json .
 
 ---
 
-## Dépendances
+## Dependencies
 
 ### Rust
 - `anchor-lang` = "0.31.1"
@@ -328,18 +328,18 @@ cp target/idl/asdf_dat.json .
 
 | Document | Description |
 |----------|-------------|
-| [AUDIT-REPORT-2025-11-25.md](AUDIT-REPORT-2025-11-25.md) | Audit professionnel complet |
-| [PRODUCTION-WORKFLOW.md](PRODUCTION-WORKFLOW.md) | Guide de production |
-| [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) | Guide de démarrage rapide |
-| [PUMPFUN_DEVNET_GUIDE.md](PUMPFUN_DEVNET_GUIDE.md) | Intégration Pump.fun |
-| [MAYHEM-MODE-LAUNCH-GUIDE.md](MAYHEM-MODE-LAUNCH-GUIDE.md) | Guide Mayhem Mode |
+| [AUDIT-REPORT-2025-11-25.md](AUDIT-REPORT-2025-11-25.md) | Complete professional audit |
+| [PRODUCTION-WORKFLOW.md](PRODUCTION-WORKFLOW.md) | Production guide |
+| [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) | Quick start guide |
+| [PUMPFUN_DEVNET_GUIDE.md](PUMPFUN_DEVNET_GUIDE.md) | Pump.fun integration |
+| [MAYHEM-MODE-LAUNCH-GUIDE.md](MAYHEM-MODE-LAUNCH-GUIDE.md) | Mayhem Mode guide |
 
 ---
 
-## Métriques
+## Metrics
 
-| Composant | Fichiers | Lignes |
-|-----------|----------|--------|
+| Component | Files | Lines |
+|-----------|-------|-------|
 | Smart Contract | 2 | 2,559 |
 | Scripts | 56 | 13,748 |
 | Utilities | 5 | 1,509 |
@@ -348,9 +348,9 @@ cp target/idl/asdf_dat.json .
 
 ---
 
-## Adresses (Devnet)
+## Addresses (Devnet)
 
-| Élément | Adresse |
+| Element | Address |
 |---------|---------|
 | **Program ID** | `ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ` |
 | **PumpSwap** | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
@@ -359,9 +359,9 @@ cp target/idl/asdf_dat.json .
 
 ---
 
-## Licence
+## License
 
-Projet privé. Contacter l'équipe pour toute question.
+Private project. Contact the team for inquiries.
 
 ---
 
