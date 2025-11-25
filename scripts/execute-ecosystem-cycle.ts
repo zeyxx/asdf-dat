@@ -39,7 +39,8 @@ const ROOT_TREASURY_SEED = Buffer.from('root_treasury');
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
 const PUMP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
 const PUMP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
-const FEE_PROGRAM = new PublicKey('FeeMgVp374qBkTo7gFAhFWAYN1SAgEYbKvAH6r5vKFb');
+const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
+const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
 // ANSI colors
 const colors = {
@@ -441,30 +442,36 @@ async function executeSecondaryWithAllocation(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    // Protocol fee recipient
-    const protocolFeeRecipient = new PublicKey('CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM');
+    // Protocol fee recipient (different for Mayhem vs SPL)
+    const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+    const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+
+    const protocolFeeRecipient = allocation.token.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+    const ataMint = allocation.token.isToken2022 ? wsolMint : allocation.token.mint;
+    const ataTokenProgram = allocation.token.isToken2022 ? TOKEN_PROGRAM_ID : tokenProgram;
+
     const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
       [
         protocolFeeRecipient.toBuffer(),
-        tokenProgram.toBuffer(),
-        allocation.token.mint.toBuffer(),
+        ataTokenProgram.toBuffer(),
+        ataMint.toBuffer(),
       ],
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    // Fee program accounts
+    // PumpFun volume accumulator accounts
     const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('volume_accumulator')],
-      FEE_PROGRAM
+      [Buffer.from('global_volume_accumulator')],
+      PUMP_PROGRAM
     );
 
     const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('volume_accumulator'), datAuthority.toBuffer()],
-      FEE_PROGRAM
+      [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+      PUMP_PROGRAM
     );
 
     const [feeConfig] = PublicKey.findProgramAddressSync(
-      [Buffer.from('fee_config')],
+      [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
       FEE_PROGRAM
     );
 
@@ -620,28 +627,28 @@ async function executeRootCycle(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    const protocolFeeRecipient = new PublicKey('CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM');
+    const protocolFeeRecipient = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
     const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
       [
         protocolFeeRecipient.toBuffer(),
-        tokenProgram.toBuffer(),
-        rootToken.mint.toBuffer(),
+        TOKEN_PROGRAM_ID.toBuffer(),
+        WSOL_MINT.toBuffer(),
       ],
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
     const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('volume_accumulator')],
-      FEE_PROGRAM
+      [Buffer.from('global_volume_accumulator')],
+      PUMP_PROGRAM
     );
 
     const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('volume_accumulator'), datAuthority.toBuffer()],
-      FEE_PROGRAM
+      [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+      PUMP_PROGRAM
     );
 
     const [feeConfig] = PublicKey.findProgramAddressSync(
-      [Buffer.from('fee_config')],
+      [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
       FEE_PROGRAM
     );
 

@@ -8,6 +8,10 @@ use anchor_spl::{
     associated_token::AssociatedToken,
 };
 
+// Include unit tests module (only compiled when running tests)
+#[cfg(test)]
+mod tests;
+
 declare_id!("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([137, 186, 88, 184, 174, 194, 106, 212, 88, 106, 151, 42, 200, 185, 36, 216, 12, 68, 223, 123, 57, 228, 213, 18, 228, 89, 200, 243, 29, 9, 91, 145]);
@@ -69,10 +73,21 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
     228, 205, 74, 123, 166, 139, 114, 13, 221, 225, 162, 93, 101, 11, 19, 102
 ]); // BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
 
-// TESTING MODE CONFIGURATION
-// Set to `false` before deploying to production/mainnet
-// When true: disables cycle interval, AM/PM protection, and min fees checks
-// When false: all safety constraints are enforced
+// ⚠️ TESTING MODE CONFIGURATION - CRITICAL SECURITY SETTING ⚠️
+// ══════════════════════════════════════════════════════════════════════════════
+// CURRENT: true (DEVNET ONLY - DO NOT DEPLOY TO MAINNET WITH THIS VALUE!)
+// ══════════════════════════════════════════════════════════════════════════════
+// When true (TESTING):
+//   - Disables minimum cycle interval check (allows rapid testing)
+//   - Disables AM/PM execution limits (allows unlimited cycles per day)
+//   - Disables minimum fees threshold (allows cycles with any amount)
+// When false (PRODUCTION):
+//   - Enforces minimum 60s between cycles
+//   - Limits to 2 executions per day (1 AM, 1 PM)
+//   - Requires minimum fees threshold to be met
+// ══════════════════════════════════════════════════════════════════════════════
+// TODO: Change to `false` and redeploy before mainnet launch
+// ══════════════════════════════════════════════════════════════════════════════
 pub const TESTING_MODE: bool = true;
 
 /// Helper function to collect creator fees CPI (extracted to reduce stack usage)

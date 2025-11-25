@@ -36,6 +36,7 @@ interface TokenInfo {
   symbol: string;
   mint: string;
   creator: string;
+  bondingCurve: string;
   isRoot: boolean;
   tokenProgram: string;
 }
@@ -109,7 +110,7 @@ class EcosystemTester {
 
     // Load all token configs
     this.tokens = {
-      DATSPL: JSON.parse(fs.readFileSync('devnet-token-root.json', 'utf-8')),
+      DATSPL: JSON.parse(fs.readFileSync('devnet-token-spl.json', 'utf-8')),
       DATS2: JSON.parse(fs.readFileSync('devnet-token-secondary.json', 'utf-8')),
       DATM: JSON.parse(fs.readFileSync('devnet-token-mayhem.json', 'utf-8')),
     };
@@ -141,8 +142,10 @@ class EcosystemTester {
       PUMP_PROGRAM
     );
 
+    // Get root mint from DATSPL config for root_treasury derivation
+    const rootMint = new PublicKey(this.tokens['DATSPL'].mint);
     const [rootTreasury] = PublicKey.findProgramAddressSync(
-      [Buffer.from('root_treasury')],
+      [Buffer.from('root_treasury'), rootMint.toBuffer()],
       PROGRAM_ID
     );
 
@@ -230,20 +233,13 @@ class EcosystemTester {
         PUMP_PROGRAM
       );
 
-      const [rootTreasury] = PublicKey.findProgramAddressSync(
-        [Buffer.from('root_treasury')],
-        PROGRAM_ID
-      );
-
       const [pumpEventAuth] = PublicKey.findProgramAddressSync(
         [Buffer.from('__event_authority')],
         PUMP_PROGRAM
       );
 
-      const [bondingCurve] = PublicKey.findProgramAddressSync(
-        [Buffer.from('bonding-curve'), mint.toBuffer()],
-        PUMP_PROGRAM
-      );
+      // Use bondingCurve from token config instead of deriving (more reliable)
+      const bondingCurve = new PublicKey(token.bondingCurve || token.mint);
 
       const [assocBondingCurve] = PublicKey.findProgramAddressSync(
         [
@@ -254,9 +250,20 @@ class EcosystemTester {
         new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
       );
 
-      // Get protocol fee recipient ATA
+      // Get DAT state to find root token mint
       const datStateData = await (this.program.account as any).datState.fetch(datState);
-      const protocolFeeRecipient = new PublicKey('CebN5WGQ4jvEPvsVU4EoHEpgzq1VV7AbicfhtW4xC9iM');
+      const rootMint = datStateData.rootTokenMint || this.tokens['DATSPL']?.mint;
+
+      // Derive rootTreasury with root_mint as second seed
+      const [rootTreasury] = PublicKey.findProgramAddressSync(
+        [Buffer.from('root_treasury'), new PublicKey(rootMint).toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Protocol fee recipient (different for Mayhem vs SPL)
+      const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+      const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+      const protocolFeeRecipient = token.tokenProgram === 'Token2022' ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
       const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
         [
@@ -280,7 +287,7 @@ class EcosystemTester {
       // STEP 1: Collect fees
       console.log('   [1/3] Collecting fees...');
       const collectTx = await (this.program.methods as any)
-        .collectFees(isRoot)
+        .collectFees(isRoot, false) // is_root_token, for_ecosystem
         .accounts({
           datState,
           tokenStats,
@@ -289,7 +296,7 @@ class EcosystemTester {
           creatorVault,
           pumpEventAuthority: pumpEventAuth,
           pumpSwapProgram: PUMP_PROGRAM,
-          rootTreasury: isRoot ? rootTreasury : null,
+          rootTreasury,
           systemProgram: PublicKey.default,
         })
         .rpc();
@@ -304,25 +311,59 @@ class EcosystemTester {
 
       // STEP 2: Execute buy
       console.log('   [2/3] Executing buy...');
+
+      // Derive additional required accounts for execute_buy
+      const wsolMint = new PublicKey('So11111111111111111111111111111111111111112');
+      const [poolWsolAccount] = PublicKey.findProgramAddressSync(
+        [
+          bondingCurve.toBuffer(),
+          TOKEN_PROGRAM_ID.toBuffer(),
+          wsolMint.toBuffer(),
+        ],
+        new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      );
+
+      const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
+
+      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global_volume_accumulator')],
+        PUMP_PROGRAM
+      );
+
+      const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+        PUMP_PROGRAM
+      );
+
+      const [feeConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
+        FEE_PROGRAM
+      );
+
       const buyTx = await (this.program.methods as any)
-        .executeBuy(isRoot)
+        .executeBuy(!isRoot, null) // is_secondary_token (inverse of isRoot), allocated_lamports (null = use balance)
         .accounts({
           datState,
-          tokenStats,
-          tokenMint: mint,
           datAuthority,
-          bondingCurve,
-          assocBondingCurve,
-          datTokenAccount,
-          pumpGlobal: PUMP_GLOBAL,
+          datAsdfAccount: datTokenAccount,
+          pool: bondingCurve,
+          asdfMint: mint,
+          poolAsdfAccount: assocBondingCurve,
+          poolWsolAccount,
+          pumpGlobalConfig: PUMP_GLOBAL,
+          protocolFeeRecipient,
+          protocolFeeRecipientAta,
+          creatorVault,
           pumpEventAuthority: pumpEventAuth,
           pumpSwapProgram: PUMP_PROGRAM,
-          rootTreasury: isRoot ? null : rootTreasury,
-          protocolFeeRecipientAta,
-          systemProgram: PublicKey.default,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+          rootTreasury,
           tokenProgram,
-          associatedTokenProgram: new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL'),
-          rent: PublicKey.default,
+          systemProgram: PublicKey.default,
+          rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
         })
         .rpc();
 
@@ -336,14 +377,14 @@ class EcosystemTester {
 
       // STEP 3: Burn and update
       console.log('   [3/3] Burning tokens...');
-      const burnTx = await this.program.methods
-        .burnAndUpdate(isRoot)
+      const burnTx = await (this.program.methods as any)
+        .burnAndUpdate() // No arguments per IDL
         .accounts({
           datState,
           tokenStats,
-          tokenMint: mint,
           datAuthority,
-          datTokenAccount,
+          datAsdfAccount: datTokenAccount,
+          asdfMint: mint,
           tokenProgram,
         })
         .rpc();

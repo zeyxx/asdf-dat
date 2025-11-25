@@ -103,7 +103,25 @@ async function main() {
 
     try {
       const buyAmountLamports = Math.floor(buyAmount * 1e9);
-      const minTokens = 1; // Accept any amount
+
+      // Fetch current bonding curve state to calculate expected tokens
+      const bondingCurveInfo = await connection.getAccountInfo(bondingCurve);
+      if (!bondingCurveInfo) throw new Error("Bonding curve not found");
+
+      // Parse bonding curve data (skip 8-byte discriminator)
+      const bcData = bondingCurveInfo.data;
+      const virtualTokenReserves = bcData.readBigUInt64LE(8);
+      const virtualSolReserves = bcData.readBigUInt64LE(16);
+
+      // Calculate tokens out using PumpFun formula: tokens = (sol * tokenReserves) / (solReserves + sol)
+      const solIn = BigInt(buyAmountLamports);
+      const tokensOut = (solIn * virtualTokenReserves) / (virtualSolReserves + solIn);
+
+      // Apply 30% slippage tolerance (accept 70% of expected)
+      const minTokens = (tokensOut * BigInt(70)) / BigInt(100);
+
+      console.log(`📊 Bonding Curve: ${Number(virtualTokenReserves)/1e6}M tokens, ${Number(virtualSolReserves)/1e9} SOL`);
+      console.log(`🎯 Expected: ${Number(tokensOut)/1e6} tokens, Min: ${Number(minTokens)/1e6} tokens`);
 
       // Build buy instruction
       const discriminator = Buffer.from([102, 6, 61, 18, 1, 218, 235, 234]);
