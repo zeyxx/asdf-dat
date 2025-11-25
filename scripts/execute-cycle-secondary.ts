@@ -237,11 +237,15 @@ async function main() {
         .accounts({
           datState,
           tokenStats,
+          tokenMint,
           datAuthority,
           creatorVault,
-          rootTreasury, // Pass it but won't be used (is_root_token=false)
+          pumpEventAuthority,
+          pumpSwapProgram: PUMP_PROGRAM,
+          rootTreasury,
           systemProgram: SystemProgram.programId,
         })
+        .signers([admin])
         .rpc();
 
       log("✅", "Fees collected from creator vault!", colors.green);
@@ -400,7 +404,7 @@ async function main() {
           .accounts({
             datState,
             tokenStats,
-            admin: wallet.publicKey,
+            admin: admin.publicKey,
           })
           .rpc();
 
@@ -477,6 +481,7 @@ async function main() {
         asdfMint: tokenMint,
         tokenProgram: TOKEN_PROGRAM,
       })
+      .signers([admin])
       .rpc();
 
     log("✅", "Tokens burned!", colors.green);

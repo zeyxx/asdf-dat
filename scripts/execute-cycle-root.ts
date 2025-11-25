@@ -199,7 +199,7 @@ async function main() {
 
   try {
     const tx1 = await program.methods
-      .collectFees(true) // is_root_token = true
+      .collectFees(true, false) // is_root_token = true, for_ecosystem = false
       .accounts({
         datState,
         tokenStats,
@@ -211,6 +211,7 @@ async function main() {
         rootTreasury, // Include root treasury for collection
         systemProgram: SystemProgram.programId,
       })
+      .signers([admin])
       .rpc();
 
     log("✅", "Fees collected from vault + root treasury!", colors.green);
@@ -271,7 +272,7 @@ async function main() {
     );
 
     const tx2 = await program.methods
-      .executeBuy(false) // is_secondary_token = false (root keeps 100%)
+      .executeBuy(false, null) // is_secondary_token = false, allocated_lamports = null (use balance)
       .accounts({
         datState,
         datAuthority,
@@ -296,6 +297,7 @@ async function main() {
         rent: SYSVAR_RENT_PUBKEY,
       })
       .preInstructions([createAtaIx])
+      .signers([admin])
       .rpc();
 
     log("✅", "Tokens bought with 100% of fees!", colors.green);
@@ -329,6 +331,7 @@ async function main() {
         asdfMint: tokenMint,
         tokenProgram: TOKEN_PROGRAM,
       })
+      .signers([admin])
       .rpc();
 
     log("✅", "Tokens burned!", colors.green);
