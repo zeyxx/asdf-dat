@@ -18,6 +18,7 @@ import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import fs from 'fs';
 import path from 'path';
 import { ValidatorDaemon, TokenConfig, createValidatorDaemon } from '../lib/validator-daemon';
+import { syncValidatorIfNeeded } from './sync-validator-slots';
 
 const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
 
@@ -110,6 +111,26 @@ async function main() {
   console.log(`\n📊 Loaded ${tokens.length} token(s)`);
   console.log(`⏱️  Flush interval: ${interval / 1000}s`);
   console.log(`🔊 Verbose: ${verbose}`);
+
+  // Pre-sync validators before starting daemon
+  // This ensures we don't hit SlotRangeTooLarge errors on first flush
+  console.log('\n🔄 Pre-syncing validator slots...');
+  let syncedCount = 0;
+  for (const token of tokens) {
+    try {
+      const synced = await syncValidatorIfNeeded(
+        connection,
+        program,
+        token.mint,
+        token.symbol,
+        verbose
+      );
+      if (synced) syncedCount++;
+    } catch (error: any) {
+      console.warn(`⚠️  Pre-sync warning for ${token.symbol}: ${error.message?.slice(0, 50) || error}`);
+    }
+  }
+  console.log(`✅ Pre-sync complete (${syncedCount} synced, ${tokens.length - syncedCount} already current)\n`);
 
   // Create daemon
   const daemon = new ValidatorDaemon({
