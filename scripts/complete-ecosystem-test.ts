@@ -13,6 +13,7 @@
 import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import BN from 'bn.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -195,7 +196,137 @@ class EcosystemTester {
   }
 
   /**
-   * Execute a full cycle on a token
+   * Collect ALL fees from the shared creator vault (single collection for ecosystem)
+   * Uses for_ecosystem=true to preserve pending_fees for proportional distribution
+   */
+  async collectAllVaultFees(): Promise<{ totalCollected: number; signature: string }> {
+    // Use any token - they all share the same creator vault
+    const token = this.tokens['DATSPL'];
+    const mint = new PublicKey(token.mint);
+    const creator = new PublicKey(token.creator);
+
+    console.log('\n📥 Collecting ALL vault fees (single collect for ecosystem)...');
+
+    // Derive PDAs
+    const [datState] = PublicKey.findProgramAddressSync(
+      [Buffer.from('dat_v3')],
+      PROGRAM_ID
+    );
+
+    const [datAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from('auth_v3')],
+      PROGRAM_ID
+    );
+
+    const [tokenStats] = PublicKey.findProgramAddressSync(
+      [Buffer.from('token_stats_v1'), mint.toBuffer()],
+      PROGRAM_ID
+    );
+
+    const [creatorVault] = PublicKey.findProgramAddressSync(
+      [Buffer.from('creator-vault'), creator.toBuffer()],
+      PUMP_PROGRAM
+    );
+
+    const [pumpEventAuth] = PublicKey.findProgramAddressSync(
+      [Buffer.from('__event_authority')],
+      PUMP_PROGRAM
+    );
+
+    const rootMint = new PublicKey(this.tokens['DATSPL'].mint);
+    const [rootTreasury] = PublicKey.findProgramAddressSync(
+      [Buffer.from('root_treasury'), rootMint.toBuffer()],
+      PROGRAM_ID
+    );
+
+    // Get vault balance before collect
+    const vaultBalanceBefore = await this.connection.getBalance(creatorVault);
+    console.log(`   💰 Creator Vault balance: ${(vaultBalanceBefore / 1e9).toFixed(6)} SOL`);
+
+    // Collect with for_ecosystem=true
+    const collectTx = await (this.program.methods as any)
+      .collectFees(false, true) // is_root_token=false, for_ecosystem=true
+      .accounts({
+        datState,
+        tokenStats,
+        tokenMint: mint,
+        datAuthority,
+        creatorVault,
+        pumpEventAuthority: pumpEventAuth,
+        pumpSwapProgram: PUMP_PROGRAM,
+        rootTreasury,
+        systemProgram: PublicKey.default,
+      })
+      .rpc();
+
+    await this.connection.confirmTransaction(collectTx, 'confirmed');
+
+    // Get total collected in datAuthority
+    const authBalance = await this.connection.getBalance(datAuthority);
+    console.log(`   ✅ Collected: ${(authBalance / 1e9).toFixed(6)} SOL`);
+    console.log(`   🔗 TX: ${collectTx}`);
+
+    return { totalCollected: authBalance, signature: collectTx };
+  }
+
+  /**
+   * Calculate proportional allocations based on pending_fees
+   */
+  async calculateProportionalAllocations(
+    totalCollected: number,
+    tokenKeys: string[]
+  ): Promise<Map<string, number>> {
+    console.log('\n📊 Calculating proportional allocations...');
+
+    const allocations = new Map<string, number>();
+    const pendingFees = new Map<string, number>();
+    let totalPendingFees = 0;
+
+    // Fetch pending_fees from each token's stats
+    for (const tokenKey of tokenKeys) {
+      const token = this.tokens[tokenKey];
+      const mint = new PublicKey(token.mint);
+
+      const [tokenStats] = PublicKey.findProgramAddressSync(
+        [Buffer.from('token_stats_v1'), mint.toBuffer()],
+        PROGRAM_ID
+      );
+
+      try {
+        const stats = await (this.program.account as any).tokenStats.fetch(tokenStats);
+        const pending = Number(stats.pendingFees || 0);
+        pendingFees.set(tokenKey, pending);
+        totalPendingFees += pending;
+        console.log(`   ${token.symbol}: pending_fees = ${(pending / 1e9).toFixed(6)} SOL`);
+      } catch {
+        // If no pending fees, allocate equally
+        pendingFees.set(tokenKey, 0);
+        console.log(`   ${token.symbol}: pending_fees = 0 (not initialized)`);
+      }
+    }
+
+    // If no pending fees tracked, distribute equally
+    if (totalPendingFees === 0) {
+      const equalShare = Math.floor(totalCollected / tokenKeys.length);
+      for (const tokenKey of tokenKeys) {
+        allocations.set(tokenKey, equalShare);
+      }
+      console.log(`   ⚠️ No pending_fees - using equal distribution: ${(equalShare / 1e9).toFixed(6)} SOL each`);
+    } else {
+      // Proportional distribution
+      for (const [tokenKey, pending] of pendingFees) {
+        const ratio = pending / totalPendingFees;
+        const allocation = Math.floor(totalCollected * ratio);
+        allocations.set(tokenKey, allocation);
+        console.log(`   ${tokenKey}: ${(ratio * 100).toFixed(1)}% = ${(allocation / 1e9).toFixed(6)} SOL`);
+      }
+    }
+
+    return allocations;
+  }
+
+  /**
+   * Execute a full cycle on a token (original method - kept for reference)
    */
   async executeCycle(tokenKey: string): Promise<CycleResult> {
     const token = this.tokens[tokenKey];
@@ -410,6 +541,233 @@ class EcosystemTester {
   }
 
   /**
+   * Execute a cycle with pre-allocated SOL (for orchestrated ecosystem cycles)
+   * Skips collectFees since it's already done by collectAllVaultFees()
+   */
+  async executeCycleWithAllocation(
+    tokenKey: string,
+    allocatedLamports: number | null
+  ): Promise<CycleResult> {
+    const token = this.tokens[tokenKey];
+    const mint = new PublicKey(token.mint);
+    const creator = new PublicKey(token.creator);
+    const isRoot = token.isRoot;
+    const tokenProgram = token.tokenProgram === 'Token2022' ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+
+    console.log(`\n🔄 Executing orchestrated cycle: ${token.symbol} (${isRoot ? 'ROOT' : 'SECONDARY'})...`);
+    if (allocatedLamports) {
+      console.log(`   💵 Allocated: ${(allocatedLamports / 1e9).toFixed(6)} SOL`);
+    } else {
+      console.log(`   💵 Using remaining balance (ROOT mode)`);
+    }
+
+    const result: CycleResult = {
+      token: token.symbol,
+      success: false,
+    };
+
+    try {
+      // Derive all PDAs
+      const [datState] = PublicKey.findProgramAddressSync(
+        [Buffer.from('dat_v3')],
+        PROGRAM_ID
+      );
+
+      const [datAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from('auth_v3')],
+        PROGRAM_ID
+      );
+
+      const [tokenStats] = PublicKey.findProgramAddressSync(
+        [Buffer.from('token_stats_v1'), mint.toBuffer()],
+        PROGRAM_ID
+      );
+
+      const [creatorVault] = PublicKey.findProgramAddressSync(
+        [Buffer.from('creator-vault'), creator.toBuffer()],
+        PUMP_PROGRAM
+      );
+
+      const [pumpEventAuth] = PublicKey.findProgramAddressSync(
+        [Buffer.from('__event_authority')],
+        PUMP_PROGRAM
+      );
+
+      // Use bondingCurve from token config
+      const bondingCurve = new PublicKey(token.bondingCurve || token.mint);
+
+      const [assocBondingCurve] = PublicKey.findProgramAddressSync(
+        [
+          bondingCurve.toBuffer(),
+          tokenProgram.toBuffer(),
+          mint.toBuffer(),
+        ],
+        new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      );
+
+      // Get DAT state to find root token mint
+      const datStateData = await (this.program.account as any).datState.fetch(datState);
+      const rootMint = datStateData.rootTokenMint || this.tokens['DATSPL']?.mint;
+
+      // Derive rootTreasury with root_mint as second seed
+      const [rootTreasury] = PublicKey.findProgramAddressSync(
+        [Buffer.from('root_treasury'), new PublicKey(rootMint).toBuffer()],
+        PROGRAM_ID
+      );
+
+      // Protocol fee recipient (different for Mayhem vs SPL)
+      const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+      const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+      const protocolFeeRecipient = token.tokenProgram === 'Token2022' ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+
+      const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
+        [
+          protocolFeeRecipient.toBuffer(),
+          tokenProgram.toBuffer(),
+          mint.toBuffer(),
+        ],
+        new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      );
+
+      // Get DAT ATA for tokens
+      const [datTokenAccount] = PublicKey.findProgramAddressSync(
+        [
+          datAuthority.toBuffer(),
+          tokenProgram.toBuffer(),
+          mint.toBuffer(),
+        ],
+        new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      );
+
+      // NOTE: Skip collectFees - already done by collectAllVaultFees()
+      result.collectTx = 'SKIPPED (orchestrated)';
+
+      // Get current balance for reference
+      const authBalance = await this.connection.getBalance(datAuthority);
+      result.solCollected = allocatedLamports ? allocatedLamports / 1e9 : authBalance / 1e9;
+
+      // STEP 1: Execute buy with allocation
+      console.log('   [1/3] Executing buy...');
+
+      // Derive additional required accounts for execute_buy
+      const wsolMint = new PublicKey('So11111111111111111111111111111111111111112');
+      const [poolWsolAccount] = PublicKey.findProgramAddressSync(
+        [
+          bondingCurve.toBuffer(),
+          TOKEN_PROGRAM_ID.toBuffer(),
+          wsolMint.toBuffer(),
+        ],
+        new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      );
+
+      const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
+
+      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global_volume_accumulator')],
+        PUMP_PROGRAM
+      );
+
+      const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+        PUMP_PROGRAM
+      );
+
+      const [feeConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
+        FEE_PROGRAM
+      );
+
+      // Convert allocation to BN or null
+      const allocationBN = allocatedLamports ? new BN(allocatedLamports) : null;
+
+      const buyTx = await (this.program.methods as any)
+        .executeBuy(!isRoot, allocationBN) // is_secondary_token, allocated_lamports
+        .accounts({
+          datState,
+          datAuthority,
+          datAsdfAccount: datTokenAccount,
+          pool: bondingCurve,
+          asdfMint: mint,
+          poolAsdfAccount: assocBondingCurve,
+          poolWsolAccount,
+          pumpGlobalConfig: PUMP_GLOBAL,
+          protocolFeeRecipient,
+          protocolFeeRecipientAta,
+          creatorVault,
+          pumpEventAuthority: pumpEventAuth,
+          pumpSwapProgram: PUMP_PROGRAM,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+          rootTreasury,
+          tokenProgram,
+          systemProgram: PublicKey.default,
+          rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
+        })
+        .rpc();
+
+      await this.connection.confirmTransaction(buyTx, 'confirmed');
+      result.buyTx = buyTx;
+      console.log(`   ✅ Buy executed: ${buyTx}`);
+
+      // Get token balance
+      const tokenAccount = await this.connection.getTokenAccountBalance(datTokenAccount);
+      result.tokensAcquired = Number(tokenAccount.value.amount);
+
+      // STEP 2: For SECONDARY tokens - finalize allocated cycle
+      if (!isRoot) {
+        console.log('   [2/3] Finalizing allocated cycle...');
+        const finalizeTx = await (this.program.methods as any)
+          .finalizeAllocatedCycle()
+          .accounts({
+            datState,
+            tokenStats,
+            datAuthority,
+          })
+          .rpc();
+
+        await this.connection.confirmTransaction(finalizeTx, 'confirmed');
+        console.log(`   ✅ Finalized: ${finalizeTx}`);
+      } else {
+        console.log('   [2/3] Skipping finalize (ROOT token)');
+      }
+
+      // STEP 3: Burn and update
+      console.log('   [3/3] Burning tokens...');
+      const burnTx = await (this.program.methods as any)
+        .burnAndUpdate()
+        .accounts({
+          datState,
+          tokenStats,
+          datAuthority,
+          datAsdfAccount: datTokenAccount,
+          asdfMint: mint,
+          tokenProgram,
+        })
+        .rpc();
+
+      await this.connection.confirmTransaction(burnTx, 'confirmed');
+      result.burnTx = burnTx;
+      result.tokensBurned = result.tokensAcquired;
+      console.log(`   ✅ Tokens burned: ${burnTx}`);
+
+      result.success = true;
+      console.log(`\n✅ Orchestrated cycle completed for ${token.symbol}`);
+
+    } catch (error: any) {
+      result.success = false;
+      result.error = error.message;
+      console.error(`\n❌ Cycle failed for ${token.symbol}:`, error.message);
+      if (error.logs) {
+        console.error('Program logs:', error.logs.slice(-10).join('\n'));
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Run the complete ecosystem test
    */
   async runCompleteTest(): Promise<TestReport> {
@@ -435,32 +793,101 @@ class EcosystemTester {
       report.initialStates[tokenKey] = await this.captureTokenState(tokenKey);
     }
 
-    // PHASE 2: Execute cycles
-    console.log('\n\n═══ PHASE 2: CYCLE EXECUTION ═══');
+    // PHASE 2: ORCHESTRATED COLLECTION (single collect for all tokens)
+    console.log('\n\n═══ PHASE 2: ORCHESTRATED COLLECTION ═══');
 
-    // Execute DATS2 first (secondary)
-    console.log('\n--- Testing DATS2 (Secondary Token) ---');
-    report.cycleResults['DATS2'] = await this.executeCycle('DATS2');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    let collectResult: { totalCollected: number; signature: string };
+    try {
+      collectResult = await this.collectAllVaultFees();
+    } catch (error: any) {
+      console.error('❌ Failed to collect vault fees:', error.message);
+      // Mark all as failed
+      for (const tokenKey of ['DATSPL', 'DATS2', 'DATM']) {
+        report.cycleResults[tokenKey] = {
+          token: tokenKey,
+          success: false,
+          error: `Collection failed: ${error.message}`,
+        };
+      }
+      this.generateSummary(report);
+      return report;
+    }
 
-    // Execute DATSPL (root - will collect from treasury)
-    console.log('\n--- Testing DATSPL (Root Token) ---');
-    report.cycleResults['DATSPL'] = await this.executeCycle('DATSPL');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // PHASE 3: Calculate allocations for SECONDARY tokens
+    // CRITICAL: The smart contract's split_fees_to_root ACTUALLY transfers SOL
+    // So after each secondary cycle, the datAuthority balance decreases
+    // We must query the REAL balance before each cycle, not use pre-calculated allocations
+    console.log('\n\n═══ PHASE 3: ALLOCATION STRATEGY ═══');
 
-    // Execute DATM (mayhem)
-    console.log('\n--- Testing DATM (Mayhem Token) ---');
-    report.cycleResults['DATM'] = await this.executeCycle('DATM');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    const [datAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from('auth_v3')],
+      PROGRAM_ID
+    );
 
-    // PHASE 3: Capture final states
-    console.log('\n\n═══ PHASE 3: FINAL STATE CAPTURE ═══');
+    const totalAvailable = await this.connection.getBalance(datAuthority);
+    console.log(`   Total in datAuthority: ${(totalAvailable / 1e9).toFixed(6)} SOL`);
+
+    // For 2 secondary tokens + 1 root:
+    // Each secondary needs MIN 0.0055 SOL
+    // After secondary split (44.8% to root), ~55.2% goes to buyback
+    // We need at least 0.011 SOL for 2 secondaries + buffer for root
+    const MIN_FEES_PER_SECONDARY = 5_500_000;
+    const numSecondaries = 2;
+    const minRequired = MIN_FEES_PER_SECONDARY * numSecondaries + 500_000; // + root reserve
+
+    if (totalAvailable < minRequired) {
+      console.log(`   ⚠️ WARNING: Only ${(totalAvailable / 1e9).toFixed(6)} SOL available`);
+      console.log(`   Need at least ${(minRequired / 1e9).toFixed(6)} SOL for all cycles`);
+    }
+
+    // Strategy: Use half the available balance for first secondary
+    // This leaves enough for second secondary after the split to root
+    const firstSecondaryAllocation = Math.floor(totalAvailable / 2);
+    console.log(`   DATS2 allocation: ${(firstSecondaryAllocation / 1e9).toFixed(6)} SOL`);
+    console.log(`   DATM will use remaining balance after DATS2 cycle`);
+
+    // PHASE 4: Execute SECONDARY cycles FIRST
+    console.log('\n\n═══ PHASE 4: SECONDARY TOKEN CYCLES ═══');
+
+    // Execute DATS2 with half the balance
+    console.log('\n--- Executing DATS2 (Secondary Token) ---');
+    report.cycleResults['DATS2'] = await this.executeCycleWithAllocation('DATS2', firstSecondaryAllocation);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // Get remaining balance for DATM
+    const remainingForDatm = await this.connection.getBalance(datAuthority);
+    console.log(`\n   Balance remaining for DATM: ${(remainingForDatm / 1e9).toFixed(6)} SOL`);
+
+    // Execute DATM with remaining balance (pass null to use full remaining)
+    console.log('\n--- Executing DATM (Mayhem Token) ---');
+    // For DATM, we need to check if there's enough, otherwise skip
+    if (remainingForDatm >= MIN_FEES_PER_SECONDARY) {
+      report.cycleResults['DATM'] = await this.executeCycleWithAllocation('DATM', remainingForDatm - 500_000);
+    } else {
+      console.log(`   ⚠️ Insufficient balance for DATM (${(remainingForDatm / 1e9).toFixed(6)} < 0.0055 SOL)`);
+      report.cycleResults['DATM'] = {
+        token: 'DATM',
+        success: false,
+        error: `Insufficient balance: ${remainingForDatm} lamports < ${MIN_FEES_PER_SECONDARY} required`,
+      };
+    }
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // PHASE 5: Execute ROOT cycle LAST (uses remaining balance)
+    console.log('\n\n═══ PHASE 5: ROOT TOKEN CYCLE ═══');
+    console.log('\n--- Executing DATSPL (Root Token) - LAST ---');
+    // Root uses remaining balance (null allocation)
+    report.cycleResults['DATSPL'] = await this.executeCycleWithAllocation('DATSPL', null);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // PHASE 6: Capture final states
+    console.log('\n\n═══ PHASE 6: FINAL STATE CAPTURE ═══');
     for (const tokenKey of ['DATSPL', 'DATS2', 'DATM']) {
       report.finalStates[tokenKey] = await this.captureTokenState(tokenKey);
     }
 
-    // PHASE 4: Generate summary
-    console.log('\n\n═══ PHASE 4: GENERATING SUMMARY ═══');
+    // PHASE 7: Generate summary
+    console.log('\n\n═══ PHASE 7: GENERATING SUMMARY ═══');
     this.generateSummary(report);
 
     return report;
