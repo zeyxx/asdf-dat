@@ -66,6 +66,14 @@ const MIN_AFTER_SPLIT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE +
 const MIN_ALLOCATION_SECONDARY = Math.ceil(MIN_AFTER_SPLIT / SECONDARY_KEEP_RATIO);
 // = 3,140,880 / 0.552 = 5,690,000 lamports (~0.00569 SOL)
 
+// TX Fee reserve: Each secondary cycle requires buy + finalize + burn = 3 TX
+// On devnet with compute budget: ~0.006-0.007 SOL total
+const TX_FEE_RESERVE_PER_TOKEN = 7_000_000; // ~0.007 SOL for TX fees
+
+// Total actual cost per secondary token (allocation + TX fees)
+const TOTAL_COST_PER_SECONDARY = MIN_ALLOCATION_SECONDARY + TX_FEE_RESERVE_PER_TOKEN;
+// = 5,690,000 + 7,000,000 = 12,690,000 lamports (~0.0127 SOL)
+
 // ANSI colors
 const colors = {
   reset: '\x1b[0m',
@@ -600,7 +608,8 @@ async function getDatAuthorityBalance(connection: Connection, programId: PublicK
 
 /**
  * Calculate dynamic allocation based on actual remaining balance
- * This fixes the issue where pre-calculated allocations don't account for actual consumption
+ * CRITICAL: Reserves minimum allocations for remaining tokens before calculating current allocation
+ * This ensures all tokens can be processed if there's enough total balance
  */
 function calculateDynamicAllocation(
   availableBalance: number,
@@ -608,26 +617,54 @@ function calculateDynamicAllocation(
   totalRemainingPending: number,
   numRemainingTokens: number
 ): { allocation: number; viable: boolean; reason: string } {
-  // Reserve rent-exempt minimum for datAuthority
+  // Reserve rent-exempt minimum for datAuthority account
   const RESERVE_FOR_ACCOUNT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER;
 
-  const distributable = availableBalance - RESERVE_FOR_ACCOUNT;
+  // CRITICAL FIX: Reserve TOTAL COST (allocation + TX fees) for OTHER remaining tokens
+  // This ensures each subsequent token can be fully processed
+  const otherTokensCount = numRemainingTokens - 1;
+  const reserveForOtherTokens = otherTokensCount * TOTAL_COST_PER_SECONDARY;
+
+  // Total reserved = account reserve + other tokens' minimums
+  const totalReserved = RESERVE_FOR_ACCOUNT + reserveForOtherTokens;
+
+  const distributable = availableBalance - totalReserved;
 
   if (distributable <= 0) {
-    return { allocation: 0, viable: false, reason: 'No distributable balance after reserves' };
+    return {
+      allocation: 0,
+      viable: false,
+      reason: `No balance after reserving ${formatSOL(totalReserved)} (${otherTokensCount} other tokens)`
+    };
   }
 
-  // Calculate proportional allocation
-  const ratio = totalRemainingPending > 0 ? tokenPendingFees / totalRemainingPending : 1 / numRemainingTokens;
-  const allocation = Math.floor(distributable * ratio);
-
-  // Check if allocation meets minimum
-  if (allocation < MIN_ALLOCATION_SECONDARY) {
+  // Check if we have enough for minimum allocation
+  if (distributable < MIN_ALLOCATION_SECONDARY) {
     return {
-      allocation,
+      allocation: distributable,
       viable: false,
-      reason: `Allocation ${formatSOL(allocation)} < minimum ${formatSOL(MIN_ALLOCATION_SECONDARY)}`
+      reason: `Available ${formatSOL(distributable)} < minimum ${formatSOL(MIN_ALLOCATION_SECONDARY)}`
     };
+  }
+
+  // Calculate proportional allocation from distributable (what's left after reservations)
+  // This token gets its fair share based on pending_fees ratio
+  const pendingRatio = totalRemainingPending > 0 ? tokenPendingFees / totalRemainingPending : 1 / numRemainingTokens;
+
+  // Max allocation is either proportional share or all distributable (if last token)
+  let allocation: number;
+  if (numRemainingTokens === 1) {
+    // Last token gets all remaining distributable
+    allocation = distributable;
+  } else {
+    // Calculate proportional share, but cap at distributable to leave room for others
+    allocation = Math.floor(distributable * pendingRatio);
+
+    // Ensure at least minimum allocation
+    allocation = Math.max(allocation, MIN_ALLOCATION_SECONDARY);
+
+    // Cap at distributable (shouldn't happen but safety check)
+    allocation = Math.min(allocation, distributable);
   }
 
   return { allocation, viable: true, reason: 'OK' };
