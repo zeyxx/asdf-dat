@@ -586,8 +586,127 @@ function normalizeAllocations(
 }
 
 // ============================================================================
-// Step 4: Execute Secondary Cycles with Allocation
+// Step 4: Execute Secondary Cycles with DYNAMIC Allocation
 // ============================================================================
+
+/**
+ * Get the actual datAuthority balance
+ */
+async function getDatAuthorityBalance(connection: Connection, programId: PublicKey): Promise<number> {
+  const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], programId);
+  const balance = await connection.getBalance(datAuthority);
+  return balance;
+}
+
+/**
+ * Calculate dynamic allocation based on actual remaining balance
+ * This fixes the issue where pre-calculated allocations don't account for actual consumption
+ */
+function calculateDynamicAllocation(
+  availableBalance: number,
+  tokenPendingFees: number,
+  totalRemainingPending: number,
+  numRemainingTokens: number
+): { allocation: number; viable: boolean; reason: string } {
+  // Reserve rent-exempt minimum for datAuthority
+  const RESERVE_FOR_ACCOUNT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER;
+
+  const distributable = availableBalance - RESERVE_FOR_ACCOUNT;
+
+  if (distributable <= 0) {
+    return { allocation: 0, viable: false, reason: 'No distributable balance after reserves' };
+  }
+
+  // Calculate proportional allocation
+  const ratio = totalRemainingPending > 0 ? tokenPendingFees / totalRemainingPending : 1 / numRemainingTokens;
+  const allocation = Math.floor(distributable * ratio);
+
+  // Check if allocation meets minimum
+  if (allocation < MIN_ALLOCATION_SECONDARY) {
+    return {
+      allocation,
+      viable: false,
+      reason: `Allocation ${formatSOL(allocation)} < minimum ${formatSOL(MIN_ALLOCATION_SECONDARY)}`
+    };
+  }
+
+  return { allocation, viable: true, reason: 'OK' };
+}
+
+/**
+ * Execute secondary tokens with dynamic balance checking
+ * This replaces the pre-calculated allocation approach
+ */
+async function executeSecondaryTokensDynamic(
+  program: Program,
+  connection: Connection,
+  secondaryAllocations: TokenAllocation[],
+  adminKeypair: Keypair
+): Promise<{ results: { [key: string]: CycleResult }; viable: TokenAllocation[]; deferred: TokenAllocation[] }> {
+  logSection('STEP 4: EXECUTE SECONDARY TOKEN CYCLES (DYNAMIC)');
+
+  const results: { [key: string]: CycleResult } = {};
+  const viable: TokenAllocation[] = [];
+  const deferred: TokenAllocation[] = [];
+
+  // Sort by pending fees descending - process largest first
+  const sorted = [...secondaryAllocations].sort((a, b) => b.pendingFees - a.pendingFees);
+
+  // Track remaining tokens and their pending fees
+  let remainingTokens = [...sorted];
+
+  for (const allocation of sorted) {
+    // Get ACTUAL balance before this cycle
+    const actualBalance = await getDatAuthorityBalance(connection, program.programId);
+
+    // Calculate remaining pending fees (excluding already processed tokens)
+    const totalRemainingPending = remainingTokens.reduce((sum, t) => sum + t.pendingFees, 0);
+
+    log('📊', `Balance check for ${allocation.token.symbol}:`, colors.cyan);
+    log('  💰', `datAuthority balance: ${formatSOL(actualBalance)} SOL`, colors.cyan);
+    log('  📋', `Remaining tokens: ${remainingTokens.length}`, colors.cyan);
+    log('  📊', `Total remaining pending: ${formatSOL(totalRemainingPending)} SOL`, colors.cyan);
+
+    // Calculate dynamic allocation
+    const { allocation: dynamicAlloc, viable: isViable, reason } = calculateDynamicAllocation(
+      actualBalance,
+      allocation.pendingFees,
+      totalRemainingPending,
+      remainingTokens.length
+    );
+
+    // Update allocation with dynamic value
+    allocation.allocation = dynamicAlloc;
+
+    if (!isViable) {
+      log('⏭️', `${allocation.token.symbol} DEFERRED: ${reason}`, colors.yellow);
+      deferred.push(allocation);
+      results[allocation.token.symbol] = {
+        token: allocation.token.symbol,
+        success: true, // Deferred is not a failure
+        pendingFees: allocation.pendingFees,
+        allocation: dynamicAlloc,
+        error: `DEFERRED: ${reason}`,
+      };
+    } else {
+      log('✅', `${allocation.token.symbol} VIABLE: allocation = ${formatSOL(dynamicAlloc)} SOL`, colors.green);
+
+      // Execute the cycle
+      const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
+      results[allocation.token.symbol] = result;
+
+      if (result.success) {
+        viable.push(allocation);
+      }
+    }
+
+    // Remove from remaining tokens
+    remainingTokens = remainingTokens.filter(t => t.token.symbol !== allocation.token.symbol);
+    console.log(''); // Spacing
+  }
+
+  return { results, viable, deferred };
+}
 
 async function executeSecondaryWithAllocation(
   program: Program,
@@ -1187,42 +1306,26 @@ async function main() {
     // Step 2: Collect all vault fees
     const totalCollected = await collectAllVaultFees(program, rootToken, adminKeypair);
 
-    // Step 3: Calculate proportional distribution (scalable)
-    const { viable, skipped, ratio } = normalizeAllocations(allocations, totalCollected);
+    // Step 3: Calculate proportional distribution (for display and ratio only - actual allocation is dynamic)
+    const { ratio } = normalizeAllocations(allocations, totalCollected);
 
-    if (viable.length === 0 && skipped.length > 0) {
-      log('⏭️', `All ${skipped.length} secondary tokens deferred - insufficient fees for minimum allocation.`, colors.yellow);
-      log('ℹ️', `Tokens will accumulate fees and process in next cycle when they reach ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`, colors.cyan);
-    } else if (viable.length === 0) {
+    // Get secondary allocations for dynamic processing
+    const secondaryAllocations = allocations.filter(a => !a.isRoot);
+
+    if (secondaryAllocations.length === 0) {
       log('⚠️', 'No secondary tokens with pending fees. Skipping secondary cycles.', colors.yellow);
     }
 
-    const results: { [key: string]: CycleResult } = {};
-
-    // Mark skipped tokens as deferred in results
-    for (const skip of skipped) {
-      results[skip.token.symbol] = {
-        token: skip.token.symbol,
-        success: true, // Not a failure, just deferred
-        pendingFees: skip.pendingFees,
-        allocation: skip.allocation,
-        error: `DEFERRED: ${formatSOL(skip.allocation)} SOL < ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL minimum`,
-      };
-    }
-
-    // Step 4: Execute secondary cycles with allocation (only viable tokens)
-    if (viable.length > 0) {
-      logSection('STEP 4: EXECUTE SECONDARY TOKEN CYCLES');
-
-      for (const allocation of viable) {
-        const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
-        results[allocation.token.symbol] = result;
-        console.log(''); // Spacing between tokens
-      }
-    }
+    // Step 4: Execute secondary cycles with DYNAMIC allocation (balance-aware)
+    const { results, viable: actualViable, deferred: actualDeferred } = await executeSecondaryTokensDynamic(
+      program,
+      connection,
+      secondaryAllocations,
+      adminKeypair
+    );
 
     // Step 4b: Finalize deferred tokens (preserve their pending_fees for next cycle)
-    await finalizeDeferredTokens(program, skipped, adminKeypair);
+    await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
 
     // Step 5: Execute root cycle
     const rootResult = await executeRootCycle(program, rootToken, adminKeypair);
@@ -1232,7 +1335,7 @@ async function main() {
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
 
-    displayCycleSummary({ viable, skipped, ratio }, results, totalCollected);
+    displayCycleSummary({ viable: actualViable, skipped: actualDeferred, ratio }, results, totalCollected);
 
     console.log(colors.bright + `⏱️  Total execution time: ${duration}s` + colors.reset);
     console.log('');
