@@ -121,6 +121,12 @@ ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ.json
 - `emergency_pause` / `resume` available
 - Circuit breaker pattern implemented
 
+**Token-Agnostic Architecture**
+- Smart contract uses `TokenInterface` for token-program agnostic operations
+- Orchestrator dynamically selects TOKEN_PROGRAM_ID or TOKEN_2022_PROGRAM_ID
+- Both SPL and Token-2022 tokens can serve as root or secondary
+- Protocol fee recipients correctly handled per token type
+
 ### 2.3 Risk Matrix
 
 | Risk | Probability | Impact | Mitigation |
