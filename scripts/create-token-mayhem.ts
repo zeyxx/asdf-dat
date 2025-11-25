@@ -3,13 +3,14 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  ComputeBudgetProgram,
 } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const MAYHEM_PROGRAM = new PublicKey("MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e");
 
@@ -83,7 +84,7 @@ async function main() {
 
   log("🔍", "Checking DAT state...", colors.yellow);
   try {
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
     log("✅", `DAT State admin: ${state.admin.toString()}`, colors.green);
     log("✅", `Current wallet: ${admin.publicKey.toString()}`, colors.green);
 
@@ -174,6 +175,7 @@ async function main() {
   console.log("=".repeat(60) + "\n");
 
   try {
+    // @ts-ignore - Type instantiation depth issue with Anchor types
     const tx = await program.methods
       .createPumpfunTokenMayhem(name, symbol, uri)
       .accounts({
@@ -196,6 +198,9 @@ async function main() {
         eventAuthority,
         pumpProgram: PUMP_PROGRAM,
       })
+      .preInstructions([
+        ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ])
       .signers([mint])
       .rpc();
 

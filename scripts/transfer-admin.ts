@@ -7,7 +7,7 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 const colors = {
   reset: "\x1b[0m",
@@ -84,7 +84,7 @@ async function main() {
 
   // Fetch current state
   log("🔍", "Vérification de l'état actuel...", colors.yellow);
-  const state = await program.account.datState.fetch(datState);
+  const state = await (program.account as any).datState.fetch(datState);
   log("✅", `Admin actuel: ${state.admin.toString()}`, colors.green);
 
   if (state.admin.toString() !== oldAdmin.publicKey.toString()) {

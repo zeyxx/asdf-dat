@@ -4,7 +4,7 @@ import { Keypair } from "@solana/web3.js";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz");
+const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 function loadIdl(): Idl {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
@@ -35,14 +35,23 @@ async function main() {
   console.log("DAT Authority PDA:", datAuthority.toString());
 
   try {
-    const state = await program.account.datState.fetch(datState);
+    const state = await (program.account as any).datState.fetch(datState);
     console.log("\n=== DAT State Data ===\n");
     console.log("Admin:", state.admin.toString());
     console.log("ASDF Mint:", state.asdfMint.toString());
     console.log("Is Active:", state.isActive);
     console.log("Emergency Pause:", state.emergencyPause);
-    console.log("Total Burned:", state.totalBurned.toString());
-    console.log("Total SOL Collected:", state.totalSolCollected.toString());
+
+    // Token amounts (6 decimals for most tokens)
+    const TOKEN_DECIMALS = 6;
+    const totalBurnedReal = Number(state.totalBurned.toString()) / Math.pow(10, TOKEN_DECIMALS);
+    console.log("Total Burned:", totalBurnedReal.toLocaleString(undefined, {maximumFractionDigits: 6}), "tokens", `(${state.totalBurned.toString()} unités)`);
+
+    // SOL amounts (9 decimals for lamports)
+    const SOL_DECIMALS = 9;
+    const totalSolReal = Number(state.totalSolCollected.toString()) / Math.pow(10, SOL_DECIMALS);
+    console.log("Total SOL Collected:", totalSolReal.toLocaleString(undefined, {maximumFractionDigits: 9}), "SOL", `(${state.totalSolCollected.toString()} lamports)`);
+
     console.log("Total Buybacks:", state.totalBuybacks);
     console.log("DAT Authority Bump:", state.datAuthorityBump);
 

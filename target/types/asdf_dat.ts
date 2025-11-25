@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/asdf_dat.json`.
  */
 export type AsdfDat = {
-  "address": "ASDFznSwUWikqQMNE1Y7qqskDDkbE74GXZdUe6wu4UCz",
+  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
   "metadata": {
     "name": "asdfDat",
     "version": "0.1.0",
@@ -46,6 +46,37 @@ export type AsdfDat = {
           }
         },
         {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "asdfMint"
+              }
+            ]
+          }
+        },
+        {
           "name": "datAuthority",
           "pda": {
             "seeds": [
@@ -73,8 +104,7 @@ export type AsdfDat = {
           "writable": true
         },
         {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "tokenProgram"
         }
       ],
       "args": []
@@ -112,6 +142,40 @@ export type AsdfDat = {
           }
         },
         {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
           "name": "datAuthority",
           "writable": true,
           "pda": {
@@ -142,11 +206,25 @@ export type AsdfDat = {
           "name": "pumpSwapProgram"
         },
         {
+          "name": "rootTreasury",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "isRootToken",
+          "type": "bool"
+        },
+        {
+          "name": "forEcosystem",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "createPumpfunToken",
@@ -233,8 +311,7 @@ export type AsdfDat = {
           "name": "mplTokenMetadata"
         },
         {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "tokenProgram"
         },
         {
           "name": "associatedTokenProgram",
@@ -547,35 +624,50 @@ export type AsdfDat = {
           "name": "feeProgram"
         },
         {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+          "name": "rootTreasury",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "tokenProgram"
         },
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "isSecondaryToken",
+          "type": "bool"
+        },
+        {
+          "name": "allocatedLamports",
+          "type": {
+            "option": "u64"
+          }
+        }
+      ]
     },
     {
-      "name": "executeFullCycle",
-      "docs": [
-        "Execute full DAT cycle in one transaction: COLLECT → BUY → BURN"
-      ],
+      "name": "finalizeAllocatedCycle",
       "discriminator": [
-        74,
-        198,
-        91,
-        104,
-        130,
-        92,
-        97,
-        244
+        153,
+        68,
+        114,
+        53,
+        231,
+        193,
+        206,
+        43
       ],
       "accounts": [
         {
           "name": "datState",
-          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -593,89 +685,51 @@ export type AsdfDat = {
           }
         },
         {
-          "name": "datAuthority",
+          "name": "tokenStats",
           "writable": true,
           "pda": {
             "seeds": [
               {
                 "kind": "const",
                 "value": [
-                  97,
-                  117,
                   116,
-                  104,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
                   95,
                   118,
-                  51
+                  49
                 ]
+              },
+              {
+                "kind": "account",
+                "path": "token_stats.mint",
+                "account": "tokenStats"
               }
             ]
           }
         },
         {
-          "name": "creatorVault",
-          "writable": true
-        },
-        {
-          "name": "datAsdfAccount",
-          "writable": true
-        },
-        {
-          "name": "pool",
-          "writable": true
-        },
-        {
-          "name": "asdfMint",
-          "writable": true
-        },
-        {
-          "name": "poolAsdfAccount",
-          "writable": true
-        },
-        {
-          "name": "poolWsolAccount",
-          "writable": true
-        },
-        {
-          "name": "pumpGlobalConfig"
-        },
-        {
-          "name": "protocolFeeRecipient",
-          "writable": true
-        },
-        {
-          "name": "protocolFeeRecipientAta",
-          "writable": true
-        },
-        {
-          "name": "pumpEventAuthority"
-        },
-        {
-          "name": "pumpSwapProgram"
-        },
-        {
-          "name": "globalVolumeAccumulator"
-        },
-        {
-          "name": "userVolumeAccumulator",
-          "writable": true
-        },
-        {
-          "name": "feeConfig"
-        },
-        {
-          "name": "feeProgram"
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
+          "name": "admin",
+          "docs": [
+            "Admin signer required - only admin can finalize allocated cycles"
+          ],
+          "signer": true
         }
       ],
-      "args": []
+      "args": [
+        {
+          "name": "actuallyParticipated",
+          "type": "bool"
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -741,6 +795,178 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "initializeTokenStats",
+      "discriminator": [
+        234,
+        129,
+        212,
+        97,
+        174,
+        172,
+        212,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initializeValidator",
+      "docs": [
+        "Initialize validator state for trustless per-token fee tracking",
+        "Must be called once per token before register_validated_fees can be used"
+      ],
+      "discriminator": [
+        1,
+        208,
+        135,
+        238,
+        15,
+        185,
+        20,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "bondingCurve"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrateTokenStats",
+      "discriminator": [
+        79,
+        11,
+        103,
+        60,
+        105,
+        128,
+        13,
+        202
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "recordFailure",
       "discriminator": [
         86,
@@ -755,7 +981,29 @@ export type AsdfDat = {
       "accounts": [
         {
           "name": "datState",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer required to prevent DoS attacks"
+          ],
+          "signer": true
         }
       ],
       "args": [
@@ -764,6 +1012,176 @@ export type AsdfDat = {
           "type": "u32"
         }
       ]
+    },
+    {
+      "name": "registerValidatedFees",
+      "docs": [
+        "PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs",
+        "Anyone can call this to commit fee data from off-chain validation",
+        "",
+        "Security: Protected by slot progression and fee caps"
+      ],
+      "discriminator": [
+        47,
+        27,
+        53,
+        254,
+        49,
+        113,
+        142,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "feeAmount",
+          "type": "u64"
+        },
+        {
+          "name": "endSlot",
+          "type": "u64"
+        },
+        {
+          "name": "txCount",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "resetValidatorSlot",
+      "docs": [
+        "ADMIN ONLY - Reset validator slot to current slot",
+        "Used when validator has been inactive for too long (slot delta > 1000)",
+        "This allows the validator daemon to resume operation without redeploying"
+      ],
+      "discriminator": [
+        248,
+        5,
+        115,
+        210,
+        236,
+        36,
+        129,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": []
     },
     {
       "name": "resume",
@@ -800,6 +1218,138 @@ export type AsdfDat = {
         {
           "name": "admin",
           "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "setRootToken",
+      "discriminator": [
+        63,
+        87,
+        166,
+        213,
+        186,
+        169,
+        225,
+        81
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rootTokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "root_token_stats.mint",
+                "account": "tokenStats"
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "rootMint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "syncValidatorSlot",
+      "docs": [
+        "Sync validator slot to current slot (permissionless)",
+        "",
+        "This instruction allows anyone to reset the last_validated_slot to the current slot",
+        "when the validator state has become stale (> MAX_SLOT_RANGE behind current slot).",
+        "This is useful after periods of inactivity to allow the daemon to resume operation.",
+        "",
+        "Note: This does NOT affect fee attribution - it simply allows new validations to proceed.",
+        "Any fees from the skipped slots are lost (this is acceptable for inactivity periods)."
+      ],
+      "discriminator": [
+        232,
+        176,
+        142,
+        149,
+        203,
+        18,
+        131,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "validatorState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  108,
+                  105,
+                  100,
+                  97,
+                  116,
+                  111,
+                  114,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "validator_state.mint",
+                "account": "validatorState"
+              }
+            ]
+          }
         }
       ],
       "args": []
@@ -845,6 +1395,50 @@ export type AsdfDat = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "updateFeeSplit",
+      "discriminator": [
+        120,
+        149,
+        67,
+        33,
+        63,
+        94,
+        168,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "newFeeSplitBps",
+          "type": "u16"
+        }
+      ]
     },
     {
       "name": "updateParameters",
@@ -909,6 +1503,83 @@ export type AsdfDat = {
           }
         }
       ]
+    },
+    {
+      "name": "updatePendingFees",
+      "discriminator": [
+        26,
+        208,
+        168,
+        145,
+        149,
+        206,
+        83,
+        42
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "amountLamports",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -923,6 +1594,32 @@ export type AsdfDat = {
         91,
         102,
         182
+      ]
+    },
+    {
+      "name": "tokenStats",
+      "discriminator": [
+        7,
+        126,
+        25,
+        232,
+        73,
+        79,
+        202,
+        236
+      ]
+    },
+    {
+      "name": "validatorState",
+      "discriminator": [
+        217,
+        140,
+        124,
+        163,
+        31,
+        187,
+        1,
+        89
       ]
     }
   ],
@@ -993,6 +1690,71 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "feeSplitUpdated",
+      "discriminator": [
+        125,
+        91,
+        141,
+        252,
+        205,
+        113,
+        171,
+        92
+      ]
+    },
+    {
+      "name": "feesRedirectedToRoot",
+      "discriminator": [
+        202,
+        59,
+        96,
+        104,
+        217,
+        13,
+        63,
+        130
+      ]
+    },
+    {
+      "name": "pendingFeesUpdated",
+      "discriminator": [
+        119,
+        148,
+        105,
+        59,
+        66,
+        52,
+        54,
+        125
+      ]
+    },
+    {
+      "name": "rootTokenSet",
+      "discriminator": [
+        151,
+        90,
+        80,
+        93,
+        136,
+        75,
+        17,
+        40
+      ]
+    },
+    {
+      "name": "rootTreasuryCollected",
+      "discriminator": [
+        150,
+        22,
+        115,
+        246,
+        101,
+        146,
+        102,
+        160
+      ]
+    },
+    {
       "name": "statusChanged",
       "discriminator": [
         146,
@@ -1016,6 +1778,58 @@ export type AsdfDat = {
         78,
         147,
         172
+      ]
+    },
+    {
+      "name": "tokenStatsInitialized",
+      "discriminator": [
+        200,
+        96,
+        96,
+        41,
+        186,
+        163,
+        165,
+        233
+      ]
+    },
+    {
+      "name": "validatedFeesRegistered",
+      "discriminator": [
+        34,
+        96,
+        18,
+        102,
+        182,
+        197,
+        131,
+        53
+      ]
+    },
+    {
+      "name": "validatorInitialized",
+      "discriminator": [
+        196,
+        120,
+        107,
+        225,
+        211,
+        189,
+        89,
+        226
+      ]
+    },
+    {
+      "name": "validatorSlotReset",
+      "discriminator": [
+        134,
+        36,
+        141,
+        149,
+        129,
+        175,
+        252,
+        175
       ]
     }
   ],
@@ -1089,6 +1903,61 @@ export type AsdfDat = {
       "code": 6013,
       "name": "invalidPool",
       "msg": "Invalid pool data"
+    },
+    {
+      "code": 6014,
+      "name": "invalidRootToken",
+      "msg": "Invalid root token"
+    },
+    {
+      "code": 6015,
+      "name": "invalidRootTreasury",
+      "msg": "Invalid root treasury"
+    },
+    {
+      "code": 6016,
+      "name": "invalidFeeSplit",
+      "msg": "Invalid fee split basis points"
+    },
+    {
+      "code": 6017,
+      "name": "insufficientPoolLiquidity",
+      "msg": "Insufficient pool liquidity"
+    },
+    {
+      "code": 6018,
+      "name": "staleValidation",
+      "msg": "Stale validation - slot already processed"
+    },
+    {
+      "code": 6019,
+      "name": "slotRangeTooLarge",
+      "msg": "Slot range too large"
+    },
+    {
+      "code": 6020,
+      "name": "validatorNotStale",
+      "msg": "Validator not stale - sync not needed"
+    },
+    {
+      "code": 6021,
+      "name": "feeTooHigh",
+      "msg": "Fee amount exceeds maximum for slot range"
+    },
+    {
+      "code": 6022,
+      "name": "tooManyTransactions",
+      "msg": "Transaction count exceeds maximum for slot range"
+    },
+    {
+      "code": 6023,
+      "name": "invalidBondingCurve",
+      "msg": "Invalid bonding curve account"
+    },
+    {
+      "code": 6024,
+      "name": "mintMismatch",
+      "msg": "Mint mismatch between accounts"
     }
   ],
   "types": [
@@ -1298,11 +2167,25 @@ export type AsdfDat = {
             "type": "u64"
           },
           {
+            "name": "rootTokenMint",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "feeSplitBps",
+            "type": "u16"
+          },
+          {
+            "name": "lastSolSentToRoot",
+            "type": "u64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                64
+                22
               ]
             }
           }
@@ -1321,6 +2204,110 @@ export type AsdfDat = {
           {
             "name": "admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeSplitUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "newFeeSplitBps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feesRedirectedToRoot",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fromToken",
+            "type": "pubkey"
+          },
+          {
+            "name": "toRoot",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "pendingFeesUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "totalPending",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rootTokenSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rootMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeSplitBps",
+            "type": "u16"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rootTreasuryCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rootMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
           },
           {
             "name": "timestamp",
@@ -1377,6 +2364,219 @@ export type AsdfDat = {
           {
             "name": "timestamp",
             "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenStats",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "totalBurned",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolCollected",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolUsed",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolSentToRoot",
+            "type": "u64"
+          },
+          {
+            "name": "totalSolReceivedFromOthers",
+            "type": "u64"
+          },
+          {
+            "name": "totalBuybacks",
+            "type": "u64"
+          },
+          {
+            "name": "lastCycleTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "lastCycleSol",
+            "type": "u64"
+          },
+          {
+            "name": "lastCycleBurned",
+            "type": "u64"
+          },
+          {
+            "name": "isRootToken",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "pendingFeesLamports",
+            "type": "u64"
+          },
+          {
+            "name": "lastFeeUpdateTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "cyclesParticipated",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "tokenStatsInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatedFeesRegistered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeAmount",
+            "type": "u64"
+          },
+          {
+            "name": "endSlot",
+            "type": "u64"
+          },
+          {
+            "name": "txCount",
+            "type": "u32"
+          },
+          {
+            "name": "totalPending",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatorInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bondingCurve",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatorSlotReset",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "oldSlot",
+            "type": "u64"
+          },
+          {
+            "name": "newSlot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatorState",
+      "docs": [
+        "Validator state for trustless per-token fee attribution",
+        "Tracks fees validated from PumpFun transaction logs"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "bondingCurve",
+            "type": "pubkey"
+          },
+          {
+            "name": "lastValidatedSlot",
+            "type": "u64"
+          },
+          {
+            "name": "totalValidatedLamports",
+            "type": "u64"
+          },
+          {
+            "name": "totalValidatedCount",
+            "type": "u64"
+          },
+          {
+            "name": "feeRateBps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
