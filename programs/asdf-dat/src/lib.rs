@@ -506,6 +506,29 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// ADMIN ONLY - Reset validator slot to current slot
+    /// Used when validator has been inactive for too long (slot delta > 1000)
+    /// This allows the validator daemon to resume operation without redeploying
+    pub fn reset_validator_slot(ctx: Context<ResetValidatorSlot>) -> Result<()> {
+        let state = &mut ctx.accounts.validator_state;
+        let clock = Clock::get()?;
+
+        let old_slot = state.last_validated_slot;
+        state.last_validated_slot = clock.slot;
+
+        emit!(ValidatorSlotReset {
+            mint: state.mint,
+            old_slot,
+            new_slot: clock.slot,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Validator slot reset from {} to {} for mint {}",
+            old_slot, clock.slot, state.mint);
+
+        Ok(())
+    }
+
     /// PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs
     /// Anyone can call this to commit fee data from off-chain validation
     ///
@@ -564,6 +587,32 @@ pub mod asdf_dat {
 
         msg!("Registered {} lamports for {} (slot {}, {} TXs)",
             fee_amount, validator.mint, end_slot, tx_count);
+
+        Ok(())
+    }
+
+    /// Sync validator slot to current slot (permissionless)
+    ///
+    /// This instruction allows anyone to reset the last_validated_slot to the current slot
+    /// when the validator state has become stale (> MAX_SLOT_RANGE behind current slot).
+    /// This is useful after periods of inactivity to allow the daemon to resume operation.
+    ///
+    /// Note: This does NOT affect fee attribution - it simply allows new validations to proceed.
+    /// Any fees from the skipped slots are lost (this is acceptable for inactivity periods).
+    pub fn sync_validator_slot(ctx: Context<SyncValidatorSlot>) -> Result<()> {
+        let validator = &mut ctx.accounts.validator_state;
+        let clock = Clock::get()?;
+        let current_slot = clock.slot;
+
+        // Only allow sync if the validator is stale (more than MAX_SLOT_RANGE behind)
+        let slot_delta = current_slot.saturating_sub(validator.last_validated_slot);
+        require!(slot_delta > 1000, ErrorCode::ValidatorNotStale);
+
+        let old_slot = validator.last_validated_slot;
+        validator.last_validated_slot = current_slot;
+
+        msg!("Synced validator slot for {} from {} to {} (delta: {})",
+            validator.mint, old_slot, current_slot, slot_delta);
 
         Ok(())
     }
@@ -799,11 +848,16 @@ pub mod asdf_dat {
 
         // Calculate available balance (after rent) FIRST
         // Add safety buffer to ensure account stays rent-exempt
-        const RENT_EXEMPT_MINIMUM: u64 = 890880;
+        const RENT_EXEMPT_MINIMUM: u64 = 890_880;
         const SAFETY_BUFFER: u64 = 50_000; // Extra 0.00005 SOL buffer (minimal margin for safety)
         const ATA_RENT_RESERVE: u64 = 2_100_000; // Reserve for ATA fee_recipient creation (~0.0021 SOL)
-        const MIN_FEES_FOR_SPLIT: u64 = 5_500_000; // Minimum 0.0055 SOL required for secondary token cycles
+        const MIN_FEES_FOR_SPLIT: u64 = 100_000; // Minimum 0.0001 SOL for devnet testing (mainnet: 5_500_000)
         const MINIMUM_BUY_AMOUNT: u64 = 100_000; // Minimum buy amount: 0.0001 SOL
+
+        // SCALABILITY CONSTANTS - Used by external orchestrator for dynamic allocation
+        // MIN_ALLOCATION_ROOT = RENT + BUFFER + MIN_BUY = 890,880 + 50,000 + 100,000 = 1,040,880 lamports
+        // MIN_ALLOCATION_SECONDARY = RENT + BUFFER + ATA_RESERVE + MIN_BUY = 890,880 + 50,000 + 2,100,000 + 100,000 = 3,140,880 lamports
+        // Orchestrator must ensure each token receives at least its minimum allocation before executing cycle
 
         // Use allocated amount if provided (ecosystem mode), otherwise calculate from balance
         let available_lamports = match allocated_lamports {
@@ -932,11 +986,21 @@ pub mod asdf_dat {
     // Finalize allocated cycle - Reset pending_fees and increment cycles_participated
     // Called by ecosystem orchestrator after execute_buy with allocated_lamports
     // This is a separate lightweight instruction to avoid stack overflow
-    pub fn finalize_allocated_cycle(ctx: Context<FinalizeAllocatedCycle>) -> Result<()> {
+    // actually_participated: bool - If true, reset pending_fees. If false (deferred), preserve them.
+    pub fn finalize_allocated_cycle(ctx: Context<FinalizeAllocatedCycle>, actually_participated: bool) -> Result<()> {
         let stats = &mut ctx.accounts.token_stats;
-        stats.pending_fees_lamports = 0;
-        stats.cycles_participated = stats.cycles_participated.saturating_add(1);
-        msg!("Finalized allocated cycle: pending_fees reset, cycles: {}", stats.cycles_participated);
+
+        if actually_participated {
+            // Token participated in this cycle - reset pending_fees
+            stats.pending_fees_lamports = 0;
+            stats.cycles_participated = stats.cycles_participated.saturating_add(1);
+            msg!("Finalized allocated cycle: pending_fees reset, cycles: {}", stats.cycles_participated);
+        } else {
+            // Token was deferred - preserve pending_fees for next cycle
+            msg!("Deferred finalization: pending_fees preserved ({} lamports) for next cycle",
+                stats.pending_fees_lamports);
+        }
+
         Ok(())
     }
 
@@ -1677,6 +1741,37 @@ pub struct RegisterValidatedFees<'info> {
     // Anyone can call this instruction to register validated fees
 }
 
+/// Accounts for sync_validator_slot instruction (permissionless)
+#[derive(Accounts)]
+pub struct SyncValidatorSlot<'info> {
+    #[account(
+        mut,
+        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
+        bump = validator_state.bump,
+    )]
+    pub validator_state: Account<'info, ValidatorState>,
+
+    // NOTE: NO SIGNER REQUIRED - This is PERMISSIONLESS!
+    // Anyone can call this to sync a stale validator to current slot
+    // The instruction itself validates that sync is only allowed if stale
+}
+
+#[derive(Accounts)]
+pub struct ResetValidatorSlot<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    #[account(
+        mut,
+        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
+        bump = validator_state.bump,
+    )]
+    pub validator_state: Account<'info, ValidatorState>,
+
+    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
+}
+
 #[derive(Accounts)]
 pub struct MigrateTokenStats<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
@@ -1992,6 +2087,14 @@ pub struct ValidatorInitialized {
 }
 
 #[event]
+pub struct ValidatorSlotReset {
+    pub mint: Pubkey,
+    pub old_slot: u64,
+    pub new_slot: u64,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct ValidatedFeesRegistered {
     pub mint: Pubkey,
     pub fee_amount: u64,
@@ -2045,6 +2148,8 @@ pub enum ErrorCode {
     StaleValidation,
     #[msg("Slot range too large")]
     SlotRangeTooLarge,
+    #[msg("Validator not stale - sync not needed")]
+    ValidatorNotStale,
     #[msg("Fee amount exceeds maximum for slot range")]
     FeeTooHigh,
     #[msg("Transaction count exceeds maximum for slot range")]
