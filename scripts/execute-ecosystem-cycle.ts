@@ -515,7 +515,9 @@ async function executeSecondaryWithAllocation(
     const finalizeTx = await program.methods
       .finalizeAllocatedCycle()
       .accounts({
+        datState,
         tokenStats,
+        admin: adminKeypair.publicKey,
       })
       .signers([adminKeypair])
       .rpc();

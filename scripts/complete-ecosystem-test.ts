@@ -723,7 +723,7 @@ class EcosystemTester {
           .accounts({
             datState,
             tokenStats,
-            datAuthority,
+            admin: this.admin.publicKey,
           })
           .rpc();
 

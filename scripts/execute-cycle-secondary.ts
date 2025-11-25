@@ -398,7 +398,9 @@ async function main() {
         const finalizeTx = await program.methods
           .finalizeAllocatedCycle()
           .accounts({
+            datState,
             tokenStats,
+            admin: wallet.publicKey,
           })
           .rpc();
 

@@ -39,6 +39,11 @@ pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
 pub const ROOT_TREASURY_SEED: &[u8] = b"root_treasury";
 pub const VALIDATOR_STATE_SEED: &[u8] = b"validator_v1";
 
+// PumpFun instruction discriminators (8-byte hashes)
+pub const PUMPFUN_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
+pub const PUMPFUN_CREATE_DISCRIMINATOR: [u8; 8] = [24, 30, 200, 40, 5, 28, 7, 119];
+pub const PUMPFUN_COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];
+
 /// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
 fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
     require!(data.len() >= 24, ErrorCode::InvalidPool);
@@ -110,7 +115,7 @@ fn collect_creator_fee_cpi<'info>(
             AccountMeta::new_readonly(pump_event_authority.key(), false),
             AccountMeta::new_readonly(PUMP_PROGRAM, false),
         ],
-        data: vec![20, 22, 86, 123, 198, 28, 219, 132],
+        data: PUMPFUN_COLLECT_FEE_DISCRIMINATOR.to_vec(),
     });
 
     let account_infos = Box::new([
@@ -180,6 +185,24 @@ fn calculate_buy_amount_and_slippage(
     Ok((final_amount, target_tokens))
 }
 
+/// Helper function to validate root_treasury PDA (extracted to reduce stack usage)
+#[inline(never)]
+fn validate_root_treasury_pda(
+    root_treasury: &Option<AccountInfo>,
+    root_mint: &Pubkey,
+    program_id: &Pubkey,
+) -> Result<()> {
+    let (expected_treasury, _) = Pubkey::find_program_address(
+        &[ROOT_TREASURY_SEED, root_mint.as_ref()],
+        program_id
+    );
+    require!(
+        root_treasury.as_ref().map(|r| r.key()) == Some(expected_treasury),
+        ErrorCode::InvalidRootTreasury
+    );
+    Ok(())
+}
+
 /// Helper function to split fees for secondary tokens (extracted to reduce stack usage)
 #[inline(never)]
 fn split_fees_to_root<'info>(
@@ -237,7 +260,7 @@ fn execute_buy_cpi<'info>(
     // Build PumpFun buy instruction data:
     // [discriminator(8)][token_amount(8)][max_sol_cost(8)][track_volume(1)]
     let mut data = Vec::new();
-    data.extend_from_slice(&[102, 6, 61, 18, 1, 218, 235, 234]); // buy discriminator
+    data.extend_from_slice(&PUMPFUN_BUY_DISCRIMINATOR); // buy discriminator
     data.extend_from_slice(&desired_tokens.to_le_bytes());        // how many tokens we want
     data.extend_from_slice(&max_sol_cost.to_le_bytes());          // maximum SOL we'll pay
     data.push(0);                                                  // track_volume: None
@@ -404,9 +427,10 @@ pub mod asdf_dat {
     }
 
     // Update the fee split ratio (admin only)
+    // Bounded between 1000 (10%) and 9000 (90%) to prevent extreme configurations
     pub fn update_fee_split(ctx: Context<AdminControl>, new_fee_split_bps: u16) -> Result<()> {
         require!(
-            new_fee_split_bps <= 10000,
+            new_fee_split_bps >= 1000 && new_fee_split_bps <= 9000,
             ErrorCode::InvalidFeeSplit
         );
 
@@ -794,6 +818,9 @@ pub mod asdf_dat {
         if is_secondary_token {
             require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
 
+            // Validate root_treasury PDA matches expected derivation from root_token_mint
+            validate_root_treasury_pda(&ctx.accounts.root_treasury, &state.root_token_mint.unwrap(), ctx.program_id)?;
+
             // Validate minimum fees before attempting split (prevents InsufficientFundsForRent)
             if available_lamports < MIN_FEES_FOR_SPLIT {
                 msg!("Insufficient fees for secondary token cycle: {} < {} lamports",
@@ -1056,8 +1083,8 @@ pub mod asdf_dat {
         
         let mut data = Vec::new();
         
-        // Discriminator: [24, 30, 200, 40, 5, 28, 7, 119]
-        data.extend_from_slice(&[24, 30, 200, 40, 5, 28, 7, 119]);
+        // PumpFun create token discriminator
+        data.extend_from_slice(&PUMPFUN_CREATE_DISCRIMINATOR);
         
         // Name
         data.extend_from_slice(&(name.len() as u32).to_le_bytes());
@@ -1255,7 +1282,7 @@ fn execute_collect_fees_cpi<'info>(
             AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
             AccountMeta::new_readonly(PUMP_PROGRAM, false),
         ],
-        data: vec![20, 22, 86, 123, 198, 28, 219, 132], // collect_creator_fee discriminator
+        data: PUMPFUN_COLLECT_FEE_DISCRIMINATOR.to_vec(),
     };
 
     invoke_signed(
@@ -1545,12 +1572,19 @@ pub struct ExecuteBuy<'info> {
 
 #[derive(Accounts)]
 pub struct FinalizeAllocatedCycle<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
     #[account(
         mut,
         seeds = [TOKEN_STATS_SEED, token_stats.mint.as_ref()],
         bump = token_stats.bump
     )]
     pub token_stats: Account<'info, TokenStats>,
+
+    /// Admin signer required - only admin can finalize allocated cycles
+    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
@@ -1575,8 +1609,10 @@ pub struct BurnAndUpdate<'info> {
 
 #[derive(Accounts)]
 pub struct RecordFailure<'info> {
-    #[account(mut)]
+    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
+    /// Admin signer required to prevent DoS attacks
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]
