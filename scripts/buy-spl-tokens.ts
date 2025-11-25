@@ -174,29 +174,27 @@ async function main() {
         Buffer.from([0]), // track_volume: None
       ]);
 
-      // Build buy instruction accounts (based on PumpFun IDL)
+      // Build buy instruction accounts (matching PumpFun's exact order - 16 accounts)
+      // Order from DAT smart contract execute_buy_cpi function
       const buyIx = {
         programId: PUMP_PROGRAM,
         keys: [
-          { pubkey: global, isSigner: false, isWritable: false },
-          { pubkey: feeRecipient, isSigner: false, isWritable: true },
-          { pubkey: tokenMint, isSigner: false, isWritable: false },
-          { pubkey: bondingCurve, isSigner: false, isWritable: true },
-          { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: bondingCurveWsolAccount, isSigner: false, isWritable: true },
-          { pubkey: buyerTokenAccount, isSigner: false, isWritable: true },
-          { pubkey: buyer.publicKey, isSigner: true, isWritable: true },
-          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-          { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
-          { pubkey: eventAuthority, isSigner: false, isWritable: false },
-          { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },
-          { pubkey: creatorVault, isSigner: false, isWritable: true },
-          { pubkey: globalVolumeAccumulator, isSigner: false, isWritable: true },
-          { pubkey: userVolumeAccumulator, isSigner: false, isWritable: true },
-          { pubkey: feeConfig, isSigner: false, isWritable: false },
-          { pubkey: FEE_PROGRAM, isSigner: false, isWritable: false },
-          { pubkey: feeRecipientWsolAccount, isSigner: false, isWritable: true },
+          { pubkey: global, isSigner: false, isWritable: false },                    // 0 - global
+          { pubkey: feeRecipient, isSigner: false, isWritable: true },               // 1 - fee_recipient
+          { pubkey: tokenMint, isSigner: false, isWritable: true },                  // 2 - mint
+          { pubkey: bondingCurve, isSigner: false, isWritable: true },               // 3 - bonding_curve
+          { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },   // 4 - associated_bonding_curve
+          { pubkey: buyerTokenAccount, isSigner: false, isWritable: true },          // 5 - associated_user
+          { pubkey: buyer.publicKey, isSigner: true, isWritable: true },             // 6 - user (SIGNER)
+          { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },   // 7 - system_program
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },          // 8 - token_program
+          { pubkey: creatorVault, isSigner: false, isWritable: true },               // 9 - creator_vault
+          { pubkey: eventAuthority, isSigner: false, isWritable: false },            // 10 - event_authority
+          { pubkey: PUMP_PROGRAM, isSigner: false, isWritable: false },              // 11 - program
+          { pubkey: globalVolumeAccumulator, isSigner: false, isWritable: false },   // 12 - global_volume_accumulator
+          { pubkey: userVolumeAccumulator, isSigner: false, isWritable: true },      // 13 - user_volume_accumulator
+          { pubkey: feeConfig, isSigner: false, isWritable: false },                 // 14 - fee_config
+          { pubkey: FEE_PROGRAM, isSigner: false, isWritable: false },               // 15 - fee_program
         ],
         data,
       };

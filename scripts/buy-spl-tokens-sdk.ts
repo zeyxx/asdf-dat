@@ -99,7 +99,7 @@ async function main() {
         user: buyer.publicKey,
         solAmount,
         amount: tokenAmount,
-        slippage: 10, // 10% slippage tolerance
+        slippage: 30, // 30% slippage tolerance (devnet volatility + price impact)
         tokenProgram: TOKEN_PROGRAM_ID,
       });
 
