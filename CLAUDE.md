@@ -1,0 +1,1 @@
+- toutes les documentations doivent être exclusivement en anglais

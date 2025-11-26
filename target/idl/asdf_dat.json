@@ -631,6 +631,159 @@
       ]
     },
     {
+      "name": "execute_buy_amm",
+      "docs": [
+        "Execute buy on PumpSwap AMM pool (for migrated tokens)",
+        "This instruction handles tokens that have graduated from bonding curve to AMM",
+        "Requires WSOL in dat_wsol_account for the buy operation"
+      ],
+      "discriminator": [
+        239,
+        72,
+        220,
+        75,
+        250,
+        12,
+        58,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_token_account",
+          "docs": [
+            "DAT's token account for receiving bought tokens"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "global_config"
+        },
+        {
+          "name": "base_mint",
+          "docs": [
+            "Base token mint (the token being bought)"
+          ]
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "dat_wsol_account",
+          "writable": true
+        },
+        {
+          "name": "pool_base_token_account",
+          "writable": true
+        },
+        {
+          "name": "pool_quote_token_account",
+          "writable": true
+        },
+        {
+          "name": "protocol_fee_recipient"
+        },
+        {
+          "name": "protocol_fee_recipient_ata",
+          "writable": true
+        },
+        {
+          "name": "base_token_program",
+          "docs": [
+            "Base token program (SPL Token or Token2022)"
+          ]
+        },
+        {
+          "name": "quote_token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "coin_creator_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "coin_creator_vault_authority"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "desired_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "max_sol_cost",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "execute_buy_secondary",
       "docs": [
         "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
@@ -1738,6 +1891,19 @@
       ]
     },
     {
+      "name": "BuyExecuted",
+      "discriminator": [
+        183,
+        7,
+        73,
+        208,
+        153,
+        81,
+        148,
+        198
+      ]
+    },
+    {
       "name": "CycleCompleted",
       "discriminator": [
         189,
@@ -2073,6 +2239,26 @@
           {
             "name": "new_admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BuyExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokens_bought",
+            "type": "u64"
+          },
+          {
+            "name": "sol_spent",
+            "type": "u64"
           },
           {
             "name": "timestamp",

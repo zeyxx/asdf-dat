@@ -637,6 +637,159 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "executeBuyAmm",
+      "docs": [
+        "Execute buy on PumpSwap AMM pool (for migrated tokens)",
+        "This instruction handles tokens that have graduated from bonding curve to AMM",
+        "Requires WSOL in dat_wsol_account for the buy operation"
+      ],
+      "discriminator": [
+        239,
+        72,
+        220,
+        75,
+        250,
+        12,
+        58,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datTokenAccount",
+          "docs": [
+            "DAT's token account for receiving bought tokens"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "globalConfig"
+        },
+        {
+          "name": "baseMint",
+          "docs": [
+            "Base token mint (the token being bought)"
+          ]
+        },
+        {
+          "name": "quoteMint"
+        },
+        {
+          "name": "datWsolAccount",
+          "writable": true
+        },
+        {
+          "name": "poolBaseTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "poolQuoteTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "protocolFeeRecipient"
+        },
+        {
+          "name": "protocolFeeRecipientAta",
+          "writable": true
+        },
+        {
+          "name": "baseTokenProgram",
+          "docs": [
+            "Base token program (SPL Token or Token2022)"
+          ]
+        },
+        {
+          "name": "quoteTokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "associatedTokenProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "pumpSwapProgram"
+        },
+        {
+          "name": "coinCreatorVaultAta",
+          "writable": true
+        },
+        {
+          "name": "coinCreatorVaultAuthority"
+        },
+        {
+          "name": "globalVolumeAccumulator"
+        },
+        {
+          "name": "userVolumeAccumulator",
+          "writable": true
+        },
+        {
+          "name": "feeConfig"
+        },
+        {
+          "name": "feeProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "desiredTokens",
+          "type": "u64"
+        },
+        {
+          "name": "maxSolCost",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "executeBuySecondary",
       "docs": [
         "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
@@ -1744,6 +1897,19 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "buyExecuted",
+      "discriminator": [
+        183,
+        7,
+        73,
+        208,
+        153,
+        81,
+        148,
+        198
+      ]
+    },
+    {
       "name": "cycleCompleted",
       "discriminator": [
         189,
@@ -2079,6 +2245,26 @@ export type AsdfDat = {
           {
             "name": "newAdmin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "buyExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokensBought",
+            "type": "u64"
+          },
+          {
+            "name": "solSpent",
+            "type": "u64"
           },
           {
             "name": "timestamp",

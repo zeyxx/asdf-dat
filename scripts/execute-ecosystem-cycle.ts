@@ -36,11 +36,20 @@ const DAT_AUTHORITY_SEED = Buffer.from('auth_v3');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 const ROOT_TREASURY_SEED = Buffer.from('root_treasury');
 
+// PumpFun Bonding Curve Program
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
 const PUMP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
 const PUMP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
 const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
+
+// PumpSwap AMM Program (for migrated tokens)
+const PUMP_SWAP_PROGRAM = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
+const PUMPSWAP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
+const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
+const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
+const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
+const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 
 // ============================================================================
 // Scalability Constants (aligned with lib.rs execute_buy)
@@ -89,14 +98,18 @@ const colors = {
 // Types & Interfaces
 // ============================================================================
 
+// Pool type determines which CPI instruction to use
+type PoolType = 'bonding_curve' | 'pumpswap_amm';
+
 interface TokenConfig {
   file: string;
   symbol: string;
   mint: PublicKey;
-  bondingCurve: PublicKey;
+  bondingCurve: PublicKey;  // For bonding_curve: the bonding curve address. For AMM: the pool address.
   creator: PublicKey;
   isRoot: boolean;
   isToken2022: boolean;
+  poolType: PoolType;       // Determines bonding curve vs PumpSwap AMM
 }
 
 interface TokenAllocation {
@@ -311,6 +324,8 @@ async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[
 
     try {
       const tokenData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      // Read poolType from JSON, default to 'bonding_curve' if not specified
+      const poolType: PoolType = tokenData.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
       tokens.push({
         file: config.file,
         symbol: config.symbol,
@@ -319,8 +334,10 @@ async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[
         creator: new PublicKey(tokenData.creator),
         isRoot: config.isRoot,
         isToken2022: config.isToken2022,
+        poolType,
       });
-      log('✓', `Loaded ${config.symbol} from ${config.file}`, colors.green);
+      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
+      log('✓', `Loaded ${config.symbol} from ${config.file} (${poolIcon} ${poolType})`, colors.green);
     } catch (error) {
       log('❌', `Failed to load ${config.file}: ${(error as Error).message || String(error)}`, colors.red);
     }
@@ -812,51 +829,155 @@ async function executeSecondaryWithAllocation(
 
     const protocolFeeRecipient = allocation.token.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
-    // PumpFun volume accumulator accounts
-    const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('global_volume_accumulator')],
-      PUMP_PROGRAM
-    );
+    // Route based on pool type
+    let buyTx: string;
 
-    const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
-      PUMP_PROGRAM
-    );
+    if (allocation.token.poolType === 'pumpswap_amm') {
+      // ═══════════════════════════════════════════════════════════════════════
+      // PumpSwap AMM Buy Execution
+      // ═══════════════════════════════════════════════════════════════════════
+      log('  🔄', `Executing AMM buy with ${formatSOL(allocation.allocation)} SOL (PumpSwap)...`, colors.cyan);
 
-    const [feeConfig] = PublicKey.findProgramAddressSync(
-      [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
-      FEE_PROGRAM
-    );
+      // Derive AMM-specific PDAs
+      const pool = allocation.token.bondingCurve; // For AMM, this is the pool address
 
-    // Step 4a: Execute buy with allocated amount
-    log('  💸', `Executing buy with allocated ${formatSOL(allocation.allocation)} SOL...`, colors.cyan);
+      // DAT's WSOL account
+      const [datWsolAccount] = PublicKey.findProgramAddressSync(
+        [datAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
 
-    const buyTx = await program.methods
-      .executeBuy(true, new BN(allocation.allocation)) // is_secondary=true, allocated_lamports
-      .accounts({
-        datState,
-        datAuthority,
-        datAsdfAccount,
-        pool: allocation.token.bondingCurve,
-        asdfMint: allocation.token.mint,
-        poolAsdfAccount,
-        pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
-        protocolFeeRecipient,
-        creatorVault,
-        pumpEventAuthority: PUMP_EVENT_AUTHORITY,
-        pumpSwapProgram: PUMP_PROGRAM,
-        globalVolumeAccumulator,
-        userVolumeAccumulator,
-        feeConfig,
-        feeProgram: FEE_PROGRAM,
-        tokenProgram,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([adminKeypair])
-      .rpc();
+      // Pool's token accounts (base = token, quote = WSOL)
+      const [poolBaseTokenAccount] = PublicKey.findProgramAddressSync(
+        [pool.toBuffer(), tokenProgram.toBuffer(), allocation.token.mint.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
+
+      const [poolQuoteTokenAccount] = PublicKey.findProgramAddressSync(
+        [pool.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
+
+      // Protocol fee recipient ATA (for WSOL)
+      const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
+        [PUMPSWAP_PROTOCOL_FEE_RECIPIENT.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
+
+      // Coin creator vault accounts
+      const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from('creator_vault_authority'), allocation.token.mint.toBuffer()],
+        PUMP_SWAP_PROGRAM
+      );
+
+      const [coinCreatorVaultAta] = PublicKey.findProgramAddressSync(
+        [coinCreatorVaultAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
+
+      // Volume accumulator PDAs (PumpSwap uses same program)
+      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global_volume_accumulator')],
+        PUMP_SWAP_PROGRAM
+      );
+
+      const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+        PUMP_SWAP_PROGRAM
+      );
+
+      const [feeConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee_config'), PUMP_SWAP_PROGRAM.toBuffer()],
+        FEE_PROGRAM
+      );
+
+      // Calculate desired tokens based on allocation (simplified - in prod use price oracle)
+      const desiredTokens = new BN(1_000_000); // 1M tokens minimum, will get actual amount from CPI
+      const maxSolCost = new BN(allocation.allocation);
+
+      buyTx = await program.methods
+        .executeBuyAmm(desiredTokens, maxSolCost)
+        .accounts({
+          datState,
+          datAuthority,
+          datTokenAccount: datAsdfAccount,
+          pool,
+          globalConfig: PUMPSWAP_GLOBAL_CONFIG,
+          baseMint: allocation.token.mint,
+          quoteMint: WSOL_MINT,
+          datWsolAccount,
+          poolBaseTokenAccount,
+          poolQuoteTokenAccount,
+          protocolFeeRecipient: PUMPSWAP_PROTOCOL_FEE_RECIPIENT,
+          protocolFeeRecipientAta,
+          baseTokenProgram: tokenProgram,
+          quoteTokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM,
+          eventAuthority: PUMPSWAP_EVENT_AUTHORITY,
+          pumpSwapProgram: PUMP_SWAP_PROGRAM,
+          coinCreatorVaultAta,
+          coinCreatorVaultAuthority,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+        })
+        .signers([adminKeypair])
+        .rpc();
+
+      log('  ✅', `AMM Buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
+
+    } else {
+      // ═══════════════════════════════════════════════════════════════════════
+      // Bonding Curve Buy Execution (existing logic)
+      // ═══════════════════════════════════════════════════════════════════════
+      log('  💸', `Executing bonding curve buy with ${formatSOL(allocation.allocation)} SOL...`, colors.cyan);
+
+      // PumpFun volume accumulator accounts
+      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global_volume_accumulator')],
+        PUMP_PROGRAM
+      );
+
+      const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
+        [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
+        PUMP_PROGRAM
+      );
+
+      const [feeConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
+        FEE_PROGRAM
+      );
+
+      buyTx = await program.methods
+        .executeBuy(true, new BN(allocation.allocation)) // is_secondary=true, allocated_lamports
+        .accounts({
+          datState,
+          datAuthority,
+          datAsdfAccount,
+          pool: allocation.token.bondingCurve,
+          asdfMint: allocation.token.mint,
+          poolAsdfAccount,
+          pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
+          protocolFeeRecipient,
+          creatorVault,
+          pumpEventAuthority: PUMP_EVENT_AUTHORITY,
+          pumpSwapProgram: PUMP_PROGRAM,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+          tokenProgram,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([adminKeypair])
+        .rpc();
+
+      log('  ✅', `Bonding curve buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
+    }
 
     result.buyTx = buyTx;
-    log('  ✅', `Buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
 
     // Step 4b: Finalize allocated cycle (reset pending_fees, increment cycles_participated)
     // Pass true because this token actually participated in the cycle

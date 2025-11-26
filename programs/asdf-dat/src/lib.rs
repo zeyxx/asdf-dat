@@ -13,7 +13,7 @@ mod tests;
 
 declare_id!("ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5");
 
-pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([133, 131, 1, 60, 248, 103, 229, 16, 174, 94, 254, 95, 44, 230, 127, 216, 209, 16, 36, 3, 140, 127, 58, 109, 149, 250, 73, 0, 212, 5, 39, 95]); // 9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump
+pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([140, 47, 4, 227, 97, 106, 121, 165, 182, 1, 57, 199, 219, 179, 84, 96, 133, 60, 197, 80, 154, 74, 254, 48, 216, 94, 192, 158, 146, 118, 39, 244]); // ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ (mainnet)
 pub const WSOL_MINT: Pubkey = Pubkey::new_from_array([6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]);
 pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([191, 204, 38, 188, 201, 126, 120, 53, 102, 177, 245, 238, 71, 192, 66, 165, 130, 17, 150, 235, 78, 240, 56, 247, 205, 54, 243, 244, 230, 203, 227, 170]); // DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb (mainnet)
 // pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA - PumpSwap AMM program
@@ -51,34 +51,34 @@ pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 23
 
 // PumpSwap Global Config PDA - 4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf
 pub const PUMPSWAP_GLOBAL_CONFIG: Pubkey = Pubkey::new_from_array([
-    55, 156, 44, 39, 84, 209, 45, 163, 220, 158, 185, 38, 227, 26, 87, 139,
-    64, 123, 58, 220, 132, 173, 31, 134, 117, 116, 92, 208, 30, 115, 46, 153
+    58, 134, 94, 105, 238, 15, 84, 128, 202, 188, 246, 99, 87, 228, 220, 47,
+    24, 213, 141, 69, 193, 234, 116, 137, 251, 55, 35, 217, 121, 60, 114, 166
 ]);
 
-// PumpSwap Event Authority PDA
+// PumpSwap Event Authority PDA - Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1
 pub const PUMPSWAP_EVENT_AUTHORITY: Pubkey = Pubkey::new_from_array([
-    222, 157, 177, 63, 73, 152, 217, 210, 67, 131, 29, 47, 224, 252, 91, 232,
-    176, 135, 75, 222, 220, 102, 115, 93, 40, 183, 159, 44, 90, 73, 14, 183
-]); // Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1
+    172, 241, 54, 235, 1, 252, 28, 78, 136, 61, 35, 200, 181, 132, 74, 181,
+    154, 55, 246, 106, 221, 87, 197, 233, 172, 59, 83, 224, 89, 211, 92, 100
+]);
 
 // Fee Program - pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ
 pub const PUMP_FEE_PROGRAM: Pubkey = Pubkey::new_from_array([
-    13, 38, 236, 79, 145, 206, 220, 145, 254, 171, 132, 81, 187, 53, 4, 13,
-    102, 122, 145, 67, 133, 11, 127, 57, 94, 168, 134, 87, 88, 210, 12, 147
+    12, 53, 255, 169, 5, 90, 142, 86, 141, 168, 247, 188, 7, 86, 21, 39,
+    76, 241, 201, 44, 164, 31, 64, 0, 156, 81, 106, 164, 20, 194, 124, 112
 ]);
 
-// Global Volume Accumulator PDA
+// Global Volume Accumulator PDA - Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y
 pub const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR: Pubkey = Pubkey::new_from_array([
-    127, 124, 143, 227, 152, 45, 11, 10, 83, 47, 89, 217, 163, 45, 252, 254,
-    176, 183, 88, 45, 147, 219, 76, 157, 103, 19, 201, 147, 90, 195, 248, 231
+    250, 9, 17, 165, 72, 99, 65, 45, 99, 31, 78, 7, 135, 3, 41, 108,
+    3, 95, 13, 19, 51, 160, 217, 200, 131, 141, 115, 183, 16, 254, 110, 45
 ]);
 
-// Standard protocol fee recipients (from PumpSwap GlobalConfig)
+// Standard protocol fee recipients (from PumpSwap GlobalConfig) - 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
 pub const PUMPSWAP_PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
     Pubkey::new_from_array([
-        81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219,
-        29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216
-    ]) // 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
+        80, 91, 86, 43, 240, 254, 69, 217, 123, 109, 178, 11, 165, 24, 224, 160,
+        197, 204, 48, 77, 217, 105, 172, 23, 142, 107, 116, 145, 130, 79, 179, 164
+    ])
 ];
 
 /// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
@@ -100,25 +100,28 @@ fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
     Ok((virtual_token_reserves, virtual_sol_reserves))
 }
 
+// SPL Protocol fee recipient - 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
 pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
-    Pubkey::new_from_array([81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219, 29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216]),
+    Pubkey::new_from_array([80, 91, 86, 43, 240, 254, 69, 217, 123, 109, 178, 11, 165, 24, 224, 160, 197, 204, 48, 77, 217, 105, 172, 23, 142, 107, 116, 145, 130, 79, 179, 164]),
 ];
 
-// Mayhem Mode constants
+// Mayhem Mode constants - MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e
 pub const MAYHEM_PROGRAM: Pubkey = Pubkey::new_from_array([
-    137, 218, 238, 239, 168, 72, 231, 178, 160, 44, 152, 142, 20, 125, 67, 196,
-    43, 166, 78, 225, 251, 144, 219, 123, 110, 241, 54, 179, 185, 154, 254, 99
-]); // MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e
+    5, 42, 229, 215, 167, 218, 167, 36, 166, 234, 176, 167, 41, 84, 145, 133,
+    90, 212, 160, 103, 22, 96, 103, 76, 78, 3, 69, 89, 128, 61, 101, 163
+]);
 
+// Mayhem Fee Recipient (Token2022) - GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS
 pub const MAYHEM_FEE_RECIPIENT: Pubkey = Pubkey::new_from_array([
-    231, 187, 167, 206, 49, 119, 164, 163, 136, 194, 114, 154, 76, 149, 230,
-    206, 125, 133, 68, 102, 17, 167, 236, 118, 150, 25, 123, 68, 54, 221, 39, 12
-]); // GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS
+    232, 147, 20, 31, 177, 142, 159, 21, 116, 216, 16, 225, 120, 225, 158, 48,
+    96, 78, 49, 117, 170, 46, 74, 50, 223, 200, 96, 7, 39, 209, 7, 9
+]);
 
+// Mayhem Agent Wallet - BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
 pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
-    166, 133, 239, 180, 77, 235, 68, 100, 199, 33, 25, 139, 185, 9, 232, 164,
-    228, 205, 74, 123, 166, 139, 114, 13, 221, 225, 162, 93, 101, 11, 19, 102
-]); // BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
+    162, 139, 95, 210, 106, 180, 121, 166, 169, 204, 108, 191, 107, 11, 35, 235,
+    97, 136, 90, 55, 30, 1, 32, 172, 169, 19, 190, 239, 61, 19, 138, 120
+]);
 
 // ⚠️ TESTING MODE CONFIGURATION - CRITICAL SECURITY SETTING ⚠️
 // ══════════════════════════════════════════════════════════════════════════════
@@ -424,6 +427,117 @@ fn execute_pumpfun_cpi<'info>(
         ],
         data,
     };
+
+    invoke_signed(&ix, account_infos, &[seeds])?;
+    Ok(())
+}
+
+/// CPI executor for PumpSwap AMM buy (for migrated tokens)
+/// Account order matches PumpSwap AMM buy instruction from official IDL
+#[inline(never)]
+fn execute_pumpswap_amm_cpi_inner<'info>(
+    accounts: &ExecuteBuyAMM<'info>,
+    base_amount_out: u64,      // tokens to receive (desired_tokens)
+    max_quote_amount_in: u64,  // max WSOL to spend (max_sol_cost)
+    bump: u8,                  // dat_authority bump
+) -> Result<()> {
+    // Build instruction data:
+    // - 8 bytes discriminator
+    // - 8 bytes base_amount_out
+    // - 8 bytes max_quote_amount_in
+    // - 2 bytes track_volume (OptionBool: 1 byte presence + 1 byte value)
+    let mut data = Vec::with_capacity(26);
+    data.extend_from_slice(&PUMPSWAP_BUY_DISCRIMINATOR);
+    data.extend_from_slice(&base_amount_out.to_le_bytes());
+    data.extend_from_slice(&max_quote_amount_in.to_le_bytes());
+    // track_volume = Some(true) for fee tracking
+    data.push(1); // Some variant
+    data.push(1); // true value
+
+    // Build accounts in exact order required by PumpSwap AMM buy instruction
+    let ix_accounts = vec![
+        // 1. pool (mut)
+        AccountMeta::new(accounts.pool.key(), false),
+        // 2. user (mut, signer) - dat_authority acts as user
+        AccountMeta::new(accounts.dat_authority.key(), true),
+        // 3. global_config
+        AccountMeta::new_readonly(accounts.global_config.key(), false),
+        // 4. base_mint (token being bought)
+        AccountMeta::new_readonly(accounts.base_mint.key(), false),
+        // 5. quote_mint (WSOL)
+        AccountMeta::new_readonly(accounts.quote_mint.key(), false),
+        // 6. user_base_token_account (mut) - where bought tokens go
+        AccountMeta::new(accounts.dat_token_account.key(), false),
+        // 7. user_quote_token_account (mut) - WSOL source
+        AccountMeta::new(accounts.dat_wsol_account.key(), false),
+        // 8. pool_base_token_account (mut)
+        AccountMeta::new(accounts.pool_base_token_account.key(), false),
+        // 9. pool_quote_token_account (mut)
+        AccountMeta::new(accounts.pool_quote_token_account.key(), false),
+        // 10. protocol_fee_recipient
+        AccountMeta::new_readonly(accounts.protocol_fee_recipient.key(), false),
+        // 11. protocol_fee_recipient_token_account (mut)
+        AccountMeta::new(accounts.protocol_fee_recipient_ata.key(), false),
+        // 12. base_token_program
+        AccountMeta::new_readonly(accounts.base_token_program.key(), false),
+        // 13. quote_token_program
+        AccountMeta::new_readonly(accounts.quote_token_program.key(), false),
+        // 14. system_program
+        AccountMeta::new_readonly(accounts.system_program.key(), false),
+        // 15. associated_token_program
+        AccountMeta::new_readonly(accounts.associated_token_program.key(), false),
+        // 16. event_authority (PDA)
+        AccountMeta::new_readonly(accounts.event_authority.key(), false),
+        // 17. program (PumpSwap AMM)
+        AccountMeta::new_readonly(accounts.pump_swap_program.key(), false),
+        // 18. coin_creator_vault_ata (mut)
+        AccountMeta::new(accounts.coin_creator_vault_ata.key(), false),
+        // 19. coin_creator_vault_authority
+        AccountMeta::new_readonly(accounts.coin_creator_vault_authority.key(), false),
+        // 20. global_volume_accumulator
+        AccountMeta::new_readonly(accounts.global_volume_accumulator.key(), false),
+        // 21. user_volume_accumulator (mut)
+        AccountMeta::new(accounts.user_volume_accumulator.key(), false),
+        // 22. fee_config
+        AccountMeta::new_readonly(accounts.fee_config.key(), false),
+        // 23. fee_program
+        AccountMeta::new_readonly(accounts.fee_program.key(), false),
+    ];
+
+    let ix = Instruction {
+        program_id: PUMP_SWAP_PROGRAM,
+        accounts: ix_accounts,
+        data,
+    };
+
+    // Build account infos for invoke_signed
+    let account_infos = &[
+        accounts.pool.to_account_info(),
+        accounts.dat_authority.to_account_info(),
+        accounts.global_config.to_account_info(),
+        accounts.base_mint.to_account_info(),
+        accounts.quote_mint.to_account_info(),
+        accounts.dat_token_account.to_account_info(),
+        accounts.dat_wsol_account.to_account_info(),
+        accounts.pool_base_token_account.to_account_info(),
+        accounts.pool_quote_token_account.to_account_info(),
+        accounts.protocol_fee_recipient.to_account_info(),
+        accounts.protocol_fee_recipient_ata.to_account_info(),
+        accounts.base_token_program.to_account_info(),
+        accounts.quote_token_program.to_account_info(),
+        accounts.system_program.to_account_info(),
+        accounts.associated_token_program.to_account_info(),
+        accounts.event_authority.to_account_info(),
+        accounts.pump_swap_program.to_account_info(),
+        accounts.coin_creator_vault_ata.to_account_info(),
+        accounts.coin_creator_vault_authority.to_account_info(),
+        accounts.global_volume_accumulator.to_account_info(),
+        accounts.user_volume_accumulator.to_account_info(),
+        accounts.fee_config.to_account_info(),
+        accounts.fee_program.to_account_info(),
+    ];
+
+    let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
 
     invoke_signed(&ix, account_infos, &[seeds])?;
     Ok(())
@@ -1012,6 +1126,50 @@ pub mod asdf_dat {
 
         // Execute buy CPI (delegated to reduce stack)
         execute_buy_secondary_cpi(&mut ctx, buy_amount, bump)
+    }
+
+    /// Execute buy on PumpSwap AMM pool (for migrated tokens)
+    /// This instruction handles tokens that have graduated from bonding curve to AMM
+    /// Requires WSOL in dat_wsol_account for the buy operation
+    pub fn execute_buy_amm(
+        ctx: Context<ExecuteBuyAMM>,
+        desired_tokens: u64,     // Amount of tokens to buy
+        max_sol_cost: u64,       // Maximum SOL to spend (in lamports, will use WSOL)
+    ) -> Result<()> {
+        // Check state conditions first (read-only)
+        require!(ctx.accounts.dat_state.is_active && !ctx.accounts.dat_state.emergency_pause, ErrorCode::DATNotActive);
+
+        // Get bump before CPI
+        let bump = ctx.accounts.dat_state.dat_authority_bump;
+
+        msg!("Executing PumpSwap AMM buy: {} tokens for max {} lamports",
+            desired_tokens, max_sol_cost);
+
+        // Record token balance before buy
+        let tokens_before = ctx.accounts.dat_token_account.amount;
+
+        // Execute the PumpSwap AMM CPI (borrows ctx immutably)
+        execute_pumpswap_amm_cpi_inner(&ctx.accounts, desired_tokens, max_sol_cost, bump)?;
+
+        // Reload and calculate actual tokens received
+        ctx.accounts.dat_token_account.reload()?;
+        let tokens_after = ctx.accounts.dat_token_account.amount;
+        let tokens_received = tokens_after.saturating_sub(tokens_before);
+
+        msg!("AMM buy complete: received {} tokens", tokens_received);
+
+        // Update state for burn tracking (mutable borrow after CPI)
+        let state = &mut ctx.accounts.dat_state;
+        state.pending_burn_amount = tokens_received;
+        state.last_cycle_sol = max_sol_cost;
+
+        emit!(BuyExecuted {
+            tokens_bought: tokens_received,
+            sol_spent: max_sol_cost,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+
+        Ok(())
     }
 
     // Finalize allocated cycle - Reset pending_fees and increment cycles_participated
@@ -1671,6 +1829,79 @@ pub struct ExecuteBuySecondary<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// ExecuteBuyAMM - For PumpSwap AMM pools (migrated tokens)
+/// Requires 23+ accounts as per PumpSwap AMM specification
+#[derive(Accounts)]
+pub struct ExecuteBuyAMM<'info> {
+    // DAT State accounts
+    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    /// CHECK: PDA authority (holds WSOL, acts as "user" in AMM)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+    /// DAT's token account for receiving bought tokens
+    #[account(mut)]
+    pub dat_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    // PumpSwap AMM Core accounts (1-9)
+    /// CHECK: AMM Pool account
+    #[account(mut)]
+    pub pool: AccountInfo<'info>,
+    /// CHECK: PumpSwap global config
+    pub global_config: AccountInfo<'info>,
+    /// Base token mint (the token being bought)
+    pub base_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: Quote token mint (WSOL)
+    pub quote_mint: AccountInfo<'info>,
+    /// CHECK: DAT's WSOL account (user_quote_token_account)
+    #[account(mut)]
+    pub dat_wsol_account: AccountInfo<'info>,
+    /// CHECK: Pool's base token account
+    #[account(mut)]
+    pub pool_base_token_account: AccountInfo<'info>,
+    /// CHECK: Pool's quote token account (WSOL)
+    #[account(mut)]
+    pub pool_quote_token_account: AccountInfo<'info>,
+
+    // Protocol fee accounts (10-11)
+    /// CHECK: Protocol fee recipient
+    pub protocol_fee_recipient: AccountInfo<'info>,
+    /// CHECK: Protocol fee recipient's token account (PDA)
+    #[account(mut)]
+    pub protocol_fee_recipient_ata: AccountInfo<'info>,
+
+    // Program accounts (12-17)
+    /// Base token program (SPL Token or Token2022)
+    pub base_token_program: Interface<'info, TokenInterface>,
+    /// CHECK: Quote token program (always SPL Token for WSOL)
+    pub quote_token_program: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+    /// CHECK: Associated token program
+    pub associated_token_program: AccountInfo<'info>,
+    /// CHECK: PumpSwap event authority (PDA)
+    pub event_authority: AccountInfo<'info>,
+    /// CHECK: PumpSwap AMM program
+    pub pump_swap_program: AccountInfo<'info>,
+
+    // Creator fee accounts (18-19)
+    /// CHECK: Coin creator vault ATA (receives creator fees)
+    #[account(mut)]
+    pub coin_creator_vault_ata: AccountInfo<'info>,
+    /// CHECK: Coin creator vault authority (PDA)
+    pub coin_creator_vault_authority: AccountInfo<'info>,
+
+    // Volume tracking accounts (20-23)
+    /// CHECK: Global volume accumulator (PDA)
+    pub global_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: User volume accumulator (PDA)
+    #[account(mut)]
+    pub user_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: Fee config (PDA)
+    pub fee_config: AccountInfo<'info>,
+    /// CHECK: Fee program
+    pub fee_program: AccountInfo<'info>,
+}
+
 #[derive(Accounts)]
 pub struct FinalizeAllocatedCycle<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump)]
@@ -2138,6 +2369,13 @@ pub struct ValidatedFeesRegistered {
     pub end_slot: u64,
     pub tx_count: u32,
     pub total_pending: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct BuyExecuted {
+    pub tokens_bought: u64,
+    pub sol_spent: u64,
     pub timestamp: i64,
 }
 
