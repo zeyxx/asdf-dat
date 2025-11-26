@@ -4,14 +4,18 @@
  * This script syncs all stale ValidatorState accounts to the current slot.
  * Use this when the daemon has been offline and validators are > 1000 slots behind.
  *
- * Usage: npx ts-node scripts/sync-validator-slots.ts [token-file1.json] [token-file2.json] ...
- *        npx ts-node scripts/sync-validator-slots.ts (syncs all known tokens)
+ * Usage: npx ts-node scripts/sync-validator-slots.ts [options] [token-file1.json] [token-file2.json] ...
+ *        npx ts-node scripts/sync-validator-slots.ts --network mainnet (syncs all mainnet tokens)
+ *
+ * Options:
+ *   --network    Network to use: mainnet or devnet (default: devnet)
  */
 
 import { Connection, PublicKey, Keypair } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
+import { getNetworkConfig, printNetworkBanner, parseNetworkArg } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const VALIDATOR_STATE_SEED = Buffer.from("validator_v1");
@@ -109,14 +113,22 @@ export async function syncValidatorIfNeeded(
 }
 
 async function main() {
-  console.log("\n" + "=".repeat(70));
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
   console.log(`${colors.bright}${colors.magenta}SYNC VALIDATOR SLOTS${colors.reset}`);
   console.log("=".repeat(70) + "\n");
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
+  console.log(`🌐 RPC: ${networkConfig.rpcUrl}`);
 
   // Load wallet (any wallet works since this is permissionless)
-  const walletPath = fs.existsSync("devnet-wallet.json") ? "devnet-wallet.json" : "wallet.json";
+  const walletPath = networkConfig.wallet;
+  if (!fs.existsSync(walletPath)) {
+    log("❌", `Wallet not found at ${walletPath}`, colors.red);
+    process.exit(1);
+  }
   const admin = Keypair.fromSecretKey(
     new Uint8Array(JSON.parse(fs.readFileSync(walletPath, "utf-8")))
   );
@@ -130,14 +142,13 @@ async function main() {
   const idl = loadIdl();
   const program: Program<Idl> = new Program(idl, provider);
 
-  // Get token files from args or use defaults
-  let tokenFiles: string[] = process.argv.slice(2);
+  // Get token files from args or use network defaults
+  // Filter out --network and related args
+  let tokenFiles: string[] = args.filter(
+    (a) => !a.startsWith("--") && !a.startsWith("-") && a.endsWith(".json")
+  );
   if (tokenFiles.length === 0) {
-    tokenFiles = [
-      "devnet-token-spl.json",
-      "devnet-token-secondary.json",
-      "devnet-token-mayhem.json",
-    ].filter(f => fs.existsSync(f));
+    tokenFiles = networkConfig.tokens.filter((f) => fs.existsSync(f));
   }
 
   if (tokenFiles.length === 0) {

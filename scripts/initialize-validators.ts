@@ -6,13 +6,17 @@
  * daemon can register fees.
  *
  * Usage:
- *   npx ts-node scripts/initialize-validators.ts
+ *   npx ts-node scripts/initialize-validators.ts [options]
+ *
+ * Options:
+ *   --network    Network to use: mainnet or devnet (default: devnet)
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import fs from 'fs';
 import path from 'path';
+import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
 
 const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
@@ -26,17 +30,21 @@ interface TokenInfo {
 }
 
 async function main() {
-  console.log('\n' + '='.repeat(70));
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
   console.log('🔧 INITIALIZE VALIDATOR STATES');
   console.log('='.repeat(70) + '\n');
 
   // Load connection
-  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
+  console.log(`🌐 RPC: ${networkConfig.rpcUrl}`);
 
   // Load wallet
-  const walletPath = path.join(process.cwd(), 'devnet-wallet.json');
+  const walletPath = path.join(process.cwd(), networkConfig.wallet);
   if (!fs.existsSync(walletPath)) {
-    console.error('❌ Wallet not found at devnet-wallet.json');
+    console.error(`❌ Wallet not found at ${networkConfig.wallet}`);
     process.exit(1);
   }
 
@@ -69,12 +77,8 @@ async function main() {
   );
   const program = new Program(idl, provider);
 
-  // Load token configs
-  const tokenFiles = [
-    'devnet-token-spl.json',
-    'devnet-token-secondary.json',
-    'devnet-token-mayhem.json',
-  ];
+  // Load token configs from network config
+  const tokenFiles = networkConfig.tokens;
 
   const tokens: TokenInfo[] = [];
 
