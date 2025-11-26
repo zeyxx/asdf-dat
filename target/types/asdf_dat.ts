@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/asdf_dat.json`.
  */
 export type AsdfDat = {
-  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
+  "address": "ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5",
   "metadata": {
     "name": "asdfDat",
     "version": "0.1.0",
@@ -519,6 +519,10 @@ export type AsdfDat = {
     },
     {
       "name": "executeBuy",
+      "docs": [
+        "Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)",
+        "For secondary tokens, use execute_buy_secondary instead"
+      ],
       "discriminator": [
         14,
         137,
@@ -586,10 +590,6 @@ export type AsdfDat = {
           "writable": true
         },
         {
-          "name": "poolWsolAccount",
-          "writable": true
-        },
-        {
           "name": "pumpGlobalConfig"
         },
         {
@@ -597,7 +597,121 @@ export type AsdfDat = {
           "writable": true
         },
         {
-          "name": "protocolFeeRecipientAta",
+          "name": "creatorVault",
+          "writable": true
+        },
+        {
+          "name": "pumpEventAuthority"
+        },
+        {
+          "name": "pumpSwapProgram"
+        },
+        {
+          "name": "globalVolumeAccumulator"
+        },
+        {
+          "name": "userVolumeAccumulator",
+          "writable": true
+        },
+        {
+          "name": "feeConfig"
+        },
+        {
+          "name": "feeProgram"
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "allocatedLamports",
+          "type": {
+            "option": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "executeBuySecondary",
+      "docs": [
+        "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
+      ],
+      "discriminator": [
+        4,
+        51,
+        212,
+        248,
+        213,
+        148,
+        13,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAsdfAccount",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdfMint",
+          "writable": true
+        },
+        {
+          "name": "poolAsdfAccount",
+          "writable": true
+        },
+        {
+          "name": "pumpGlobalConfig"
+        },
+        {
+          "name": "protocolFeeRecipient",
           "writable": true
         },
         {
@@ -634,17 +748,9 @@ export type AsdfDat = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
-        {
-          "name": "isSecondaryToken",
-          "type": "bool"
-        },
         {
           "name": "allocatedLamports",
           "type": {

@@ -1,9 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_lang::solana_program::instruction::Instruction;
-use anchor_lang::solana_program::program::{invoke, invoke_signed};
+use anchor_lang::solana_program::program::invoke_signed;
 use anchor_spl::{
-    token::{self, Token},
-    token_2022::{self as token2022},
+    token,
     token_interface::{self as token_interface, TokenInterface, TokenAccount, Mint},
     associated_token::AssociatedToken,
 };
@@ -12,11 +11,11 @@ use anchor_spl::{
 #[cfg(test)]
 mod tests;
 
-declare_id!("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+declare_id!("ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5");
 
-pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([137, 186, 88, 184, 174, 194, 106, 212, 88, 106, 151, 42, 200, 185, 36, 216, 12, 68, 223, 123, 57, 228, 213, 18, 228, 89, 200, 243, 29, 9, 91, 145]);
+pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([133, 131, 1, 60, 248, 103, 229, 16, 174, 94, 254, 95, 44, 230, 127, 216, 209, 16, 36, 3, 140, 127, 58, 109, 149, 250, 73, 0, 212, 5, 39, 95]); // 9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump
 pub const WSOL_MINT: Pubkey = Pubkey::new_from_array([6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]);
-pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([192, 248, 200, 149, 140, 186, 128, 73, 229, 234, 185, 221, 168, 154, 161, 205, 98, 170, 28, 212, 197, 248, 155, 225, 81, 137, 239, 236, 51, 136, 62, 163]);
+pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([191, 204, 38, 188, 201, 126, 120, 53, 102, 177, 245, 238, 71, 192, 66, 165, 130, 17, 150, 235, 78, 240, 56, 247, 205, 54, 243, 244, 230, 203, 227, 170]); // DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb (mainnet)
 // pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA - PumpSwap AMM program
 pub const PUMP_SWAP_PROGRAM: Pubkey = Pubkey::new_from_array([12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101, 244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99]);
 // 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P - Main Pump.fun program
@@ -44,15 +43,57 @@ pub const PUMPFUN_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234
 pub const PUMPFUN_CREATE_DISCRIMINATOR: [u8; 8] = [24, 30, 200, 40, 5, 28, 7, 119];
 pub const PUMPFUN_COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PUMPSWAP AMM CONSTANTS - For tokens that have migrated from bonding curve
+// ══════════════════════════════════════════════════════════════════════════════
+// PumpSwap AMM buy instruction discriminator (same as bonding curve buy)
+pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
+
+// PumpSwap Global Config PDA - 4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf
+pub const PUMPSWAP_GLOBAL_CONFIG: Pubkey = Pubkey::new_from_array([
+    55, 156, 44, 39, 84, 209, 45, 163, 220, 158, 185, 38, 227, 26, 87, 139,
+    64, 123, 58, 220, 132, 173, 31, 134, 117, 116, 92, 208, 30, 115, 46, 153
+]);
+
+// PumpSwap Event Authority PDA
+pub const PUMPSWAP_EVENT_AUTHORITY: Pubkey = Pubkey::new_from_array([
+    222, 157, 177, 63, 73, 152, 217, 210, 67, 131, 29, 47, 224, 252, 91, 232,
+    176, 135, 75, 222, 220, 102, 115, 93, 40, 183, 159, 44, 90, 73, 14, 183
+]); // Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1
+
+// Fee Program - pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ
+pub const PUMP_FEE_PROGRAM: Pubkey = Pubkey::new_from_array([
+    13, 38, 236, 79, 145, 206, 220, 145, 254, 171, 132, 81, 187, 53, 4, 13,
+    102, 122, 145, 67, 133, 11, 127, 57, 94, 168, 134, 87, 88, 210, 12, 147
+]);
+
+// Global Volume Accumulator PDA
+pub const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR: Pubkey = Pubkey::new_from_array([
+    127, 124, 143, 227, 152, 45, 11, 10, 83, 47, 89, 217, 163, 45, 252, 254,
+    176, 183, 88, 45, 147, 219, 76, 157, 103, 19, 201, 147, 90, 195, 248, 231
+]);
+
+// Standard protocol fee recipients (from PumpSwap GlobalConfig)
+pub const PUMPSWAP_PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
+    Pubkey::new_from_array([
+        81, 173, 33, 188, 96, 186, 141, 138, 77, 220, 51, 130, 166, 223, 207, 219,
+        29, 141, 38, 224, 247, 232, 60, 188, 100, 154, 253, 193, 77, 96, 251, 216
+    ]) // 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
+];
+
 /// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
 fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
     require!(data.len() >= 24, ErrorCode::InvalidPool);
 
     // Read virtual_token_reserves (bytes 0-7)
-    let virtual_token_reserves = u64::from_le_bytes(data[0..8].try_into().unwrap());
+    let virtual_token_reserves = u64::from_le_bytes(
+        data[0..8].try_into().map_err(|_| ErrorCode::InvalidPool)?
+    );
 
     // Read virtual_sol_reserves (bytes 8-15)
-    let virtual_sol_reserves = u64::from_le_bytes(data[8..16].try_into().unwrap());
+    let virtual_sol_reserves = u64::from_le_bytes(
+        data[8..16].try_into().map_err(|_| ErrorCode::InvalidPool)?
+    );
 
     msg!("Bonding curve: virtual_token={}, virtual_sol={}", virtual_token_reserves, virtual_sol_reserves);
 
@@ -81,7 +122,7 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 
 // ⚠️ TESTING MODE CONFIGURATION - CRITICAL SECURITY SETTING ⚠️
 // ══════════════════════════════════════════════════════════════════════════════
-// CURRENT: true (DEVNET ONLY - DO NOT DEPLOY TO MAINNET WITH THIS VALUE!)
+// CURRENT: false (MAINNET PRODUCTION MODE)
 // ══════════════════════════════════════════════════════════════════════════════
 // When true (TESTING):
 //   - Disables minimum cycle interval check (allows rapid testing)
@@ -92,9 +133,14 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 //   - Limits to 2 executions per day (1 AM, 1 PM)
 //   - Requires minimum fees threshold to be met
 // ══════════════════════════════════════════════════════════════════════════════
-// TODO: Change to `false` and redeploy before mainnet launch
-// ══════════════════════════════════════════════════════════════════════════════
-pub const TESTING_MODE: bool = true;
+pub const TESTING_MODE: bool = false;
+
+// Execute buy constants (module level to reduce stack usage)
+pub const RENT_EXEMPT_MINIMUM: u64 = 890_880;
+pub const SAFETY_BUFFER: u64 = 50_000;
+pub const ATA_RENT_RESERVE: u64 = 2_100_000;
+pub const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
+pub const MINIMUM_BUY_AMOUNT: u64 = 100_000;
 
 /// Helper function to collect creator fees CPI (extracted to reduce stack usage)
 #[inline(never)]
@@ -185,24 +231,6 @@ fn calculate_buy_amount_and_slippage(
     Ok((final_amount, target_tokens))
 }
 
-/// Helper function to validate root_treasury PDA (extracted to reduce stack usage)
-#[inline(never)]
-fn validate_root_treasury_pda(
-    root_treasury: &Option<AccountInfo>,
-    root_mint: &Pubkey,
-    program_id: &Pubkey,
-) -> Result<()> {
-    let (expected_treasury, _) = Pubkey::find_program_address(
-        &[ROOT_TREASURY_SEED, root_mint.as_ref()],
-        program_id
-    );
-    require!(
-        root_treasury.as_ref().map(|r| r.key()) == Some(expected_treasury),
-        ErrorCode::InvalidRootTreasury
-    );
-    Ok(())
-}
-
 /// Helper function to split fees for secondary tokens (extracted to reduce stack usage)
 #[inline(never)]
 fn split_fees_to_root<'info>(
@@ -234,85 +262,172 @@ fn split_fees_to_root<'info>(
     Ok(sol_for_root)
 }
 
-/// Helper function to execute buy CPI (extracted to reduce stack usage)
+// NOTE: PumpSwap AMM buys are handled by the TypeScript orchestrator using @pump-fun/pump-swap-sdk
+// The program provides record_external_buy() to record the results after orchestrator completes the buy
+
+/// Build account infos Vec on heap (separate function to isolate stack frame)
 #[inline(never)]
-fn execute_buy_cpi<'info>(
-    pump_global_config: &AccountInfo<'info>,
-    protocol_fee_recipient: &AccountInfo<'info>,
-    asdf_mint: &InterfaceAccount<'info, Mint>,
-    pool: &AccountInfo<'info>,
-    pool_asdf_account: &InterfaceAccount<'info, TokenAccount>,
-    dat_asdf_account: &InterfaceAccount<'info, TokenAccount>,
-    dat_authority: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    token_program: &Interface<'info, TokenInterface>,
-    creator_vault: &AccountInfo<'info>,
-    pump_event_authority: &AccountInfo<'info>,
-    pump_swap_program: &AccountInfo<'info>,
-    global_volume_accumulator: &AccountInfo<'info>,
-    user_volume_accumulator: &AccountInfo<'info>,
-    fee_config: &AccountInfo<'info>,
-    fee_program: &AccountInfo<'info>,
-    max_sol_cost: u64,
-    desired_tokens: u64,
-    seeds: &[&[u8]],
-) -> Result<()> {
-    // Build PumpFun buy instruction data:
-    // [discriminator(8)][token_amount(8)][max_sol_cost(8)][track_volume(1)]
-    let mut data = Vec::new();
-    data.extend_from_slice(&PUMPFUN_BUY_DISCRIMINATOR); // buy discriminator
-    data.extend_from_slice(&desired_tokens.to_le_bytes());        // how many tokens we want
-    data.extend_from_slice(&max_sol_cost.to_le_bytes());          // maximum SOL we'll pay
-    data.push(0);                                                  // track_volume: None
+fn build_account_infos_root<'info>(accounts: &ExecuteBuy<'info>) -> Vec<AccountInfo<'info>> {
+    let mut accs = Vec::with_capacity(16);
+    accs.push(accounts.pump_global_config.to_account_info());
+    accs.push(accounts.protocol_fee_recipient.to_account_info());
+    accs.push(accounts.asdf_mint.to_account_info());
+    accs.push(accounts.pool.to_account_info());
+    accs.push(accounts.pool_asdf_account.to_account_info());
+    accs.push(accounts.dat_asdf_account.to_account_info());
+    accs.push(accounts.dat_authority.to_account_info());
+    accs.push(accounts.system_program.to_account_info());
+    accs.push(accounts.token_program.to_account_info());
+    accs.push(accounts.creator_vault.to_account_info());
+    accs.push(accounts.pump_event_authority.to_account_info());
+    accs.push(accounts.pump_swap_program.to_account_info());
+    accs.push(accounts.global_volume_accumulator.to_account_info());
+    accs.push(accounts.user_volume_accumulator.to_account_info());
+    accs.push(accounts.fee_config.to_account_info());
+    accs.push(accounts.fee_program.to_account_info());
+    accs
+}
 
-    let instruction = Box::new(Instruction {
-        program_id: PUMP_PROGRAM,
-        accounts: vec![
-            AccountMeta::new_readonly(pump_global_config.key(), false),          // 0 - global
-            AccountMeta::new(protocol_fee_recipient.key(), false),                // 1 - fee_recipient
-            AccountMeta::new(asdf_mint.key(), false),                             // 2 - mint
-            AccountMeta::new(pool.key(), false),                                  // 3 - bonding_curve
-            AccountMeta::new(pool_asdf_account.key(), false),                     // 4 - associated_bonding_curve
-            AccountMeta::new(dat_asdf_account.key(), false),                      // 5 - associated_user
-            AccountMeta::new(dat_authority.key(), true),                          // 6 - user (SIGNER)
-            AccountMeta::new_readonly(system_program.key(), false),               // 7 - system_program
-            AccountMeta::new_readonly(token_program.key(), false),                // 8 - token_program
-            AccountMeta::new(creator_vault.key(), false),                         // 9 - creator_vault
-            AccountMeta::new_readonly(pump_event_authority.key(), false),         // 10 - event_authority
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),                       // 11 - program
-            AccountMeta::new_readonly(global_volume_accumulator.key(), false),    // 12 - global_volume_accumulator
-            AccountMeta::new(user_volume_accumulator.key(), false),               // 13 - user_volume_accumulator
-            AccountMeta::new_readonly(fee_config.key(), false),                   // 14 - fee_config
-            AccountMeta::new_readonly(fee_program.key(), false),                  // 15 - fee_program
-        ],
-        data,
-    });
+/// Inner execute buy logic - uses Vec on heap to avoid stack overflow
+#[inline(never)]
+fn execute_buy_inner(ctx: Context<ExecuteBuy>, buy_amount: u64) -> Result<()> {
+    let bump = ctx.accounts.dat_state.dat_authority_bump;
+    let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
+    let slippage = ctx.accounts.dat_state.slippage_bps;
 
-    let account_infos = Box::new([
-        pump_global_config.to_account_info(),
-        protocol_fee_recipient.to_account_info(),
-        asdf_mint.to_account_info(),
-        pool.to_account_info(),
-        pool_asdf_account.to_account_info(),
-        dat_asdf_account.to_account_info(),
-        dat_authority.to_account_info(),
-        system_program.to_account_info(),
-        token_program.to_account_info(),
-        creator_vault.to_account_info(),
-        pump_event_authority.to_account_info(),
-        pump_swap_program.to_account_info(),
-        global_volume_accumulator.to_account_info(),
-        user_volume_accumulator.to_account_info(),
-        fee_config.to_account_info(),
-        fee_program.to_account_info(),
-    ]);
+    ctx.accounts.pool_asdf_account.reload()?;
+    let pool_data = ctx.accounts.pool.try_borrow_data()?.to_vec();
+    let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(buy_amount, &pool_data, max_fees, slippage)?;
 
-    invoke_signed(&*instruction, &*account_infos, &[seeds])?;
+    // Build account infos on heap in separate stack frame
+    let accs = build_account_infos_root(&ctx.accounts);
+
+    let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+    execute_pumpfun_cpi(
+        ctx.accounts.pump_global_config.key(),
+        ctx.accounts.protocol_fee_recipient.key(),
+        ctx.accounts.asdf_mint.key(),
+        ctx.accounts.pool.key(),
+        ctx.accounts.pool_asdf_account.key(),
+        ctx.accounts.dat_asdf_account.key(),
+        ctx.accounts.dat_authority.key(),
+        max_sol_cost,
+        desired_tokens,
+        &accs,
+        seeds,
+    )?;
+
+    ctx.accounts.dat_asdf_account.reload()?;
+    ctx.accounts.dat_state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
+    ctx.accounts.dat_state.last_cycle_sol = max_sol_cost;
     Ok(())
 }
 
-// REMOVED: execute_allocated_buy_cpi_wrapper - No longer needed after merging instructions
-// REMOVED: process_allocated_split_and_calculate - Logic integrated into execute_buy
+/// Build account infos Vec on heap for secondary tokens (separate function to isolate stack frame)
+#[inline(never)]
+fn build_account_infos_secondary<'info>(accounts: &ExecuteBuySecondary<'info>) -> Vec<AccountInfo<'info>> {
+    let mut accs = Vec::with_capacity(16);
+    accs.push(accounts.pump_global_config.to_account_info());
+    accs.push(accounts.protocol_fee_recipient.to_account_info());
+    accs.push(accounts.asdf_mint.to_account_info());
+    accs.push(accounts.pool.to_account_info());
+    accs.push(accounts.pool_asdf_account.to_account_info());
+    accs.push(accounts.dat_asdf_account.to_account_info());
+    accs.push(accounts.dat_authority.to_account_info());
+    accs.push(accounts.system_program.to_account_info());
+    accs.push(accounts.token_program.to_account_info());
+    accs.push(accounts.creator_vault.to_account_info());
+    accs.push(accounts.pump_event_authority.to_account_info());
+    accs.push(accounts.pump_swap_program.to_account_info());
+    accs.push(accounts.global_volume_accumulator.to_account_info());
+    accs.push(accounts.user_volume_accumulator.to_account_info());
+    accs.push(accounts.fee_config.to_account_info());
+    accs.push(accounts.fee_program.to_account_info());
+    accs
+}
+
+/// Execute secondary buy CPI (separate to reduce stack in main function)
+#[inline(never)]
+fn execute_buy_secondary_cpi(ctx: &mut Context<ExecuteBuySecondary>, buy_amount: u64, bump: u8) -> Result<()> {
+    let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
+    let slippage = ctx.accounts.dat_state.slippage_bps;
+
+    ctx.accounts.pool_asdf_account.reload()?;
+    let pool_data = ctx.accounts.pool.try_borrow_data()?.to_vec();
+    let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(buy_amount, &pool_data, max_fees, slippage)?;
+
+    let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+    // Build account infos on heap in separate stack frame
+    let accs = build_account_infos_secondary(&ctx.accounts);
+
+    execute_pumpfun_cpi(
+        ctx.accounts.pump_global_config.key(),
+        ctx.accounts.protocol_fee_recipient.key(),
+        ctx.accounts.asdf_mint.key(),
+        ctx.accounts.pool.key(),
+        ctx.accounts.pool_asdf_account.key(),
+        ctx.accounts.dat_asdf_account.key(),
+        ctx.accounts.dat_authority.key(),
+        max_sol_cost,
+        desired_tokens,
+        &accs,
+        seeds,
+    )?;
+
+    ctx.accounts.dat_asdf_account.reload()?;
+    ctx.accounts.dat_state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
+    ctx.accounts.dat_state.last_cycle_sol = max_sol_cost;
+    Ok(())
+}
+
+/// Minimal CPI executor for PumpFun buy
+#[inline(never)]
+fn execute_pumpfun_cpi<'info>(
+    global_config: Pubkey,
+    fee_recipient: Pubkey,
+    mint: Pubkey,
+    pool: Pubkey,
+    pool_token_account: Pubkey,
+    user_token_account: Pubkey,
+    user: Pubkey,
+    max_sol_cost: u64,
+    desired_tokens: u64,
+    account_infos: &[AccountInfo<'info>],
+    seeds: &[&[u8]],
+) -> Result<()> {
+    let mut data = Vec::with_capacity(25);
+    data.extend_from_slice(&PUMPFUN_BUY_DISCRIMINATOR);
+    data.extend_from_slice(&desired_tokens.to_le_bytes());
+    data.extend_from_slice(&max_sol_cost.to_le_bytes());
+    data.push(0);
+
+    let ix = Instruction {
+        program_id: PUMP_PROGRAM,
+        accounts: vec![
+            AccountMeta::new_readonly(global_config, false),
+            AccountMeta::new(fee_recipient, false),
+            AccountMeta::new(mint, false),
+            AccountMeta::new(pool, false),
+            AccountMeta::new(pool_token_account, false),
+            AccountMeta::new(user_token_account, false),
+            AccountMeta::new(user, true),
+            AccountMeta::new_readonly(account_infos[7].key(), false), // system
+            AccountMeta::new_readonly(account_infos[8].key(), false), // token
+            AccountMeta::new(account_infos[9].key(), false), // creator_vault
+            AccountMeta::new_readonly(account_infos[10].key(), false), // event_auth
+            AccountMeta::new_readonly(PUMP_PROGRAM, false),
+            AccountMeta::new_readonly(account_infos[12].key(), false), // global_vol
+            AccountMeta::new(account_infos[13].key(), false), // user_vol
+            AccountMeta::new_readonly(account_infos[14].key(), false), // fee_config
+            AccountMeta::new_readonly(account_infos[15].key(), false), // fee_program
+        ],
+        data,
+    };
+
+    invoke_signed(&ix, account_infos, &[seeds])?;
+    Ok(())
+}
 
 #[program]
 pub mod asdf_dat {
@@ -700,7 +815,9 @@ pub mod asdf_dat {
         // last_fee_update_timestamp: i64 = current timestamp
         new_data[122..130].copy_from_slice(&clock.unix_timestamp.to_le_bytes());
         // cycles_participated: u64 = total_buybacks (read from old data at offset 72)
-        let total_buybacks = u64::from_le_bytes(old_data[80..88].try_into().unwrap());
+        let total_buybacks = u64::from_le_bytes(
+            old_data[80..88].try_into().map_err(|_| ErrorCode::InvalidParameter)?
+        );
         new_data[130..138].copy_from_slice(&total_buybacks.to_le_bytes());
 
         msg!("TokenStats migrated successfully: pending_fees=0, timestamp={}, cycles_participated={}",
@@ -833,158 +950,68 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)
+    /// For secondary tokens, use execute_buy_secondary instead
     pub fn execute_buy(
         ctx: Context<ExecuteBuy>,
-        is_secondary_token: bool,
-        allocated_lamports: Option<u64>,  // NEW: If Some, use allocated mode (ecosystem orchestration)
+        allocated_lamports: Option<u64>,
+    ) -> Result<()> {
+        require!(ctx.accounts.dat_state.is_active && !ctx.accounts.dat_state.emergency_pause, ErrorCode::DATNotActive);
+
+        // Calculate buy amount (root token - no ATA reserve needed)
+        let buy_amount = match allocated_lamports {
+            Some(a) => a.saturating_sub(SAFETY_BUFFER),
+            None => ctx.accounts.dat_authority.lamports().saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER),
+        };
+        require!(buy_amount >= MINIMUM_BUY_AMOUNT, ErrorCode::InsufficientFees);
+
+        // Delegate to CPI helper
+        execute_buy_inner(ctx, buy_amount)
+    }
+
+    /// Execute buy for SECONDARY tokens (includes fee split to root treasury)
+    pub fn execute_buy_secondary(
+        mut ctx: Context<ExecuteBuySecondary>,
+        allocated_lamports: Option<u64>,
     ) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
-        let clock = Clock::get()?;
         require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
+        require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
 
-        ctx.accounts.pool_asdf_account.reload()?;
+        let bump = state.dat_authority_bump;
+        let fee_split_bps = state.fee_split_bps;
+        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
 
-        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
+        // Calculate available and split to root
+        let available = allocated_lamports.unwrap_or(
+            ctx.accounts.dat_authority.lamports().saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
+        );
+        require!(available >= MIN_FEES_FOR_SPLIT, ErrorCode::InsufficientFees);
 
-        // Calculate available balance (after rent) FIRST
-        // Add safety buffer to ensure account stays rent-exempt
-        const RENT_EXEMPT_MINIMUM: u64 = 890_880;
-        const SAFETY_BUFFER: u64 = 50_000; // Extra 0.00005 SOL buffer (minimal margin for safety)
-        const ATA_RENT_RESERVE: u64 = 2_100_000; // Reserve for ATA fee_recipient creation (~0.0021 SOL)
-        const MIN_FEES_FOR_SPLIT: u64 = 100_000; // Minimum 0.0001 SOL for devnet testing (mainnet: 5_500_000)
-        const MINIMUM_BUY_AMOUNT: u64 = 100_000; // Minimum buy amount: 0.0001 SOL
-
-        // SCALABILITY CONSTANTS - Used by external orchestrator for dynamic allocation
-        // MIN_ALLOCATION_ROOT = RENT + BUFFER + MIN_BUY = 890,880 + 50,000 + 100,000 = 1,040,880 lamports
-        // MIN_ALLOCATION_SECONDARY = RENT + BUFFER + ATA_RESERVE + MIN_BUY = 890,880 + 50,000 + 2,100,000 + 100,000 = 3,140,880 lamports
-        // Orchestrator must ensure each token receives at least its minimum allocation before executing cycle
-
-        // Use allocated amount if provided (ecosystem mode), otherwise calculate from balance
-        let available_lamports = match allocated_lamports {
-            Some(allocated) => allocated,  // Ecosystem orchestrator mode
-            None => {
-                let total_balance = ctx.accounts.dat_authority.lamports();
-                total_balance.saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
-            }
-        };
-
-        // For secondary tokens, split fees before buying
-        if is_secondary_token {
-            require!(state.root_token_mint.is_some(), ErrorCode::InvalidRootToken);
-
-            // Validate root_treasury PDA matches expected derivation from root_token_mint
-            validate_root_treasury_pda(&ctx.accounts.root_treasury, &state.root_token_mint.unwrap(), ctx.program_id)?;
-
-            // Validate minimum fees before attempting split (prevents InsufficientFundsForRent)
-            if available_lamports < MIN_FEES_FOR_SPLIT {
-                msg!("Insufficient fees for secondary token cycle: {} < {} lamports",
-                     available_lamports, MIN_FEES_FOR_SPLIT);
-                msg!("Required: ~0.0055 SOL minimum (covers rent + ATA creation + split)");
-                return err!(ErrorCode::InsufficientFees);
-            }
-
-            if let Some(root_treasury) = &ctx.accounts.root_treasury {
-                // Split the AVAILABLE balance, not the total
-                let sol_for_root = split_fees_to_root(
-                    &ctx.accounts.dat_authority,
-                    root_treasury,
-                    &ctx.accounts.system_program,
-                    available_lamports, // Use available, not total!
-                    state.fee_split_bps,
-                    seeds,
-                )?;
-
-                if sol_for_root > 0 {
-                    emit!(FeesRedirectedToRoot {
-                        from_token: ctx.accounts.asdf_mint.key(),
-                        to_root: state.root_token_mint.unwrap(),
-                        amount: sol_for_root,
-                        timestamp: clock.unix_timestamp
-                    });
-
-                    // Track sent amount in state for burn_and_update to record in stats
-                    state.last_sol_sent_to_root = sol_for_root;
-
-                    msg!("Secondary token: {} lamports sent to root treasury", sol_for_root);
-                }
+        // Execute split
+        if let Some(treasury) = &ctx.accounts.root_treasury {
+            let sol_for_root = split_fees_to_root(
+                &ctx.accounts.dat_authority,
+                treasury,
+                &ctx.accounts.system_program,
+                available,
+                fee_split_bps,
+                seeds,
+            )?;
+            if sol_for_root > 0 {
+                state.last_sol_sent_to_root = sol_for_root;
             }
         }
 
-        // Calculate buy_amount based on mode (orchestrated vs autonomous)
-        // CRITICAL FIX: In orchestrated mode, use allocation not total balance
-        let buy_amount = if let Some(allocated) = allocated_lamports {
-            // ORCHESTRATED MODE: calculate from allocation
-            if is_secondary_token {
-                // After split: remaining = allocated * fee_split_bps / 10000
-                ((allocated * state.fee_split_bps as u64) / 10000).saturating_sub(ATA_RENT_RESERVE)
-            } else {
-                allocated.saturating_sub(SAFETY_BUFFER)
-            }
-        } else {
-            // AUTONOMOUS MODE: use total balance
-            let bal = ctx.accounts.dat_authority.lamports();
-            let reserve = if is_secondary_token { RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE } else { RENT_EXEMPT_MINIMUM + SAFETY_BUFFER };
-            bal.saturating_sub(reserve)
+        // Calculate remaining buy amount after split
+        let buy_amount = match allocated_lamports {
+            Some(a) => ((a * fee_split_bps as u64) / 10000).saturating_sub(ATA_RENT_RESERVE),
+            None => ctx.accounts.dat_authority.lamports().saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE),
         };
+        require!(buy_amount >= MINIMUM_BUY_AMOUNT, ErrorCode::InsufficientFees);
 
-        // Verify we have enough for the buy operation (minimum 0.0001 SOL)
-        if buy_amount < MINIMUM_BUY_AMOUNT {
-            msg!("Buy amount too low: {} < {} lamports (minimum ~0.0001 SOL)", buy_amount, MINIMUM_BUY_AMOUNT);
-            return err!(ErrorCode::InsufficientFees);
-        }
-
-        // Get bonding curve account data for PumpFun formula
-        // IMPORTANT: Copy the data to avoid AccountBorrowFailed error
-        // We need to release the borrow before calling execute_buy_cpi
-        let pool_data_copy = {
-            let pool_data_ref = ctx.accounts.pool.try_borrow_data()?;
-            pool_data_ref.to_vec()
-        }; // Borrow is released here
-
-        // Calculate buy parameters for PumpFun: (max_sol_cost, desired_tokens)
-        let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(
-            buy_amount,
-            &pool_data_copy,
-            state.max_fees_per_cycle,
-            state.slippage_bps,
-        )?;
-
-        msg!("Max SOL cost: {} lamports ({} SOL)", max_sol_cost, max_sol_cost as f64 / 1e9);
-        msg!("Desired tokens: {}", desired_tokens);
-
-        // Use helper to reduce stack usage
-        execute_buy_cpi(
-            &ctx.accounts.pump_global_config,
-            &ctx.accounts.protocol_fee_recipient,
-            &ctx.accounts.asdf_mint,
-            &ctx.accounts.pool,
-            &ctx.accounts.pool_asdf_account,
-            &ctx.accounts.dat_asdf_account,
-            &ctx.accounts.dat_authority,
-            &ctx.accounts.system_program,
-            &ctx.accounts.token_program,
-            &ctx.accounts.creator_vault,
-            &ctx.accounts.pump_event_authority,
-            &ctx.accounts.pump_swap_program,
-            &ctx.accounts.global_volume_accumulator,
-            &ctx.accounts.user_volume_accumulator,
-            &ctx.accounts.fee_config,
-            &ctx.accounts.fee_program,
-            max_sol_cost,
-            desired_tokens,
-            seeds,
-        )?;
-
-        ctx.accounts.dat_asdf_account.reload()?;
-        let state = &mut ctx.accounts.dat_state;
-        state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
-        state.last_cycle_sol = max_sol_cost;
-
-        // NOTE: In allocated mode (ecosystem orchestration), the orchestrator should call
-        // finalize_allocated_cycle() separately to update token_stats after this instruction
-
-        msg!("Buyback complete: {} lamports ({} SOL) max cost, received {} tokens", max_sol_cost, max_sol_cost as f64 / 1e9, ctx.accounts.dat_asdf_account.amount);
-        Ok(())
+        // Execute buy CPI (delegated to reduce stack)
+        execute_buy_secondary_cpi(&mut ctx, buy_amount, bump)
     }
 
     // Finalize allocated cycle - Reset pending_fees and increment cycles_participated
@@ -1120,10 +1147,29 @@ pub mod asdf_dat {
         new_min_interval: Option<i64>,
     ) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
+
+        // Validate slippage: max 5% (500 bps)
+        if let Some(v) = new_slippage_bps {
+            require!(v <= 500, ErrorCode::InvalidParameter);
+            state.slippage_bps = v;
+        }
+
+        // Validate min_interval: must be positive
+        if let Some(v) = new_min_interval {
+            require!(v > 0, ErrorCode::InvalidParameter);
+            state.min_cycle_interval = v;
+        }
+
+        // Apply fee thresholds
         if let Some(v) = new_min_fees { state.min_fees_threshold = v; }
         if let Some(v) = new_max_fees { state.max_fees_per_cycle = v; }
-        if let Some(v) = new_slippage_bps { state.slippage_bps = v; }
-        if let Some(v) = new_min_interval { state.min_cycle_interval = v; }
+
+        // Validate min <= max after both are set
+        require!(
+            state.min_fees_threshold <= state.max_fees_per_cycle,
+            ErrorCode::InvalidParameter
+        );
+
         Ok(())
     }
 
@@ -1335,57 +1381,6 @@ pub mod asdf_dat {
 
 // HELPERS
 
-#[inline(never)]
-fn execute_collect_fees_cpi<'info>(
-    ctx: Context<CollectFees<'info>>,
-    seeds: &[&[u8]],
-) -> Result<()> {
-    // Call collect_creator_fee to transfer SOL from creator_vault to dat_authority
-    let ix = Instruction {
-        program_id: PUMP_PROGRAM,
-        accounts: vec![
-            AccountMeta::new(ctx.accounts.dat_authority.key(), false),
-            AccountMeta::new(ctx.accounts.creator_vault.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.pump_event_authority.key(), false),
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-        ],
-        data: PUMPFUN_COLLECT_FEE_DISCRIMINATOR.to_vec(),
-    };
-
-    invoke_signed(
-        &ix,
-        &[
-            ctx.accounts.dat_authority.to_account_info(),
-            ctx.accounts.creator_vault.to_account_info(),
-            ctx.accounts.system_program.to_account_info(),
-            ctx.accounts.pump_event_authority.to_account_info(),
-            ctx.accounts.pump_swap_program.to_account_info(), // PUMP_PROGRAM
-        ],
-        &[seeds],
-    )?;
-
-    // Keep SOL as native lamports in DAT Authority (no wrapping to WSOL)
-    // This allows execute_buy to use the native SOL directly via CPI
-    let current_balance = ctx.accounts.dat_authority.lamports();
-    msg!("DAT Authority balance after collect: {} SOL", current_balance as f64 / 1e9);
-
-    Ok(())
-}
-
-fn validate_pool_creator<'info>(pool: &AccountInfo<'info>, dat_authority: &Pubkey) -> Result<()> {
-    let data = pool.try_borrow_data()?;
-    require!(data.len() >= 81, ErrorCode::InvalidPool);
-
-    let coin_creator_bytes: [u8; 32] = data[49..81]
-        .try_into()
-        .map_err(|_| ErrorCode::InvalidPool)?;
-    let coin_creator = Pubkey::new_from_array(coin_creator_bytes);
-
-    require!(coin_creator == *dat_authority, ErrorCode::NotCoinCreator);
-    Ok(())
-}
-
 /// Calculate tokens out using PumpFun's exact formula with virtual reserves
 /// Formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
 pub fn calculate_tokens_out_pumpfun(
@@ -1495,7 +1490,7 @@ pub fn apply_slippage(amount: u64, bps: u16) -> u64 {
     msg!("apply_slippage: amount={}, bps={}", amount, bps);
     let amt = amount as u128;
     msg!("apply_slippage: amt={}", amt);
-    let multiplier = (10000 - bps as u128);
+    let multiplier = 10000 - bps as u128;
     msg!("apply_slippage: multiplier={}", multiplier);
     let product = amt.saturating_mul(multiplier);
     msg!("apply_slippage: product={}", product);
@@ -1556,6 +1551,7 @@ pub struct SetRootToken<'info> {
         bump = root_token_stats.bump
     )]
     pub root_token_stats: Account<'info, TokenStats>,
+    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub admin: Signer<'info>,
 }
 
@@ -1586,6 +1582,7 @@ pub struct CollectFees<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// ExecuteBuy - Simplified to reduce stack usage (removed unused accounts)
 #[derive(Accounts)]
 pub struct ExecuteBuy<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
@@ -1595,22 +1592,19 @@ pub struct ExecuteBuy<'info> {
     pub dat_authority: AccountInfo<'info>,
     #[account(mut)]
     pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool
+    /// CHECK: Pool (bonding curve)
     #[account(mut)]
     pub pool: AccountInfo<'info>,
+    /// CHECK: Token mint (validation done by PumpFun)
     #[account(mut)]
-    pub asdf_mint: InterfaceAccount<'info, Mint>,
+    pub asdf_mint: AccountInfo<'info>,
     #[account(mut)]
     pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut)]
-    pub pool_wsol_account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Config
     pub pump_global_config: AccountInfo<'info>,
     /// CHECK: Recipient
     #[account(mut)]
     pub protocol_fee_recipient: AccountInfo<'info>,
-    #[account(mut)]
-    pub protocol_fee_recipient_ata: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Creator vault (PDA from token creator)
     #[account(mut)]
     pub creator_vault: AccountInfo<'info>,
@@ -1627,16 +1621,55 @@ pub struct ExecuteBuy<'info> {
     pub fee_config: AccountInfo<'info>,
     /// CHECK: Fee program
     pub fee_program: AccountInfo<'info>,
-    /// CHECK: Root treasury PDA (optional - only for secondary tokens)
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+// REMOVED: ExecuteBuyAllocated - Merged into ExecuteBuy with allocated_lamports parameter
+
+#[derive(Accounts)]
+pub struct ExecuteBuySecondary<'info> {
+    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    /// CHECK: PDA (holds native SOL for buying)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+    #[account(mut)]
+    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: Pool
+    #[account(mut)]
+    pub pool: AccountInfo<'info>,
+    #[account(mut)]
+    pub asdf_mint: InterfaceAccount<'info, Mint>,
+    #[account(mut)]
+    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: Config
+    pub pump_global_config: AccountInfo<'info>,
+    /// CHECK: Recipient
+    #[account(mut)]
+    pub protocol_fee_recipient: AccountInfo<'info>,
+    /// CHECK: Creator vault (PDA from token creator)
+    #[account(mut)]
+    pub creator_vault: AccountInfo<'info>,
+    /// CHECK: Event auth
+    pub pump_event_authority: AccountInfo<'info>,
+    /// CHECK: Pump program
+    pub pump_swap_program: AccountInfo<'info>,
+    /// CHECK: Global volume accumulator (PDA)
+    pub global_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: User volume accumulator (PDA)
+    #[account(mut)]
+    pub user_volume_accumulator: AccountInfo<'info>,
+    /// CHECK: Fee config (PDA)
+    pub fee_config: AccountInfo<'info>,
+    /// CHECK: Fee program
+    pub fee_program: AccountInfo<'info>,
+    /// CHECK: Root treasury PDA (REQUIRED for secondary tokens)
     #[account(mut)]
     pub root_treasury: Option<AccountInfo<'info>>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
-    /// CHECK: Rent sysvar
-    pub rent: Sysvar<'info, Rent>,
 }
-
-// REMOVED: ExecuteBuyAllocated - Merged into ExecuteBuy with allocated_lamports parameter
 
 #[derive(Accounts)]
 pub struct FinalizeAllocatedCycle<'info> {

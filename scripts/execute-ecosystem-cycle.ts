@@ -776,11 +776,6 @@ async function executeSecondaryWithAllocation(
       throw new Error('Root token not configured in DAT state');
     }
 
-    const [rootTreasury] = PublicKey.findProgramAddressSync(
-      [ROOT_TREASURY_SEED, rootMint.toBuffer()],
-      program.programId
-    );
-
     // Derive other required accounts
     // Use the token's creator (DAT Authority), NOT the admin wallet
     const creator = allocation.token.creator;
@@ -811,32 +806,11 @@ async function executeSecondaryWithAllocation(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    const wsolMint = new PublicKey('So11111111111111111111111111111111111111112');
-    const [poolWsolAccount] = PublicKey.findProgramAddressSync(
-      [
-        allocation.token.bondingCurve.toBuffer(),
-        TOKEN_PROGRAM_ID.toBuffer(),
-        wsolMint.toBuffer(),
-      ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-    );
-
     // Protocol fee recipient (different for Mayhem vs SPL)
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 
     const protocolFeeRecipient = allocation.token.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
-    const ataMint = allocation.token.isToken2022 ? wsolMint : allocation.token.mint;
-    const ataTokenProgram = allocation.token.isToken2022 ? TOKEN_PROGRAM_ID : tokenProgram;
-
-    const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
-      [
-        protocolFeeRecipient.toBuffer(),
-        ataTokenProgram.toBuffer(),
-        ataMint.toBuffer(),
-      ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-    );
 
     // PumpFun volume accumulator accounts
     const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
@@ -866,10 +840,8 @@ async function executeSecondaryWithAllocation(
         pool: allocation.token.bondingCurve,
         asdfMint: allocation.token.mint,
         poolAsdfAccount,
-        poolWsolAccount,
         pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
         protocolFeeRecipient,
-        protocolFeeRecipientAta,
         creatorVault,
         pumpEventAuthority: PUMP_EVENT_AUTHORITY,
         pumpSwapProgram: PUMP_PROGRAM,
@@ -877,10 +849,8 @@ async function executeSecondaryWithAllocation(
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury,
         tokenProgram,
         systemProgram: SystemProgram.programId,
-        rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
       })
       .signers([adminKeypair])
       .rpc();
@@ -1046,29 +1016,10 @@ async function executeRootCycle(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    const wsolMint = new PublicKey('So11111111111111111111111111111111111111112');
-    const [poolWsolAccount] = PublicKey.findProgramAddressSync(
-      [
-        rootToken.bondingCurve.toBuffer(),
-        TOKEN_PROGRAM_ID.toBuffer(),
-        wsolMint.toBuffer(),
-      ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-    );
-
     // Protocol fee recipient (different for Mayhem vs SPL)
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
     const protocolFeeRecipient = rootToken.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
-
-    const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
-      [
-        protocolFeeRecipient.toBuffer(),
-        TOKEN_PROGRAM_ID.toBuffer(),
-        WSOL_MINT.toBuffer(),
-      ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
-    );
 
     const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
       [Buffer.from('global_volume_accumulator')],
@@ -1123,10 +1074,8 @@ async function executeRootCycle(
         pool: rootToken.bondingCurve,
         asdfMint: rootToken.mint,
         poolAsdfAccount,
-        poolWsolAccount,
         pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
         protocolFeeRecipient,
-        protocolFeeRecipientAta,
         creatorVault,
         pumpEventAuthority: PUMP_EVENT_AUTHORITY,
         pumpSwapProgram: PUMP_PROGRAM,
@@ -1134,10 +1083,8 @@ async function executeRootCycle(
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury,
         tokenProgram,
         systemProgram: SystemProgram.programId,
-        rent: new PublicKey('SysvarRent111111111111111111111111111111111'),
       })
       .signers([adminKeypair])
       .rpc();
