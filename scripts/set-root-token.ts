@@ -12,6 +12,7 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -38,18 +39,25 @@ function loadIdl(): any {
 }
 
 async function main() {
-  // Get root token file from command line or default
-  const rootTokenFile = process.argv[2] || "devnet-token-spl.json";
+  // Parse arguments
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  // Get root token file from non-flag args or default
+  const rootTokenFile = args.find(a => !a.startsWith('--')) || networkConfig.tokens[0];
 
   console.clear();
   console.log(`\n${"=".repeat(70)}`);
   console.log(`${colors.bright}${colors.magenta}🏆 SET ROOT TOKEN${colors.reset}`);
   console.log(`${"=".repeat(70)}\n`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("👤", `Admin: ${admin.publicKey.toString()}`, colors.cyan);
@@ -57,7 +65,7 @@ async function main() {
   // Load token info
   if (!fs.existsSync(rootTokenFile)) {
     log("❌", `Token file not found: ${rootTokenFile}`, colors.red);
-    log("💡", "Usage: npx ts-node scripts/set-root-token.ts <token-file.json>", colors.yellow);
+    log("💡", "Usage: npx ts-node scripts/set-root-token.ts <token-file.json> --network mainnet|devnet", colors.yellow);
     process.exit(1);
   }
 
@@ -131,7 +139,8 @@ async function main() {
       .rpc();
 
     log("✅", "ROOT TOKEN DÉFINI AVEC SUCCÈS!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
 
     // Fetch updated state
     const updatedState = await (program.account as any).datState.fetch(datState);

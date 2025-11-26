@@ -11,7 +11,7 @@ use anchor_spl::{
 #[cfg(test)]
 mod tests;
 
-declare_id!("ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5");
+declare_id!("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([140, 47, 4, 227, 97, 106, 121, 165, 182, 1, 57, 199, 219, 179, 84, 96, 133, 60, 197, 80, 154, 74, 254, 48, 216, 94, 192, 158, 146, 118, 39, 244]); // ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ (mainnet)
 pub const WSOL_MINT: Pubkey = Pubkey::new_from_array([6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]);
@@ -48,6 +48,18 @@ pub const PUMPFUN_COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28
 // ══════════════════════════════════════════════════════════════════════════════
 // PumpSwap AMM buy instruction discriminator (same as bonding curve buy)
 pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
+
+// PumpSwap collect_coin_creator_fee instruction discriminator
+pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42, 181, 139, 43, 66];
+
+// PumpSwap Creator Vault seed
+pub const PUMPSWAP_CREATOR_VAULT_SEED: &[u8] = b"creator_vault";
+
+// PumpSwap AMM Program ID - pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
+pub const PUMPSWAP_PROGRAM: Pubkey = Pubkey::new_from_array([
+    12, 1, 146, 49, 102, 101, 134, 40, 128, 231, 192, 18, 180, 117, 11, 141,
+    69, 120, 62, 88, 103, 145, 226, 163, 79, 211, 126, 135, 231, 111, 228, 196
+]);
 
 // PumpSwap Global Config PDA - 4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf
 pub const PUMPSWAP_GLOBAL_CONFIG: Pubkey = Pubkey::new_from_array([
@@ -172,6 +184,50 @@ fn collect_creator_fee_cpi<'info>(
         creator_vault.to_account_info(),
         system_program.to_account_info(),
         pump_event_authority.to_account_info(),
+        pump_swap_program.to_account_info(),
+    ]);
+
+    invoke_signed(&*instruction, &*account_infos, &[seeds])?;
+    Ok(())
+}
+
+/// Helper function to collect creator fees from PumpSwap AMM via CPI
+/// This is used for tokens that have migrated from bonding curve to AMM
+/// The DAT authority PDA must be set as the coin_creator in PumpSwap
+#[inline(never)]
+fn collect_amm_creator_fee_cpi<'info>(
+    quote_mint: &AccountInfo<'info>,
+    quote_token_program: &AccountInfo<'info>,
+    dat_authority: &AccountInfo<'info>,  // coin_creator (signer via invoke_signed)
+    coin_creator_vault_authority: &AccountInfo<'info>,
+    coin_creator_vault_ata: &AccountInfo<'info>,
+    destination_token_account: &AccountInfo<'info>,
+    pump_swap_program: &AccountInfo<'info>,
+    seeds: &[&[u8]],
+) -> Result<()> {
+    // Build the collect_coin_creator_fee instruction
+    // Account order: quote_mint, quote_token_program, coin_creator (signer),
+    //                coin_creator_vault_authority, coin_creator_vault_ata, coin_creator_token_account
+    let instruction = Box::new(Instruction {
+        program_id: PUMPSWAP_PROGRAM,
+        accounts: vec![
+            AccountMeta::new_readonly(*quote_mint.key, false),
+            AccountMeta::new_readonly(*quote_token_program.key, false),
+            AccountMeta::new_readonly(*dat_authority.key, true),  // coin_creator = signer
+            AccountMeta::new_readonly(*coin_creator_vault_authority.key, false),
+            AccountMeta::new(*coin_creator_vault_ata.key, false),
+            AccountMeta::new(*destination_token_account.key, false),
+        ],
+        data: PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR.to_vec(),
+    });
+
+    let account_infos = Box::new([
+        quote_mint.to_account_info(),
+        quote_token_program.to_account_info(),
+        dat_authority.to_account_info(),
+        coin_creator_vault_authority.to_account_info(),
+        coin_creator_vault_ata.to_account_info(),
+        destination_token_account.to_account_info(),
         pump_swap_program.to_account_info(),
     ]);
 
@@ -1064,6 +1120,129 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// Collect fees from PumpSwap AMM creator vault
+    /// Used for tokens that have migrated from bonding curve to AMM
+    /// Requires: DAT authority PDA must be set as coin_creator in PumpSwap
+    /// IMPORTANT: This collects WSOL (SPL Token), not native SOL
+    pub fn collect_fees_amm(ctx: Context<CollectFeesAMM>) -> Result<()> {
+        let state = &ctx.accounts.dat_state;
+        require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
+
+        let bump = state.dat_authority_bump;
+        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+        // Track WSOL balance before collection
+        let wsol_before = ctx.accounts.dat_wsol_account.amount;
+
+        // Call PumpSwap's collect_coin_creator_fee via CPI
+        // DAT authority PDA signs as the coin_creator
+        collect_amm_creator_fee_cpi(
+            &ctx.accounts.wsol_mint.to_account_info(),
+            &ctx.accounts.token_program.to_account_info(),
+            &ctx.accounts.dat_authority.to_account_info(),
+            &ctx.accounts.creator_vault_authority.to_account_info(),
+            &ctx.accounts.creator_vault_ata.to_account_info(),
+            &ctx.accounts.dat_wsol_account.to_account_info(),
+            &ctx.accounts.pump_swap_program.to_account_info(),
+            seeds,
+        )?;
+
+        // Reload account to get new balance
+        ctx.accounts.dat_wsol_account.reload()?;
+        let wsol_after = ctx.accounts.dat_wsol_account.amount;
+        let wsol_collected = wsol_after.saturating_sub(wsol_before);
+
+        // Update token stats
+        ctx.accounts.token_stats.total_sol_collected =
+            ctx.accounts.token_stats.total_sol_collected.saturating_add(wsol_collected);
+
+        msg!("AMM creator fees collected: {} WSOL", wsol_collected);
+        emit!(AmmFeesCollected {
+            mint: ctx.accounts.token_stats.mint,
+            wsol_amount: wsol_collected,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
+    /// Unwrap WSOL to native SOL in DAT authority account
+    /// Call this after collect_fees_amm to convert WSOL to SOL for buyback
+    pub fn unwrap_wsol(ctx: Context<UnwrapWsol>) -> Result<()> {
+        let state = &ctx.accounts.dat_state;
+        require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
+
+        let bump = state.dat_authority_bump;
+        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+        // Get WSOL balance to unwrap
+        let wsol_amount = ctx.accounts.dat_wsol_account.amount;
+        require!(wsol_amount > 0, ErrorCode::InsufficientFees);
+
+        // Close the WSOL token account (transfers lamports to dat_authority)
+        let cpi_accounts = anchor_spl::token::CloseAccount {
+            account: ctx.accounts.dat_wsol_account.to_account_info(),
+            destination: ctx.accounts.dat_authority.to_account_info(),
+            authority: ctx.accounts.dat_authority.to_account_info(),
+        };
+        let signer_seeds: &[&[&[u8]]] = &[seeds];
+        let cpi_ctx = CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            cpi_accounts,
+            signer_seeds,
+        );
+        anchor_spl::token::close_account(cpi_ctx)?;
+
+        msg!("WSOL unwrapped: {} lamports now in DAT authority", wsol_amount);
+        Ok(())
+    }
+
+    /// Wrap native SOL to WSOL for AMM buyback
+    /// Call this before execute_buy_amm when root token is on PumpSwap AMM
+    /// The dat_wsol_account must already exist (created by caller)
+    pub fn wrap_wsol(ctx: Context<WrapWsol>, amount: u64) -> Result<()> {
+        let state = &ctx.accounts.dat_state;
+        require!(state.is_active && !state.emergency_pause, ErrorCode::DATNotActive);
+        require!(amount > 0, ErrorCode::InsufficientFees);
+
+        let bump = state.dat_authority_bump;
+        let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+        // Verify sufficient balance in dat_authority
+        let available = ctx.accounts.dat_authority.lamports()
+            .saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER);
+        require!(available >= amount, ErrorCode::InsufficientFees);
+
+        // Transfer native SOL from dat_authority to dat_wsol_account
+        let transfer_ix = anchor_lang::solana_program::system_instruction::transfer(
+            &ctx.accounts.dat_authority.key(),
+            &ctx.accounts.dat_wsol_account.key(),
+            amount,
+        );
+        invoke_signed(
+            &transfer_ix,
+            &[
+                ctx.accounts.dat_authority.to_account_info(),
+                ctx.accounts.dat_wsol_account.to_account_info(),
+                ctx.accounts.system_program.to_account_info(),
+            ],
+            &[seeds],
+        )?;
+
+        // Sync native - updates the WSOL token balance to match lamports
+        let sync_accounts = token::SyncNative {
+            account: ctx.accounts.dat_wsol_account.to_account_info(),
+        };
+        let cpi_ctx = CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            sync_accounts,
+        );
+        token::sync_native(cpi_ctx)?;
+
+        msg!("WSOL wrapped: {} lamports converted to WSOL", amount);
+        Ok(())
+    }
+
     /// Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)
     /// For secondary tokens, use execute_buy_secondary instead
     pub fn execute_buy(
@@ -1740,6 +1919,75 @@ pub struct CollectFees<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// CollectFeesAMM - Collect creator fees from PumpSwap AMM
+/// Used for tokens that have migrated from bonding curve to AMM
+#[derive(Accounts)]
+pub struct CollectFeesAMM<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, token_mint.key().as_ref()],
+        bump = token_stats.bump
+    )]
+    pub token_stats: Account<'info, TokenStats>,
+    pub token_mint: InterfaceAccount<'info, Mint>,
+    /// CHECK: DAT authority PDA - must be registered as coin_creator in PumpSwap
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+    /// WSOL mint (So11111111111111111111111111111111111111112)
+    pub wsol_mint: InterfaceAccount<'info, Mint>,
+    /// DAT's WSOL token account (destination for collected fees)
+    #[account(mut)]
+    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
+    /// CHECK: PumpSwap creator vault authority PDA - seeds: ["creator_vault", dat_authority]
+    pub creator_vault_authority: AccountInfo<'info>,
+    /// CHECK: Creator vault ATA (source of WSOL fees)
+    #[account(mut)]
+    pub creator_vault_ata: AccountInfo<'info>,
+    /// CHECK: PumpSwap program
+    pub pump_swap_program: AccountInfo<'info>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+/// UnwrapWsol - Convert WSOL back to native SOL
+/// Call after collect_fees_amm to enable buyback with native SOL
+#[derive(Accounts)]
+pub struct UnwrapWsol<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    /// CHECK: DAT authority PDA (receives unwrapped SOL)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+    /// DAT's WSOL token account (will be closed)
+    #[account(mut)]
+    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
+    pub token_program: Interface<'info, TokenInterface>,
+}
+
+/// WrapWsol - Convert native SOL to WSOL for AMM buyback
+/// Call before execute_buy_amm when root token is on PumpSwap AMM
+#[derive(Accounts)]
+pub struct WrapWsol<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+    /// CHECK: DAT authority PDA (source of native SOL)
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+    /// DAT's WSOL token account (destination for wrapped SOL)
+    /// Must be owned by dat_authority and have WSOL mint
+    #[account(
+        mut,
+        token::mint = wsol_mint,
+        token::authority = dat_authority
+    )]
+    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
+    /// WSOL mint (So11111111111111111111111111111111111111112)
+    pub wsol_mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Program<'info, token::Token>,
+    pub system_program: Program<'info, System>,
+}
+
 /// ExecuteBuy - Simplified to reduce stack usage (removed unused accounts)
 #[derive(Accounts)]
 pub struct ExecuteBuy<'info> {
@@ -2376,6 +2624,13 @@ pub struct ValidatedFeesRegistered {
 pub struct BuyExecuted {
     pub tokens_bought: u64,
     pub sol_spent: u64,
+    pub timestamp: i64,
+}
+
+#[event]
+pub struct AmmFeesCollected {
+    pub mint: Pubkey,
+    pub wsol_amount: u64,
     pub timestamp: i64,
 }
 

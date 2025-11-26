@@ -18,7 +18,8 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import fs from 'fs';
 import path from 'path';
-import { ValidatorDaemon, TokenConfig, createValidatorDaemon } from '../lib/validator-daemon';
+import { ValidatorDaemon, TokenConfig } from '../lib/validator-daemon';
+import { PoolType } from '../lib/amm-utils';
 import { syncValidatorIfNeeded } from './sync-validator-slots';
 import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
 
@@ -88,13 +89,17 @@ async function main() {
     if (fs.existsSync(filePath)) {
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        const poolType: PoolType = data.poolType || 'bonding_curve';
+
         tokens.push({
           mint: new PublicKey(data.mint),
-          bondingCurve: new PublicKey(data.bondingCurve),
           creator: new PublicKey(data.creator),
           symbol: data.symbol || data.name || 'UNKNOWN',
+          poolType,
+          bondingCurve: data.bondingCurve ? new PublicKey(data.bondingCurve) : undefined,
+          pool: data.pool ? new PublicKey(data.pool) : undefined,
         });
-        console.log(`✅ Loaded ${data.symbol}: ${data.mint}`);
+        console.log(`✅ Loaded ${data.symbol} (${poolType}): ${data.mint}`);
       } catch (error) {
         console.error(`❌ Failed to load ${file}:`, error);
       }

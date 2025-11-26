@@ -6,6 +6,7 @@ import {
 import { AnchorProvider, Program, Wallet, Idl, BN } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -21,10 +22,16 @@ function loadIdl(): Idl {
 }
 
 async function main() {
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   const [datState] = PublicKey.findProgramAddressSync(
@@ -57,7 +64,8 @@ async function main() {
     .rpc();
 
   console.log("✅ Configuration mise à jour!");
-  console.log(`🔗 TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`);
+  const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+  console.log(`🔗 TX: https://explorer.solana.com/tx/${tx}${cluster}`);
   console.log("\n📊 Nouveau min_fees_threshold: 0.00001 SOL (10,000 lamports)");
 }
 

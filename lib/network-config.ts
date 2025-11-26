@@ -12,7 +12,11 @@ export interface NetworkConfig {
   wallet: string;
   tokens: string[];
   name: string;
+  programId: string;
 }
+
+// Same program ID deployed on both networks
+const PROGRAM_ID = 'ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ';
 
 export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
   devnet: {
@@ -24,12 +28,14 @@ export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
       'devnet-token-mayhem.json',
     ],
     name: 'Devnet',
+    programId: PROGRAM_ID,
   },
   mainnet: {
     rpcUrl: 'https://api.mainnet-beta.solana.com',
     wallet: 'mainnet-wallet.json',
     tokens: ['mainnet-token-root.json'],
     name: 'Mainnet',
+    programId: PROGRAM_ID,
   },
 };
 
@@ -43,12 +49,20 @@ export function parseNetworkArg(
   args: string[],
   defaultNetwork: NetworkType = 'devnet'
 ): NetworkType {
-  const networkArg = args.find(
-    (a) => a.startsWith('--network=') || a.startsWith('--network ')
-  );
+  // Check for --network=value format
+  const networkEqArg = args.find((a) => a.startsWith('--network='));
+  if (networkEqArg) {
+    const network = networkEqArg.split('=')[1];
+    if (network === 'mainnet' || network === 'devnet') {
+      return network;
+    }
+    console.warn(`Invalid network "${network}", using ${defaultNetwork}`);
+  }
 
-  if (networkArg) {
-    const network = networkArg.split('=')[1] || args[args.indexOf('--network') + 1];
+  // Check for --network value format (two separate args)
+  const networkIdx = args.indexOf('--network');
+  if (networkIdx !== -1 && args[networkIdx + 1]) {
+    const network = args[networkIdx + 1];
     if (network === 'mainnet' || network === 'devnet') {
       return network;
     }

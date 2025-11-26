@@ -1,23 +1,24 @@
 /**
  * Check Creator Vault Status
  *
- * Verifies if the creator vault has been created and checks its balance.
- * Uses the creator from the token info file.
+ * Verifies the creator vault status for both Bonding Curve and AMM tokens.
+ * - For Bonding Curve: Native SOL in creator-vault PDA
+ * - For AMM: WSOL in creator_vault ATA
  */
 
 import {
   Connection,
   PublicKey,
 } from "@solana/web3.js";
-import {
-  getAssociatedTokenAddress,
-  getAccount,
-} from "@solana/spl-token";
-import { PumpSdk, OnlinePumpSdk } from "@pump-fun/pump-sdk";
+import { getAccount } from "@solana/spl-token";
 import fs from "fs";
-
-const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
-const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
+import {
+  PoolType,
+  getBcCreatorVault,
+  getAmmCreatorVaultAta,
+  deriveAmmCreatorVaultAuthority,
+} from "../lib/amm-utils";
 
 const colors = {
   reset: "\x1b[0m",
@@ -32,93 +33,138 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.log("\n" + "=".repeat(60));
   console.log("🔍 CHECK CREATOR VAULT STATUS");
   console.log("=".repeat(60) + "\n");
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  printNetworkBanner(networkConfig);
 
-  // Load token info
-  const tokenInfoPath = "devnet-token-info.json";
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
+
+  // Load token info - use token file from args or default from network config
+  const tokenInfoPath = args.find(a => !a.startsWith('--')) || networkConfig.tokens[0];
   if (!fs.existsSync(tokenInfoPath)) {
-    log("❌", "Token info not found", colors.red);
+    log("❌", `Token info not found: ${tokenInfoPath}`, colors.red);
     process.exit(1);
   }
 
   const tokenInfo = JSON.parse(fs.readFileSync(tokenInfoPath, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
-  const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
+  const creator = new PublicKey(tokenInfo.creator);
+  const poolType: PoolType = tokenInfo.poolType || 'bonding_curve';
 
-  log("🪙", `Token Mint: ${tokenMint.toString()}`, colors.cyan);
-
-  // Fetch bonding curve to get creator
-  const sdk = new PumpSdk();
-  const onlineSdk = new OnlinePumpSdk(connection);
-
-  const bondingCurveData = await onlineSdk.fetchBondingCurve(tokenMint);
-  const creator = bondingCurveData.creator;
-
+  log("🪙", `Token: ${tokenInfo.symbol || tokenInfo.name || 'Unknown'}`, colors.cyan);
+  log("🪙", `Mint: ${tokenMint.toString()}`, colors.cyan);
   log("👤", `Creator: ${creator.toString()}`, colors.cyan);
+  log("🏊", `Pool Type: ${poolType}`, colors.cyan);
 
-  // Derive vault authority PDA (uses PUMP_PROGRAM, not pAMMBay)
-  const [vaultAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from("creator-vault"), creator.toBuffer()],
-    PUMP_PROGRAM
-  );
+  console.log("\n" + "-".repeat(60) + "\n");
 
-  log("🔑", `Vault Authority: ${vaultAuthority.toString()}`, colors.cyan);
+  if (poolType === 'bonding_curve') {
+    // Bonding Curve: Native SOL vault
+    await checkBondingCurveVault(connection, creator, tokenInfo);
+  } else {
+    // PumpSwap AMM: WSOL vault
+    await checkAmmVault(connection, creator, tokenInfo);
+  }
+}
 
-  // Get creator vault ATA (WSOL)
-  const creatorVault = await getAssociatedTokenAddress(
-    WSOL_MINT,
-    vaultAuthority,
-    true
-  );
+async function checkBondingCurveVault(
+  connection: Connection,
+  creator: PublicKey,
+  tokenInfo: any
+) {
+  log("📦", "Checking BONDING CURVE vault (Native SOL)...", colors.cyan);
 
-  log("🏦", `Creator Vault: ${creatorVault.toString()}`, colors.cyan);
+  // Derive vault PDA
+  const vaultAddress = getBcCreatorVault(creator);
+  log("🔑", `Vault Address: ${vaultAddress.toString()}`, colors.cyan);
 
   console.log("\n" + "=".repeat(60));
-  console.log("📊 VAULT STATUS");
+  console.log("📊 VAULT STATUS (Native SOL)");
   console.log("=".repeat(60) + "\n");
 
   try {
-    const vaultAccount = await getAccount(connection, creatorVault);
+    const balance = await connection.getBalance(vaultAddress);
 
-    log("✅", "Creator Vault EXISTS!", colors.green);
-    log("💰", `Balance: ${(Number(vaultAccount.amount) / 1e9).toFixed(6)} SOL`, colors.green);
-
-    if (Number(vaultAccount.amount) > 0) {
-      log("🎉", "Vault has fees! Ready to test collect_fees", colors.green);
+    if (balance > 0) {
+      log("✅", "Creator Vault has fees!", colors.green);
+      log("💰", `Balance: ${(balance / 1e9).toFixed(6)} SOL`, colors.green);
+      log("🎉", "Ready to collect fees via collect_fees instruction", colors.green);
     } else {
-      log("⚠️", "Vault exists but has no fees yet", colors.yellow);
+      log("⚠️", "Creator Vault exists but has no fees", colors.yellow);
+      log("💰", `Balance: 0 SOL`, colors.yellow);
+      log("📝", "Make trades to accumulate fees", colors.yellow);
     }
-
-    console.log("\n" + "=".repeat(60));
-    console.log("✅ NEXT STEPS");
-    console.log("=".repeat(60) + "\n");
-
-    log("1️⃣", "The creator vault is created ✓", colors.cyan);
-
-    if (Number(vaultAccount.amount) > 0) {
-      log("2️⃣", "Ready to test DAT collect_fees:", colors.cyan);
-      log("📝", "npx ts-node tests/scripts/test-dat-cycle.ts", colors.cyan);
-    } else {
-      log("2️⃣", "Make more trades to accumulate fees:", colors.cyan);
-      log("📝", "npx ts-node scripts/buy-token-sdk.ts", colors.cyan);
-    }
-
-  } catch (error) {
-    log("❌", "Creator Vault DOES NOT EXIST", colors.red);
-    log("📝", "The vault is created automatically on the first trade.", colors.yellow);
-
-    console.log("\n" + "=".repeat(60));
-    console.log("⏭️ NEXT STEPS");
-    console.log("=".repeat(60) + "\n");
-
-    log("1️⃣", "Make a trade to create the vault:", colors.cyan);
-    log("📝", "npx ts-node scripts/buy-token-sdk.ts", colors.cyan);
-
+  } catch (error: any) {
+    log("❌", `Error checking vault: ${error.message}`, colors.red);
     process.exit(1);
+  }
+
+  showNextSteps('bonding_curve', tokenInfo);
+}
+
+async function checkAmmVault(
+  connection: Connection,
+  creator: PublicKey,
+  tokenInfo: any
+) {
+  log("📦", "Checking PUMPSWAP AMM vault (WSOL)...", colors.cyan);
+
+  // Derive vault authority PDA
+  const [vaultAuthority] = deriveAmmCreatorVaultAuthority(creator);
+  log("🔑", `Vault Authority: ${vaultAuthority.toString()}`, colors.cyan);
+
+  // Get the WSOL ATA for this authority
+  const vaultAta = getAmmCreatorVaultAta(creator);
+  log("🏦", `Vault ATA (WSOL): ${vaultAta.toString()}`, colors.cyan);
+
+  console.log("\n" + "=".repeat(60));
+  console.log("📊 VAULT STATUS (WSOL Token Account)");
+  console.log("=".repeat(60) + "\n");
+
+  try {
+    const account = await getAccount(connection, vaultAta);
+
+    if (Number(account.amount) > 0) {
+      log("✅", "Creator Vault has fees!", colors.green);
+      log("💰", `Balance: ${(Number(account.amount) / 1e9).toFixed(6)} WSOL`, colors.green);
+      log("🎉", "Ready to collect fees via collect_fees_amm instruction", colors.green);
+    } else {
+      log("⚠️", "Creator Vault exists but has no fees", colors.yellow);
+      log("💰", `Balance: 0 WSOL`, colors.yellow);
+      log("📝", "Make trades on PumpSwap AMM to accumulate fees", colors.yellow);
+    }
+  } catch (error: any) {
+    if (error.name === 'TokenAccountNotFoundError') {
+      log("⚠️", "Creator Vault WSOL ATA not yet created", colors.yellow);
+      log("📝", "The ATA will be created when first fees are deposited", colors.yellow);
+    } else {
+      log("❌", `Error checking vault: ${error.message}`, colors.red);
+    }
+  }
+
+  showNextSteps('pumpswap_amm', tokenInfo);
+}
+
+function showNextSteps(poolType: PoolType, tokenInfo: any) {
+  console.log("\n" + "=".repeat(60));
+  console.log("📋 NEXT STEPS");
+  console.log("=".repeat(60) + "\n");
+
+  if (poolType === 'bonding_curve') {
+    log("1️⃣", "To generate fees: Make buy/sell trades on PumpFun", colors.cyan);
+    log("2️⃣", "To collect fees: Use collect_fees instruction", colors.cyan);
+    log("3️⃣", "To run cycle: npx ts-node scripts/execute-cycle-root.ts", colors.cyan);
+  } else {
+    log("1️⃣", "To generate fees: Make buy/sell trades on PumpSwap AMM", colors.cyan);
+    log("2️⃣", "To collect fees: Use collect_fees_amm instruction", colors.cyan);
+    log("3️⃣", "After collection: Use unwrap_wsol to convert to native SOL", colors.cyan);
+    log("4️⃣", "To run cycle: npx ts-node scripts/execute-cycle-root.ts", colors.cyan);
   }
 }
 

@@ -1,24 +1,28 @@
 /**
- * PumpFun Fee Monitor
+ * PumpFun Fee Monitor v2
  *
- * Monitors PumpFun transactions in real-time to capture exact fee amounts
+ * Monitors PumpFun transactions to capture exact fee amounts per token
  * and update on-chain TokenStats.pending_fees for accurate per-token attribution.
  *
- * Architecture:
- * - Subscribes to bonding curve account changes
- * - Parses transaction logs to extract creator vault deposits
+ * Architecture v2 - Balance Polling:
+ * - Polls each bonding curve/pool for new transactions
+ * - Extracts fees from preBalances/postBalances (BC) or preTokenBalances/postTokenBalances (AMM)
  * - Updates TokenStats via update_pending_fees instruction
+ *
+ * Key insight: All tokens share the same creator vault, but each has a unique
+ * bonding curve/pool. By monitoring each BC/pool, we can attribute fees correctly.
  */
 
 import {
   Connection,
   PublicKey,
-  ParsedTransactionWithMeta,
-  AccountInfo,
-  Context,
+  VersionedTransactionResponse,
 } from "@solana/web3.js";
-import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
+import { AnchorProvider, Program } from "@coral-xyz/anchor";
 import { BN } from "bn.js";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+
+export type PoolType = 'bonding_curve' | 'pumpswap_amm';
 
 export interface FeeCapture {
   token: PublicKey;
@@ -30,43 +34,56 @@ export interface FeeCapture {
 
 export interface TokenConfig {
   mint: PublicKey;
-  bondingCurve: PublicKey;
+  bondingCurve: PublicKey;  // For BC tokens
+  pool?: PublicKey;          // For AMM tokens
   creator: PublicKey;
   symbol: string;
   name: string;
+  poolType: PoolType;
 }
 
 export interface MonitorConfig {
   connection: Connection;
   program: Program;
   tokens: TokenConfig[];
-  updateInterval?: number;  // ms between batch updates (default: 30000 = 30s)
+  pollInterval?: number;     // ms between polls (default: 5000 = 5s)
+  updateInterval?: number;   // ms between batch updates (default: 30000 = 30s)
   verbose?: boolean;
 }
+
+// PumpFun program IDs
+const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+const PUMPSWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
+const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 export class PumpFunFeeMonitor {
   private connection: Connection;
   private program: Program;
-  private tokens: Map<string, TokenConfig>;
-  private subscriptions: Map<string, number>;
-  private pendingFees: Map<string, bigint>;
+  private tokens: Map<string, TokenConfig>;  // keyed by mint
+  private pendingFees: Map<string, bigint>;  // keyed by mint
+  private lastSignatures: Map<string, string>;  // keyed by mint -> last processed signature
+  private pollInterval: number;
   private updateInterval: number;
   private verbose: boolean;
+  private pollTimer: NodeJS.Timeout | null;
   private updateTimer: NodeJS.Timeout | null;
+  private isRunning: boolean = false;
 
   constructor(config: MonitorConfig) {
     this.connection = config.connection;
     this.program = config.program;
     this.tokens = new Map();
-    this.subscriptions = new Map();
     this.pendingFees = new Map();
-    this.updateInterval = config.updateInterval || 30000; // 30 seconds default
+    this.lastSignatures = new Map();
+    this.pollInterval = config.pollInterval || 5000;  // 5 seconds
+    this.updateInterval = config.updateInterval || 30000;  // 30 seconds
     this.verbose = config.verbose || false;
+    this.pollTimer = null;
     this.updateTimer = null;
 
-    // Initialize token map
+    // Initialize token map (keyed by mint)
     for (const token of config.tokens) {
-      this.tokens.set(token.bondingCurve.toBase58(), token);
+      this.tokens.set(token.mint.toBase58(), token);
       this.pendingFees.set(token.mint.toBase58(), 0n);
     }
   }
@@ -75,16 +92,35 @@ export class PumpFunFeeMonitor {
    * Start monitoring all configured tokens
    */
   async start(): Promise<void> {
-    this.log("🔍 Starting PumpFun Fee Monitor...");
+    this.log("🔍 Starting PumpFun Fee Monitor v2 (Balance Polling)...");
     this.log(`📊 Monitoring ${this.tokens.size} tokens`);
 
-    // Subscribe to each bonding curve
-    for (const [curveKey, token] of this.tokens.entries()) {
-      await this.subscribeToBondingCurve(new PublicKey(curveKey), token);
+    // Initialize last known signatures for each token
+    for (const [mintKey, token] of this.tokens.entries()) {
+      const poolAddress = this.getPoolAddress(token);
+      try {
+        const sigs = await this.connection.getSignaturesForAddress(
+          poolAddress,
+          { limit: 1 }
+        );
+        if (sigs.length > 0) {
+          this.lastSignatures.set(mintKey, sigs[0].signature);
+          this.log(`   📡 ${token.symbol}: Initialized at signature ${sigs[0].signature.slice(0, 20)}...`);
+        }
+      } catch (error: any) {
+        this.log(`   ⚠️ ${token.symbol}: Could not initialize signature`);
+      }
     }
 
-    // Start periodic update timer
-    this.startUpdateTimer();
+    this.isRunning = true;
+
+    // Start polling timer (replaces WebSocket subscriptions)
+    this.pollTimer = setInterval(() => this.pollAllTokens(), this.pollInterval);
+    this.log(`⏰ Poll timer started (interval: ${this.pollInterval / 1000}s)`);
+
+    // Start periodic flush timer
+    this.updateTimer = setInterval(() => this.flushPendingFees(), this.updateInterval);
+    this.log(`⏰ Flush timer started (interval: ${this.updateInterval / 1000}s)`);
 
     this.log("✅ Monitor started successfully");
   }
@@ -94,146 +130,128 @@ export class PumpFunFeeMonitor {
    */
   async stop(): Promise<void> {
     this.log("🛑 Stopping monitor...");
+    this.isRunning = false;
 
-    // Cancel all subscriptions
-    for (const [curve, subId] of this.subscriptions.entries()) {
-      await this.connection.removeAccountChangeListener(subId);
-      this.log(`   Unsubscribed from ${curve}`);
+    // Stop timers
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
     }
 
-    // Stop update timer
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
       this.updateTimer = null;
     }
 
-    // Flush any pending fees
+    // Flush any remaining pending fees
     await this.flushPendingFees();
 
     this.log("✅ Monitor stopped");
   }
 
   /**
-   * Subscribe to bonding curve account changes
+   * Get the pool/bonding curve address for a token
    */
-  private async subscribeToBondingCurve(
-    bondingCurve: PublicKey,
-    token: TokenConfig
-  ): Promise<void> {
-    const subId = this.connection.onAccountChange(
-      bondingCurve,
-      async (accountInfo: AccountInfo<Buffer>, context: Context) => {
-        await this.handleBondingCurveChange(
-          bondingCurve,
-          token,
-          accountInfo,
-          context
-        );
-      },
-      "confirmed"
-    );
-
-    this.subscriptions.set(bondingCurve.toBase58(), subId);
-    this.log(`   📡 Subscribed to ${token.symbol} bonding curve`);
+  private getPoolAddress(token: TokenConfig): PublicKey {
+    if (token.poolType === 'pumpswap_amm' && token.pool) {
+      return token.pool;
+    }
+    return token.bondingCurve;
   }
 
   /**
-   * Handle bonding curve account change (indicates a trade happened)
+   * Derive creator vault address for bonding curve (native SOL)
    */
-  private async handleBondingCurveChange(
-    bondingCurve: PublicKey,
-    token: TokenConfig,
-    accountInfo: AccountInfo<Buffer>,
-    context: Context
-  ): Promise<void> {
-    try {
-      // Get recent signature for this bonding curve
-      const signatures = await this.connection.getSignaturesForAddress(
-        bondingCurve,
-        { limit: 1 },
-        "confirmed"
-      );
+  private getBcCreatorVault(creator: PublicKey): PublicKey {
+    const [vault] = PublicKey.findProgramAddressSync(
+      [Buffer.from("creator-vault"), creator.toBuffer()],
+      PUMP_PROGRAM
+    );
+    return vault;
+  }
 
-      if (signatures.length === 0) return;
+  /**
+   * Derive creator vault ATA for AMM (WSOL)
+   */
+  private getAmmCreatorVaultAta(creator: PublicKey): PublicKey {
+    const [vaultAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from("creator_vault"), creator.toBuffer()],
+      PUMPSWAP_PROGRAM
+    );
+    return getAssociatedTokenAddressSync(WSOL_MINT, vaultAuthority, true);
+  }
 
-      const signature = signatures[0].signature;
+  /**
+   * Poll all tokens for new transactions
+   */
+  private async pollAllTokens(): Promise<void> {
+    if (!this.isRunning) return;
 
-      // Parse transaction to extract fee
-      const feeAmount = await this.extractFeeFromTransaction(signature, token);
-
-      if (feeAmount > 0) {
-        // Accumulate pending fees
-        const currentPending = this.pendingFees.get(token.mint.toBase58()) || 0n;
-        this.pendingFees.set(token.mint.toBase58(), currentPending + BigInt(feeAmount));
-
-        this.log(
-          `💰 ${token.symbol}: +${(feeAmount / 1e9).toFixed(6)} SOL ` +
-          `(total pending: ${(Number(currentPending + BigInt(feeAmount)) / 1e9).toFixed(6)} SOL)`
-        );
-
-        // Emit capture event
-        const capture: FeeCapture = {
-          token: token.mint,
-          amount: feeAmount,
-          timestamp: Date.now(),
-          signature,
-          slot: context.slot,
-        };
+    for (const [mintKey, token] of this.tokens.entries()) {
+      try {
+        await this.pollToken(mintKey, token);
+      } catch (error: any) {
+        if (this.verbose) {
+          console.warn(`Poll error for ${token.symbol}:`, error.message);
+        }
       }
-    } catch (error: any) {
-      console.error(`Error handling bonding curve change for ${token.symbol}:`, error.message);
     }
   }
 
   /**
-   * Extract fee amount from transaction logs
-   *
-   * PumpFun logs contain: "Transfer X lamports to creator vault [address]"
-   * We parse this to get exact fee amount
+   * Poll a single token for new transactions
    */
-  private async extractFeeFromTransaction(
+  private async pollToken(mintKey: string, token: TokenConfig): Promise<void> {
+    const poolAddress = this.getPoolAddress(token);
+    const lastSig = this.lastSignatures.get(mintKey);
+
+    // Get recent signatures since last known
+    const sigs = await this.connection.getSignaturesForAddress(
+      poolAddress,
+      { limit: 10, until: lastSig }
+    );
+
+    if (sigs.length === 0) return;
+
+    // Process new transactions (oldest first for correct ordering)
+    for (const sig of sigs.reverse()) {
+      const fee = await this.extractFeeFromBalances(sig.signature, token);
+      if (fee > 0) {
+        const currentPending = this.pendingFees.get(mintKey) || 0n;
+        const newPending = currentPending + BigInt(fee);
+        this.pendingFees.set(mintKey, newPending);
+
+        this.log(
+          `💰 ${token.symbol}: +${(fee / 1e9).toFixed(6)} SOL ` +
+          `(pending: ${(Number(newPending) / 1e9).toFixed(6)} SOL)`
+        );
+      }
+    }
+
+    // Update last signature to most recent
+    this.lastSignatures.set(mintKey, sigs[0].signature);
+  }
+
+  /**
+   * Extract fee from transaction balance changes
+   * This is the key improvement over log parsing - it actually works!
+   */
+  private async extractFeeFromBalances(
     signature: string,
     token: TokenConfig
   ): Promise<number> {
     try {
       const tx = await this.connection.getTransaction(signature, {
         maxSupportedTransactionVersion: 0,
-        commitment: "confirmed",
       });
 
-      if (!tx || !tx.meta || !tx.meta.logMessages) {
-        return 0;
+      if (!tx || !tx.meta) return 0;
+
+      if (token.poolType === 'bonding_curve') {
+        return this.extractBcFee(tx, token);
+      } else {
+        return this.extractAmmFee(tx, token);
       }
-
-      // Derive creator vault address
-      const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
-      const [creatorVault] = PublicKey.findProgramAddressSync(
-        [Buffer.from("creator-vault"), token.creator.toBuffer()],
-        PUMP_PROGRAM
-      );
-
-      // Parse logs for creator vault transfer
-      for (const log of tx.meta.logMessages) {
-        // Look for transfer to creator vault
-        // Format: "Transfer: X lamports from Y to creator-vault [address]"
-        if (log.includes("creator-vault") && log.includes(creatorVault.toBase58())) {
-          const match = log.match(/(\d+)\s+lamports/);
-          if (match) {
-            return parseInt(match[1], 10);
-          }
-        }
-
-        // Alternative format: System program transfer logs
-        // "Program log: Transfer: {...}"
-        if (log.includes(creatorVault.toBase58()) && log.includes("lamports")) {
-          const match = log.match(/(\d+)/);
-          if (match) {
-            return parseInt(match[1], 10);
-          }
-        }
-      }
-
-      return 0;
     } catch (error: any) {
       if (this.verbose) {
         console.error(`Error extracting fee from tx ${signature}:`, error.message);
@@ -243,14 +261,73 @@ export class PumpFunFeeMonitor {
   }
 
   /**
-   * Start periodic update timer
+   * Extract fee from bonding curve transaction (native SOL balance change)
    */
-  private startUpdateTimer(): void {
-    this.updateTimer = setInterval(async () => {
-      await this.flushPendingFees();
-    }, this.updateInterval);
+  private extractBcFee(
+    tx: VersionedTransactionResponse,
+    token: TokenConfig
+  ): number {
+    if (!tx.meta) return 0;
 
-    this.log(`⏰ Update timer started (interval: ${this.updateInterval / 1000}s)`);
+    // Get creator vault address
+    const creatorVault = this.getBcCreatorVault(token.creator);
+
+    // Find vault in account keys
+    const keys = tx.transaction.message.staticAccountKeys;
+    const vaultIdx = keys.findIndex(
+      (k: PublicKey) => k.toBase58() === creatorVault.toBase58()
+    );
+
+    if (vaultIdx < 0) return 0;
+
+    // Calculate fee from balance change
+    const preBalance = tx.meta.preBalances[vaultIdx];
+    const postBalance = tx.meta.postBalances[vaultIdx];
+    const delta = postBalance - preBalance;
+
+    // Only positive deltas are fees (negative = collection)
+    return delta > 0 ? delta : 0;
+  }
+
+  /**
+   * Extract fee from AMM transaction (WSOL token balance change)
+   */
+  private extractAmmFee(
+    tx: VersionedTransactionResponse,
+    token: TokenConfig
+  ): number {
+    if (!tx.meta || !tx.meta.postTokenBalances) return 0;
+
+    // Get creator vault WSOL ATA
+    const vaultAta = this.getAmmCreatorVaultAta(token.creator);
+    const vaultAtaStr = vaultAta.toBase58();
+
+    // Find WSOL balance for vault ATA
+    for (const postBalance of tx.meta.postTokenBalances) {
+      // Check if this is WSOL for our vault
+      if (postBalance.mint !== WSOL_MINT.toBase58()) continue;
+
+      // Find corresponding account key
+      const keys = tx.transaction.message.staticAccountKeys;
+      if (postBalance.accountIndex >= keys.length) continue;
+
+      const accountKey = keys[postBalance.accountIndex].toBase58();
+      if (accountKey !== vaultAtaStr) continue;
+
+      // Find pre-balance
+      const preBalance = tx.meta.preTokenBalances?.find(
+        b => b.accountIndex === postBalance.accountIndex
+      );
+
+      const postAmount = Number(postBalance.uiTokenAmount.amount);
+      const preAmount = preBalance ? Number(preBalance.uiTokenAmount.amount) : 0;
+      const delta = postAmount - preAmount;
+
+      // Only positive deltas are fees
+      return delta > 0 ? delta : 0;
+    }
+
+    return 0;
   }
 
   /**
@@ -260,16 +337,12 @@ export class PumpFunFeeMonitor {
     for (const [mintKey, pendingAmount] of this.pendingFees.entries()) {
       if (pendingAmount === 0n) continue;
 
+      const token = this.tokens.get(mintKey);
+      if (!token) continue;
+
       try {
-        const mint = new PublicKey(mintKey);
-        const token = Array.from(this.tokens.values()).find(
-          t => t.mint.toBase58() === mintKey
-        );
-
-        if (!token) continue;
-
         // Call update_pending_fees instruction
-        await this.updatePendingFeesOnChain(mint, Number(pendingAmount));
+        await this.updatePendingFeesOnChain(token.mint, Number(pendingAmount));
 
         // Reset pending after successful update
         this.pendingFees.set(mintKey, 0n);
@@ -278,7 +351,7 @@ export class PumpFunFeeMonitor {
           `✅ ${token.symbol}: Flushed ${(Number(pendingAmount) / 1e9).toFixed(6)} SOL to on-chain`
         );
       } catch (error: any) {
-        console.error(`Error flushing fees for ${mintKey}:`, error.message);
+        console.error(`Error flushing fees for ${token.symbol}:`, error.message);
       }
     }
   }
@@ -334,8 +407,32 @@ export class PumpFunFeeMonitor {
     return Number(total);
   }
 
+  /**
+   * Get pending fees breakdown by token
+   */
+  public getPendingFeesBreakdown(): Map<string, { symbol: string; amount: number }> {
+    const breakdown = new Map<string, { symbol: string; amount: number }>();
+    for (const [mintKey, amount] of this.pendingFees.entries()) {
+      const token = this.tokens.get(mintKey);
+      if (token) {
+        breakdown.set(mintKey, {
+          symbol: token.symbol,
+          amount: Number(amount),
+        });
+      }
+    }
+    return breakdown;
+  }
+
   private log(message: string): void {
-    if (this.verbose || message.includes("✅") || message.includes("❌") || message.includes("🔍")) {
+    // Always log important messages, verbose logs only in verbose mode
+    const isImportant = message.includes("✅") ||
+                        message.includes("❌") ||
+                        message.includes("🔍") ||
+                        message.includes("💰") ||
+                        message.includes("🛑");
+
+    if (this.verbose || isImportant) {
       const timestamp = new Date().toISOString();
       console.log(`[${timestamp}] ${message}`);
     }

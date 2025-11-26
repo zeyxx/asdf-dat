@@ -6,6 +6,7 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -32,22 +33,31 @@ function loadIdl(): any {
 }
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.log("\n" + "=".repeat(70));
   console.log(`${colors.bright}${colors.magenta}🔄 TRANSFERT D'ADMINISTRATION DAT${colors.reset}`);
   console.log("=".repeat(70) + "\n");
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
+
+  // Determine wallet paths based on network
+  const isMainnet = networkConfig.name === "Mainnet";
+  const walletPrefix = isMainnet ? "mainnet" : "devnet";
 
   // Check if old wallet file exists
-  let oldWalletPath = "./old-devnet-wallet.json";
+  let oldWalletPath = `./old-${walletPrefix}-wallet.json`;
   if (!fs.existsSync(oldWalletPath)) {
-    oldWalletPath = "./devnet-wallet-backup.json";
+    oldWalletPath = `./${walletPrefix}-wallet-backup.json`;
     if (!fs.existsSync(oldWalletPath)) {
       log("❌", "Ancien wallet non trouvé!", colors.red);
       log("⚠️", "Veuillez placer l'ancien wallet dans:", colors.yellow);
-      log("  ", "  - old-devnet-wallet.json", colors.yellow);
-      log("  ", "  - ou devnet-wallet-backup.json", colors.yellow);
-      log("💡", "Admin actuel: 9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj", colors.cyan);
+      log("  ", `  - old-${walletPrefix}-wallet.json`, colors.yellow);
+      log("  ", `  - ou ${walletPrefix}-wallet-backup.json`, colors.yellow);
       process.exit(1);
     }
   }
@@ -62,7 +72,7 @@ async function main() {
   // Load NEW admin wallet
   log("🔑", "Chargement du nouveau wallet...", colors.yellow);
   const newAdminKeypair = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("./devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
   const newAdmin = newAdminKeypair.publicKey;
   log("👤", `Nouveau Admin: ${newAdmin.toString()}`, colors.green);
@@ -117,7 +127,8 @@ async function main() {
     console.log("=".repeat(70) + "\n");
 
     log("📜", `Signature: ${tx}`, colors.green);
-    log("🔗", `Explorer: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+    log("🔗", `Explorer: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
     log("👤", `Nouvel admin: ${newAdmin.toString()}`, colors.green);
 
     console.log("\n" + "=".repeat(70));

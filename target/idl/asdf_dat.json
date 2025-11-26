@@ -1,5 +1,5 @@
 {
-  "address": "ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5",
+  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
   "metadata": {
     "name": "asdf_dat",
     "version": "0.1.0",
@@ -219,6 +219,126 @@
           "type": "bool"
         }
       ]
+    },
+    {
+      "name": "collect_fees_amm",
+      "docs": [
+        "Collect fees from PumpSwap AMM creator vault",
+        "Used for tokens that have migrated from bonding curve to AMM",
+        "Requires: DAT authority PDA must be set as coin_creator in PumpSwap",
+        "IMPORTANT: This collects WSOL (SPL Token), not native SOL"
+      ],
+      "discriminator": [
+        89,
+        152,
+        80,
+        30,
+        130,
+        141,
+        42,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wsol_mint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (destination for collected fees)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creator_vault_authority"
+        },
+        {
+          "name": "creator_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "create_pumpfun_token",
@@ -1650,6 +1770,74 @@
       "args": []
     },
     {
+      "name": "unwrap_wsol",
+      "docs": [
+        "Unwrap WSOL to native SOL in DAT authority account",
+        "Call this after collect_fees_amm to convert WSOL to SOL for buyback"
+      ],
+      "discriminator": [
+        4,
+        6,
+        123,
+        139,
+        46,
+        174,
+        17,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (will be closed)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "update_fee_split",
       "discriminator": [
         120,
@@ -1833,6 +2021,92 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "wrap_wsol",
+      "docs": [
+        "Wrap native SOL to WSOL for AMM buyback",
+        "Call this before execute_buy_amm when root token is on PumpSwap AMM",
+        "The dat_wsol_account must already exist (created by caller)"
+      ],
+      "discriminator": [
+        24,
+        173,
+        95,
+        186,
+        149,
+        56,
+        111,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (destination for wrapped SOL)",
+            "Must be owned by dat_authority and have WSOL mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "wsol_mint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1888,6 +2162,19 @@
         217,
         38,
         179
+      ]
+    },
+    {
+      "name": "AmmFeesCollected",
+      "discriminator": [
+        52,
+        168,
+        200,
+        204,
+        254,
+        238,
+        245,
+        191
       ]
     },
     {
@@ -2239,6 +2526,26 @@
           {
             "name": "new_admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmmFeesCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wsol_amount",
+            "type": "u64"
           },
           {
             "name": "timestamp",

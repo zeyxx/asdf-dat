@@ -22,12 +22,21 @@ import {
   getAssociatedTokenAddress,
   getAccount,
 } from "@solana/spl-token";
-import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
+import { AnchorProvider, Program, Wallet, Idl, BN } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
+import {
+  PoolType,
+  PUMP_PROGRAM,
+  PUMPSWAP_PROGRAM,
+  WSOL_MINT,
+  getBcCreatorVault,
+  getAmmCreatorVaultAta,
+  deriveAmmCreatorVaultAuthority,
+} from "../lib/amm-utils";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
-const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 
 const colors = {
@@ -50,6 +59,11 @@ function logSection(title: string) {
   console.log(`${"=".repeat(70)}\n`);
 }
 
+function getExplorerUrl(tx: string, network: string): string {
+  const cluster = network === "Mainnet" ? "" : "?cluster=devnet";
+  return `https://explorer.solana.com/tx/${tx}${cluster}`;
+}
+
 function loadIdl(): Idl {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
   const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
@@ -64,6 +78,7 @@ function loadIdl(): Idl {
 async function main() {
   // Parse command line arguments
   const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
   const tokenFile = args.find(a => !a.startsWith("--"));
   const allocatedArg = args.find(a => a.startsWith("--allocated="));
   const allocatedLamports = allocatedArg ? BigInt(allocatedArg.split("=")[1]) : null;
@@ -71,7 +86,7 @@ async function main() {
   if (!tokenFile) {
     console.clear();
     log("❌", "Veuillez fournir le fichier du token secondaire", colors.red);
-    log("💡", "Usage: npx ts-node scripts/execute-cycle-secondary.ts <token-file.json> [--allocated=LAMPORTS]", colors.yellow);
+    log("💡", "Usage: npx ts-node scripts/execute-cycle-secondary.ts <token-file.json> [--allocated=LAMPORTS] [--network mainnet|devnet]", colors.yellow);
     log("", "", colors.reset);
     log("📝", "Exemples:", colors.cyan);
     log("  ", "Standalone mode:  npx ts-node scripts/execute-cycle-secondary.ts devnet-token-mayhem.json", colors.reset);
@@ -81,14 +96,17 @@ async function main() {
 
   console.clear();
 
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
   // Determine mode
   const mode = allocatedLamports ? "ALLOCATED (ECOSYSTEM ORCHESTRATED)" : "STANDALONE";
   logSection(`💎 SECONDARY TOKEN CYCLE - ${mode}`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("👤", `Admin: ${admin.publicKey.toString()}`, colors.cyan);
@@ -101,9 +119,11 @@ async function main() {
 
   const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
   const tokenMint = new PublicKey(tokenInfo.mint);
-  const bondingCurve = new PublicKey(tokenInfo.bondingCurve);
+  const poolAddress = new PublicKey(tokenInfo.bondingCurve || tokenInfo.pool);
   const tokenCreator = new PublicKey(tokenInfo.creator);
   const isMayhem = tokenInfo.tokenProgram === "Token2022";
+  const poolType: PoolType = tokenInfo.poolType || 'bonding_curve';
+  const isAmm = poolType === 'pumpswap_amm';
 
   if (allocatedLamports) {
     log("💰", `Allocated amount: ${(Number(allocatedLamports) / 1e9).toFixed(6)} SOL (${allocatedLamports} lamports)`, colors.cyan);
@@ -114,7 +134,8 @@ async function main() {
 
   log("🪙", `Token: ${tokenInfo.name} (${tokenInfo.symbol})`, colors.cyan);
   log("🔗", `Mint: ${tokenMint.toString()}`, colors.cyan);
-  log("📈", `Bonding Curve: ${bondingCurve.toString()}`, colors.cyan);
+  log("🏊", `Pool Type: ${poolType}`, colors.cyan);
+  log("📈", `Pool: ${poolAddress.toString()}`, colors.cyan);
   log("🔧", `Token Program: ${isMayhem ? "Token2022 (Mayhem)" : "SPL"}`, colors.cyan);
 
   const TOKEN_PROGRAM = isMayhem ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
@@ -181,19 +202,41 @@ async function main() {
 
   log("🏦", `Root Treasury: ${rootTreasury.toString()}`, colors.cyan);
 
-  // Derive creator vault
-  const [creatorVault] = PublicKey.findProgramAddressSync(
-    [Buffer.from("creator-vault"), tokenCreator.toBuffer()],
-    PUMP_PROGRAM
-  );
+  // Derive creator vault based on pool type
+  let creatorVault: PublicKey;
+  let creatorVaultAuthority: PublicKey | null = null;
 
-  log("💎", `Creator Vault: ${creatorVault.toString()}`, colors.cyan);
+  if (isAmm) {
+    // PumpSwap AMM: WSOL ATA
+    const [vaultAuth] = deriveAmmCreatorVaultAuthority(tokenCreator);
+    creatorVaultAuthority = vaultAuth;
+    creatorVault = getAmmCreatorVaultAta(tokenCreator);
+    log("💎", `Creator Vault Authority: ${creatorVaultAuthority.toString()}`, colors.cyan);
+    log("💎", `Creator Vault ATA (WSOL): ${creatorVault.toString()}`, colors.cyan);
+  } else {
+    // Bonding Curve: Native SOL PDA
+    creatorVault = getBcCreatorVault(tokenCreator);
+    log("💎", `Creator Vault (SOL): ${creatorVault.toString()}`, colors.cyan);
+  }
 
   // Check balances before
-  const creatorVaultInfo = await connection.getAccountInfo(creatorVault);
-  const vaultBalance = creatorVaultInfo ? creatorVaultInfo.lamports / 1e9 : 0;
+  let vaultBalance = 0;
+  if (isAmm) {
+    // AMM: Check WSOL token balance
+    try {
+      const vaultAccount = await getAccount(connection, creatorVault);
+      vaultBalance = Number(vaultAccount.amount) / 1e9;
+    } catch {
+      // Token account doesn't exist yet
+    }
+  } else {
+    // BC: Check native SOL balance
+    const creatorVaultInfo = await connection.getAccountInfo(creatorVault);
+    vaultBalance = creatorVaultInfo ? creatorVaultInfo.lamports / 1e9 : 0;
+  }
 
-  log("💰", `Creator Vault: ${vaultBalance.toFixed(6)} SOL`, colors.yellow);
+  const vaultType = isAmm ? 'WSOL' : 'SOL';
+  log("💰", `Creator Vault: ${vaultBalance.toFixed(6)} ${vaultType}`, colors.yellow);
 
   if (vaultBalance < 0.001) {
     log("⚠️", "WARNING: Very low fees available!", colors.yellow);
@@ -212,11 +255,10 @@ async function main() {
     process.exit(1);
   }
 
-  const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
-
   const datTokenAccount = await getAssociatedTokenAddress(tokenMint, datAuthority, true, TOKEN_PROGRAM);
-  const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, bondingCurve, true, TOKEN_PROGRAM);
-  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, bondingCurve, true, TOKEN_PROGRAM_ID);
+  const datWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, datAuthority, true, TOKEN_PROGRAM_ID);
+  const poolTokenAccount = await getAssociatedTokenAddress(tokenMint, poolAddress, true, TOKEN_PROGRAM);
+  const poolWsolAccount = await getAssociatedTokenAddress(WSOL_MINT, poolAddress, true, TOKEN_PROGRAM_ID);
 
   // ========================================================================
   // STEP 1/3: COLLECT FEES (SECONDARY TOKEN MODE)
@@ -229,34 +271,75 @@ async function main() {
 
   if (!allocatedLamports) {
     // STANDALONE MODE: Collect fees from creator vault
-    logSection("STEP 1/3: COLLECT FEES (STANDALONE MODE)");
+    logSection(`STEP 1/3: COLLECT FEES (${isAmm ? 'AMM MODE' : 'STANDALONE MODE'})`);
 
     try {
-      const tx1 = await program.methods
-        .collectFees(false, false) // is_root_token = false, for_ecosystem = false
-        .accounts({
-          datState,
-          tokenStats,
-          tokenMint,
-          datAuthority,
-          creatorVault,
-          pumpEventAuthority,
-          pumpSwapProgram: PUMP_PROGRAM,
-          rootTreasury,
-          systemProgram: SystemProgram.programId,
-        })
-        .signers([admin])
-        .rpc();
+      if (isAmm) {
+        // AMM: collect_fees_amm + unwrap_wsol
+        log("📦", "Using AMM fee collection (collect_fees_amm + unwrap_wsol)", colors.cyan);
 
-      log("✅", "Fees collected from creator vault!", colors.green);
-      log("🔗", `TX: https://explorer.solana.com/tx/${tx1}?cluster=devnet`, colors.cyan);
+        // Step 1a: Collect WSOL from AMM vault
+        const tx1a = await program.methods
+          .collectFeesAmm()
+          .accounts({
+            datState,
+            tokenStats,
+            tokenMint,
+            datAuthority,
+            wsolMint: WSOL_MINT,
+            datWsolAccount,
+            creatorVaultAuthority: creatorVaultAuthority!,
+            creatorVaultAta: creatorVault,
+            pumpSwapProgram: PUMPSWAP_PROGRAM,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([admin])
+          .rpc();
+
+        log("✅", "WSOL collected from AMM vault!", colors.green);
+        log("🔗", `TX: ${getExplorerUrl(tx1a, networkConfig.name)}`, colors.cyan);
+
+        // Step 1b: Unwrap WSOL to native SOL
+        const tx1b = await program.methods
+          .unwrapWsol()
+          .accounts({
+            datState,
+            datAuthority,
+            datWsolAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([admin])
+          .rpc();
+
+        log("✅", "WSOL unwrapped to native SOL!", colors.green);
+        log("🔗", `TX: ${getExplorerUrl(tx1b, networkConfig.name)}`, colors.cyan);
+
+      } else {
+        // Bonding Curve: Standard collect_fees
+        const tx1 = await program.methods
+          .collectFees(false, false) // is_root_token = false, for_ecosystem = false
+          .accounts({
+            datState,
+            tokenStats,
+            tokenMint,
+            datAuthority,
+            creatorVault,
+            pumpEventAuthority,
+            pumpSwapProgram: PUMP_PROGRAM,
+            rootTreasury,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([admin])
+          .rpc();
+
+        log("✅", "Fees collected from creator vault!", colors.green);
+        log("🔗", `TX: ${getExplorerUrl(tx1, networkConfig.name)}`, colors.cyan);
+      }
 
       // Check updated balances
-      const vaultAfter = await connection.getAccountInfo(creatorVault);
       const authorityAfter = await connection.getAccountInfo(datAuthority);
-
-      log("💰", `Creator Vault (after): ${vaultAfter ? (vaultAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
       log("💰", `DAT Authority (after collect): ${authorityAfter ? (authorityAfter.lamports / 1e9).toFixed(6) : "0.000000"} SOL`, colors.green);
+
     } catch (error: any) {
       log("❌", `Error collect_fees: ${error.message}`, colors.red);
       if (error.logs) {
@@ -276,9 +359,12 @@ async function main() {
   logSection(`STEP 2/3: EXECUTE BUY (${keepPercentage}% KEPT, ${toRootPercentage}% TO ROOT)`);
   // ========================================================================
 
+  // Derive PDAs based on pool type
+  const swapProgram = isAmm ? PUMPSWAP_PROGRAM : PUMP_PROGRAM;
+
   const [pumpGlobalConfig] = PublicKey.findProgramAddressSync(
     [Buffer.from("global")],
-    PUMP_PROGRAM
+    swapProgram
   );
 
   // For Mayhem Mode (Token2022), use Mayhem fee recipient
@@ -305,21 +391,25 @@ async function main() {
 
   log("💰", `Fee Recipient: ${protocolFeeRecipient.toString()}`, colors.cyan);
   log("📦", `Fee Recipient ATA: ${protocolFeeRecipientAta.toString()}`, colors.cyan);
+  log("🏊", `Swap Program: ${isAmm ? 'PumpSwap AMM' : 'PumpFun BC'}`, colors.cyan);
 
   const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
     [Buffer.from("global_volume_accumulator")],
-    PUMP_PROGRAM
+    swapProgram
   );
 
   const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
     [Buffer.from("user_volume_accumulator"), datAuthority.toBuffer()],
-    PUMP_PROGRAM
+    swapProgram
   );
 
   const [feeConfig] = PublicKey.findProgramAddressSync(
-    [Buffer.from("fee_config"), PUMP_PROGRAM.toBuffer()],
+    [Buffer.from("fee_config"), swapProgram.toBuffer()],
     FEE_PROGRAM
   );
+
+  // For BC tokens, use the BC creator vault; for AMM, use a dummy (not used in buy)
+  const buyCreatorVault = isAmm ? getBcCreatorVault(tokenCreator) : creatorVault;
 
   // Check root treasury balance before
   const treasuryBefore = await connection.getAccountInfo(rootTreasury);
@@ -330,16 +420,16 @@ async function main() {
     datState,
     datAuthority,
     datAsdfAccount: datTokenAccount,
-    pool: bondingCurve,
+    pool: poolAddress,
     asdfMint: tokenMint,
     poolAsdfAccount: poolTokenAccount,
     poolWsolAccount,
     pumpGlobalConfig,
     protocolFeeRecipient,
     protocolFeeRecipientAta,
-    creatorVault,
+    creatorVault: buyCreatorVault,
     pumpEventAuthority,
-    pumpSwapProgram: PUMP_PROGRAM,
+    pumpSwapProgram: swapProgram,
     globalVolumeAccumulator,
     userVolumeAccumulator,
     feeConfig,
@@ -358,26 +448,144 @@ async function main() {
   }
 
   try {
-    // Try calling the method
-    const allocatedBN = allocatedLamports ? { some: allocatedLamports } : null;
-    log("🔍", `Calling execute_buy(is_secondary=true, allocated=${allocatedLamports ? allocatedLamports.toString() : "null"})...`, colors.cyan);
+    if (isAmm) {
+      // =====================================================
+      // AMM SECONDARY: Manual split + wrap + execute_buy_amm
+      // =====================================================
+      log("📈", "Using PumpSwap AMM buy route for secondary token", colors.cyan);
 
-    // Build transaction manually for better error handling
-    const tx = await program.methods
-      .executeBuy(true, allocatedBN) // is_secondary=true, allocated_lamports
-      .accounts(accounts)
-      .transaction();
+      // Get current SOL balance in dat_authority (after unwrap in Step 1)
+      const authorityInfo = await connection.getAccountInfo(datAuthority);
+      const availableSol = authorityInfo ? authorityInfo.lamports - 2_000_000 : 0; // Keep rent + buffer
 
-    log("🔍", "Transaction built successfully", colors.cyan);
+      if (availableSol < 10_000_000) { // < 0.01 SOL
+        log("❌", "Insufficient SOL for AMM buy (< 0.01 SOL)", colors.red);
+        process.exit(1);
+      }
 
-    // Send transaction using native sendAndConfirmTransaction
-    const tx2 = await sendAndConfirmTransaction(connection, tx, [admin], {
-      skipPreflight: true,
-      commitment: "confirmed",
-    });
+      // Calculate split amounts
+      const solForRoot = Math.floor((availableSol * (10000 - feeSplitBps)) / 10000);
+      const solForBuy = availableSol - solForRoot;
 
-    log("✅", `Tokens bought and ${toRootPercentage}% sent to root!`, colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx2}?cluster=devnet`, colors.cyan);
+      log("💰", `Total available: ${(availableSol / 1e9).toFixed(6)} SOL`, colors.cyan);
+      log("💰", `For root treasury (${toRootPercentage}%): ${(solForRoot / 1e9).toFixed(6)} SOL`, colors.cyan);
+      log("💰", `For buyback (${keepPercentage}%): ${(solForBuy / 1e9).toFixed(6)} SOL`, colors.cyan);
+
+      // Step 2a: Transfer to root treasury (using system transfer via admin)
+      // Note: This is a temporary workaround - ideally the program should handle this
+      // For now, we wrap all available SOL and do the AMM buy
+      // The split will be handled by execute_buy_secondary when we add AMM support
+
+      log("💱", `Wrapping ${(availableSol / 1e9).toFixed(6)} SOL to WSOL for AMM buy...`, colors.cyan);
+
+      const tx2a = await program.methods
+        .wrapWsol(new BN(availableSol))
+        .accounts({
+          datState,
+          datAuthority,
+          datWsolAccount,
+          wsolMint: WSOL_MINT,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([admin])
+        .rpc();
+
+      log("✅", "SOL wrapped to WSOL!", colors.green);
+      log("🔗", `TX: ${getExplorerUrl(tx2a, networkConfig.name)}`, colors.cyan);
+
+      // Get WSOL balance for the buy
+      const wsolAccount = await getAccount(connection, datWsolAccount);
+      const wsolBalance = wsolAccount.amount;
+      log("💰", `WSOL available for buy: ${(Number(wsolBalance) / 1e9).toFixed(6)} WSOL`, colors.cyan);
+
+      // PumpSwap event authority
+      const [pumpSwapEventAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from("__event_authority")],
+        PUMPSWAP_PROGRAM
+      );
+
+      // Protocol fee recipient ATA for WSOL (PumpSwap fees)
+      const protocolFeeRecipientWsolAta = await getAssociatedTokenAddress(
+        WSOL_MINT, protocolFeeRecipient, true, TOKEN_PROGRAM_ID
+      );
+
+      // Derive creator vault authority and ATA for AMM
+      const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(tokenCreator);
+      const coinCreatorVaultAta = getAmmCreatorVaultAta(tokenCreator);
+
+      // Calculate desired tokens (estimate based on max sol cost)
+      const maxSolCost = Number(wsolBalance) * 0.95;
+      const desiredTokens = maxSolCost * 1_000_000;
+
+      const tx2b = await program.methods
+        .executeBuyAmm(
+          new BN(Math.floor(desiredTokens)),
+          new BN(Math.floor(maxSolCost))
+        )
+        .accounts({
+          datState,
+          datAuthority,
+          datTokenAccount,
+          pool: poolAddress,
+          globalConfig: pumpGlobalConfig,
+          baseMint: tokenMint,
+          quoteMint: WSOL_MINT,
+          datWsolAccount,
+          poolBaseTokenAccount: poolTokenAccount,
+          poolQuoteTokenAccount: poolWsolAccount,
+          protocolFeeRecipient,
+          protocolFeeRecipientAta: protocolFeeRecipientWsolAta,
+          baseTokenProgram: TOKEN_PROGRAM,
+          quoteTokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          eventAuthority: pumpSwapEventAuthority,
+          pumpSwapProgram: PUMPSWAP_PROGRAM,
+          coinCreatorVaultAta,
+          coinCreatorVaultAuthority,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+        })
+        .signers([admin])
+        .rpc();
+
+      log("✅", "Tokens bought on AMM!", colors.green);
+      log("🔗", `TX: ${getExplorerUrl(tx2b, networkConfig.name)}`, colors.cyan);
+
+      // Note: For AMM secondary tokens, the split to root treasury is NOT done yet
+      // TODO: Add execute_buy_amm_secondary instruction to handle split + AMM buy
+      log("⚠️", "Note: AMM secondary split to root treasury not yet implemented in program", colors.yellow);
+      log("💡", "Full 100% used for buyback. Root treasury routing pending program update.", colors.yellow);
+
+    } else {
+      // =====================================================
+      // BONDING CURVE SECONDARY: execute_buy_secondary
+      // =====================================================
+      log("📈", "Using Bonding Curve buy route for secondary token", colors.cyan);
+
+      const allocatedBN = allocatedLamports ? new BN(allocatedLamports.toString()) : null;
+      log("🔍", `Calling execute_buy_secondary(allocated=${allocatedLamports ? allocatedLamports.toString() : "null"})...`, colors.cyan);
+
+      // Build transaction manually for better error handling
+      const tx = await program.methods
+        .executeBuySecondary(allocatedBN)
+        .accounts(accounts)
+        .transaction();
+
+      log("🔍", "Transaction built successfully", colors.cyan);
+
+      // Send transaction using native sendAndConfirmTransaction
+      const tx2 = await sendAndConfirmTransaction(connection, tx, [admin], {
+        skipPreflight: true,
+        commitment: "confirmed",
+      });
+
+      log("✅", `Tokens bought and ${toRootPercentage}% sent to root!`, colors.green);
+      log("🔗", `TX: ${getExplorerUrl(tx2, networkConfig.name)}`, colors.cyan);
+    }
 
     // Check token balance
     const tokenInfoAccount = await getAccount(connection, datTokenAccount, "confirmed", TOKEN_PROGRAM);
@@ -400,16 +608,15 @@ async function main() {
 
       try {
         const finalizeTx = await program.methods
-          .finalizeAllocatedCycle()
+          .finalizeAllocatedCycle(true) // actually_participated = true
           .accounts({
-            datState,
             tokenStats,
-            admin: admin.publicKey,
           })
+          .signers([admin])
           .rpc();
 
         log("✅", "Cycle finalized (pending_fees reset, cycles_participated incremented)!", colors.green);
-        log("🔗", `TX: https://explorer.solana.com/tx/${finalizeTx}?cluster=devnet`, colors.cyan);
+        log("🔗", `TX: ${getExplorerUrl(finalizeTx, networkConfig.name)}`, colors.cyan);
       } catch (finalizeError: any) {
         log("❌", `Error finalizing cycle: ${finalizeError.message}`, colors.red);
         if (finalizeError.logs) {
@@ -420,50 +627,12 @@ async function main() {
       }
     }
   } catch (error: any) {
-    // Check if this is the known InsufficientFundsForRent error that happens AFTER successful execution
-    const errorStr = JSON.stringify(error);
-    const isRentError = error.message?.includes("InsufficientFundsForRent") ||
-                        error.transactionMessage?.includes("InsufficientFundsForRent") ||
-                        errorStr.includes("InsufficientFundsForRent");
-
-    console.log("DEBUG error object:", {
-      message: error.message,
-      signature: error.signature,
-      transactionMessage: error.transactionMessage,
-      keys: Object.keys(error)
-    });
-
-    if (isRentError) {
-      // Transaction executed but failed rent check - check on-chain state instead
-      log("⚠️", "Rent error detected - checking on-chain state...", colors.yellow);
-
-      const sig = error.signature || "unknown";
-      if (sig !== "unknown") {
-        log("🔗", `TX: https://explorer.solana.com/tx/${sig}?cluster=devnet`, colors.cyan);
-      }
-
-      // Get actual results from on-chain state
-      const tokenInfoAccount = await getAccount(connection, datTokenAccount, "confirmed", TOKEN_PROGRAM);
-      const tokenBalance = Number(tokenInfoAccount.amount) / 1e6;
-      log("💎", `Tokens bought: ${tokenBalance.toLocaleString()} tokens`, colors.green);
-
-      const treasuryAfter = await connection.getAccountInfo(rootTreasury);
-      const treasuryBalanceAfter = treasuryAfter ? treasuryAfter.lamports / 1e9 : 0;
-      const sentToRoot = treasuryBalanceAfter - treasuryBalanceBefore;
-
-      if (sentToRoot > 0) {
-        log("🏆", `SOL sent to root treasury: ${sentToRoot.toFixed(6)} SOL (${toRootPercentage}%)`, colors.magenta);
-      }
-
-      // Continue to step 3
-    } else {
-      log("❌", `Error execute_buy: ${error.message || JSON.stringify(error)}`, colors.red);
-      if (error.logs) {
-        console.log("\n📋 Logs:");
-        error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
-      }
-      process.exit(1);
+    log("❌", `Error execute_buy: ${error.message || JSON.stringify(error)}`, colors.red);
+    if (error.logs) {
+      console.log("\n📋 Logs:");
+      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
     }
+    process.exit(1);
   }
 
   // ========================================================================
@@ -485,7 +654,7 @@ async function main() {
       .rpc();
 
     log("✅", "Tokens burned!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx3}?cluster=devnet`, colors.cyan);
+    log("🔗", `TX: ${getExplorerUrl(tx3, networkConfig.name)}`, colors.cyan);
 
     // Verify token balance is 0
     const tokenInfoAccount = await getAccount(connection, datTokenAccount, "confirmed", TOKEN_PROGRAM);

@@ -13,6 +13,7 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -39,15 +40,22 @@ function loadIdl(): any {
 }
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.clear();
   console.log(`\n${"=".repeat(70)}`);
   console.log(`${colors.bright}${colors.magenta}⚙️  INITIALIZE DAT STATE${colors.reset}`);
   console.log(`${"=".repeat(70)}\n`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("👤", `Admin: ${admin.publicKey.toString()}`, colors.cyan);
@@ -103,7 +111,8 @@ async function main() {
       .rpc();
 
     log("✅", "DAT STATE INITIALIZED!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
 
     // Fetch and display state
     const state = await (program.account as any).datState.fetch(datState);

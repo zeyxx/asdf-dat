@@ -13,6 +13,7 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -47,17 +48,23 @@ function validateBps(bps: number): boolean {
 }
 
 async function main() {
-  // Get new fee split from command line
-  const newSplitArg = process.argv[2];
+  // Parse arguments
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  // Get new fee split from command line (first non-flag arg)
+  const newSplitArg = args.find(a => !a.startsWith('--'));
 
   console.clear();
   console.log(`\n${"=".repeat(70)}`);
   console.log(`${colors.bright}${colors.magenta}⚙️  UPDATE FEE SPLIT${colors.reset}`);
   console.log(`${"=".repeat(70)}\n`);
 
+  printNetworkBanner(networkConfig);
+
   if (!newSplitArg) {
     log("❌", "Veuillez fournir le nouveau fee split en basis points", colors.red);
-    log("💡", "Usage: npx ts-node scripts/update-fee-split.ts <basis_points>", colors.yellow);
+    log("💡", "Usage: npx ts-node scripts/update-fee-split.ts <basis_points> --network mainnet|devnet", colors.yellow);
     log("", "", colors.reset);
     log("📊", "Exemples:", colors.cyan);
     log("  ", "5520 bps = 55.2% gardé, 44.8% au root (défaut)", colors.reset);
@@ -75,10 +82,10 @@ async function main() {
     process.exit(1);
   }
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("👤", `Admin: ${admin.publicKey.toString()}`, colors.cyan);
@@ -148,7 +155,8 @@ async function main() {
       .rpc();
 
     log("✅", "FEE SPLIT MIS À JOUR AVEC SUCCÈS!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
 
     // Fetch updated state
     const updatedState = await (program.account as any).datState.fetch(datState);

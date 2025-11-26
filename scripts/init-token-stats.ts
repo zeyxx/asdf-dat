@@ -10,23 +10,32 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import idl from "../target/idl/asdf_dat.json";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 const TOKEN_STATS_SEED = Buffer.from("token_stats_v1");
 
 async function main() {
-  // Get token file from command line args or default to SPL
-  const tokenFile = process.argv[2] || "devnet-token-spl.json";
+  // Parse arguments
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  // Get token file from non-flag args or default
+  const tokenFile = args.find(a => !a.startsWith('--')) || networkConfig.tokens[0];
 
   console.log(`\n${"=".repeat(70)}`);
   console.log(`🔧 INITIALIZE TOKEN STATS`);
   console.log(`${"=".repeat(70)}\n`);
+
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
   console.log(`📄 Token file: ${tokenFile}`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const payer = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   const wallet = new Wallet(payer);
@@ -74,7 +83,8 @@ async function main() {
     .rpc();
 
   console.log(`\n✅ TokenStats initialized!`);
-  console.log(`🔗 TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`);
+  const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+  console.log(`🔗 TX: https://explorer.solana.com/tx/${tx}${cluster}`);
   console.log(`\n📊 TokenStats PDA: ${tokenStats.toString()}`);
   console.log(`\n💡 Use this address in your DAT cycle scripts`);
 }

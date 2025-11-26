@@ -20,11 +20,17 @@
  *   - Fee monitoring should be running (to populate pending_fees)
  */
 
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
-import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '@solana/spl-token';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig } from '../lib/network-config';
+import {
+  getBcCreatorVault,
+  getAmmCreatorVaultAta,
+  deriveAmmCreatorVaultAuthority,
+} from '../lib/amm-utils';
 
 // ============================================================================
 // Constants & Configuration
@@ -305,20 +311,17 @@ async function waitForDaemonSync(
 // Token Configuration Loader
 // ============================================================================
 
-async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[]> {
-  const tokenFiles = [
-    { file: 'devnet-token-spl.json', symbol: 'DATSPL', isRoot: true, isToken2022: false },
-    { file: 'devnet-token-secondary.json', symbol: 'DATS2', isRoot: false, isToken2022: false },
-    { file: 'devnet-token-mayhem.json', symbol: 'DATM', isRoot: false, isToken2022: true },
-  ];
+async function loadEcosystemTokens(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
+  // Get token files from network config
+  const tokenFiles = networkConfig.tokens;
 
   const tokens: TokenConfig[] = [];
 
-  for (const config of tokenFiles) {
-    const filePath = path.join(__dirname, '..', config.file);
+  for (const file of tokenFiles) {
+    const filePath = path.join(__dirname, '..', file);
 
     if (!fs.existsSync(filePath)) {
-      log('⚠️', `Token file not found: ${config.file}`, colors.yellow);
+      log('⚠️', `Token file not found: ${file}`, colors.yellow);
       continue;
     }
 
@@ -326,20 +329,25 @@ async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[
       const tokenData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
       // Read poolType from JSON, default to 'bonding_curve' if not specified
       const poolType: PoolType = tokenData.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
+      // Determine if root from JSON data
+      const isRoot = tokenData.isRoot === true;
+      // Determine token program from JSON or filename
+      const isToken2022 = tokenData.tokenProgram === 'Token2022' || tokenData.mayhemMode === true;
+
       tokens.push({
-        file: config.file,
-        symbol: config.symbol,
+        file,
+        symbol: tokenData.symbol || tokenData.name || 'UNKNOWN',
         mint: new PublicKey(tokenData.mint),
-        bondingCurve: new PublicKey(tokenData.bondingCurve),
+        bondingCurve: new PublicKey(tokenData.bondingCurve || tokenData.pool),
         creator: new PublicKey(tokenData.creator),
-        isRoot: config.isRoot,
-        isToken2022: config.isToken2022,
+        isRoot,
+        isToken2022,
         poolType,
       });
       const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
-      log('✓', `Loaded ${config.symbol} from ${config.file} (${poolIcon} ${poolType})`, colors.green);
+      log('✓', `Loaded ${tokenData.symbol || tokenData.name} from ${file} (${poolIcon} ${poolType})`, colors.green);
     } catch (error) {
-      log('❌', `Failed to load ${config.file}: ${(error as Error).message || String(error)}`, colors.red);
+      log('❌', `Failed to load ${file}: ${(error as Error).message || String(error)}`, colors.red);
     }
   }
 
@@ -350,7 +358,7 @@ async function loadEcosystemTokens(connection: Connection): Promise<TokenConfig[
   // Verify we have exactly one root token
   const rootTokens = tokens.filter(t => t.isRoot);
   if (rootTokens.length === 0) {
-    throw new Error('No root token found in configuration');
+    throw new Error('No root token found in configuration. Ensure at least one token has "isRoot": true');
   }
   if (rootTokens.length > 1) {
     throw new Error('Multiple root tokens found. Only one root token is allowed.');
@@ -428,35 +436,23 @@ async function queryPendingFees(
 }
 
 // ============================================================================
-// Step 2: Collect All Vault Fees
+// Step 2: Collect All SECONDARY Vault Fees
 // ============================================================================
 
-async function collectAllVaultFees(
+async function collectAllSecondaryVaultFees(
   program: Program,
-  rootToken: TokenConfig,
+  secondaryTokens: TokenConfig[],
+  rootMint: PublicKey,
   adminKeypair: Keypair
 ): Promise<number> {
-  logSection('STEP 2: COLLECT ALL VAULT FEES');
+  logSection('STEP 2: COLLECT FEES FROM SECONDARY VAULTS');
 
   const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
   const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], program.programId);
-  const [tokenStats] = PublicKey.findProgramAddressSync(
-    [TOKEN_STATS_SEED, rootToken.mint.toBuffer()],
-    program.programId
-  );
 
-  // Use token creator from config (not admin, each token has its own creator)
-  const creator = rootToken.creator;
-
-  // Derive creator vault PDA (from PumpFun program)
-  const [creatorVault] = PublicKey.findProgramAddressSync(
-    [Buffer.from('creator-vault'), creator.toBuffer()],
-    PUMP_PROGRAM
-  );
-
-  // Derive root treasury PDA
+  // Derive root treasury PDA (needed for collect_fees)
   const [rootTreasury] = PublicKey.findProgramAddressSync(
-    [ROOT_TREASURY_SEED, rootToken.mint.toBuffer()],
+    [ROOT_TREASURY_SEED, rootMint.toBuffer()],
     program.programId
   );
 
@@ -466,49 +462,123 @@ async function collectAllVaultFees(
     PUMP_PROGRAM
   );
 
-  // Check vault balance before collection
-  const vaultBalanceBefore = await program.provider.connection.getBalance(creatorVault);
-  log('💰', `Creator vault balance: ${formatSOL(vaultBalanceBefore)} SOL`, colors.cyan);
+  let totalCollected = 0;
 
-  if (vaultBalanceBefore === 0) {
-    log('⚠️', 'Creator vault is empty. No fees to collect.', colors.yellow);
-    return 0;
+  for (const token of secondaryTokens) {
+    const creator = token.creator;
+    const isAmm = token.poolType === 'pumpswap_amm';
+
+    const [tokenStats] = PublicKey.findProgramAddressSync(
+      [TOKEN_STATS_SEED, token.mint.toBuffer()],
+      program.programId
+    );
+
+    // Derive vault based on pool type
+    let creatorVault: PublicKey;
+    let creatorVaultAuthority: PublicKey | null = null;
+
+    if (isAmm) {
+      const [vaultAuth] = deriveAmmCreatorVaultAuthority(creator);
+      creatorVaultAuthority = vaultAuth;
+      creatorVault = getAmmCreatorVaultAta(creator);
+    } else {
+      creatorVault = getBcCreatorVault(creator);
+    }
+
+    // Check vault balance
+    let vaultBalance = 0;
+    if (isAmm) {
+      try {
+        const vaultAccount = await getAccount(program.provider.connection, creatorVault);
+        vaultBalance = Number(vaultAccount.amount);
+      } catch {
+        // Token account doesn't exist yet
+      }
+    } else {
+      vaultBalance = await program.provider.connection.getBalance(creatorVault);
+    }
+
+    log('💰', `${token.symbol}: ${formatSOL(vaultBalance)} ${isAmm ? 'WSOL' : 'SOL'} in vault`, colors.cyan);
+
+    if (vaultBalance === 0) {
+      log('  ⏭️', `Skipping ${token.symbol} - vault empty`, colors.yellow);
+      continue;
+    }
+
+    try {
+      if (isAmm) {
+        // AMM: collect_fees_amm + unwrap_wsol
+        const [datWsolAccount] = PublicKey.findProgramAddressSync(
+          [datAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+          ASSOCIATED_TOKEN_PROGRAM
+        );
+
+        // Collect WSOL from AMM vault
+        const tx1 = await program.methods
+          .collectFeesAmm()
+          .accounts({
+            datState,
+            tokenStats,
+            tokenMint: token.mint,
+            datAuthority,
+            wsolMint: WSOL_MINT,
+            datWsolAccount,
+            creatorVaultAuthority: creatorVaultAuthority!,
+            creatorVaultAta: creatorVault,
+            pumpSwapProgram: PUMP_SWAP_PROGRAM,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([adminKeypair])
+          .rpc();
+
+        // Unwrap WSOL to native SOL
+        const tx2 = await program.methods
+          .unwrapWsol()
+          .accounts({
+            datState,
+            datAuthority,
+            datWsolAccount,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .signers([adminKeypair])
+          .rpc();
+
+        log('  ✅', `${token.symbol}: Collected ${formatSOL(vaultBalance)} SOL (from WSOL)`, colors.green);
+        totalCollected += vaultBalance;
+
+      } else {
+        // Bonding Curve: collect_fees with for_ecosystem=true
+        const tx = await program.methods
+          .collectFees(false, true) // is_root_token=false, for_ecosystem=true
+          .accounts({
+            datState,
+            tokenStats,
+            tokenMint: token.mint,
+            datAuthority,
+            creatorVault,
+            pumpEventAuthority,
+            pumpSwapProgram: PUMP_PROGRAM,
+            rootTreasury,
+            systemProgram: SystemProgram.programId,
+          })
+          .signers([adminKeypair])
+          .rpc();
+
+        // Check vault balance after collection
+        const vaultBalanceAfter = await program.provider.connection.getBalance(creatorVault);
+        const collected = vaultBalance - vaultBalanceAfter;
+
+        log('  ✅', `${token.symbol}: Collected ${formatSOL(collected)} SOL`, colors.green);
+        totalCollected += collected;
+      }
+
+    } catch (error) {
+      log('  ❌', `${token.symbol}: Failed - ${(error as Error).message?.slice(0, 100) || String(error)}`, colors.red);
+    }
   }
 
-  try {
-    log('📝', 'Calling collect_fees(is_root_token=true, for_ecosystem=true)...', colors.cyan);
-
-    // Call collect_fees with for_ecosystem=true to preserve pending_fees
-    const tx = await program.methods
-      .collectFees(true, true) // is_root_token=true, for_ecosystem=true
-      .accounts({
-        datState,
-        tokenStats,
-        tokenMint: rootToken.mint,
-        datAuthority,
-        creatorVault,
-        pumpEventAuthority,
-        pumpSwapProgram: PUMP_PROGRAM,
-        rootTreasury,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([adminKeypair])
-      .rpc();
-
-    log('✅', `Fees collected: ${tx}`, colors.green);
-
-    // Check vault balance after collection
-    const vaultBalanceAfter = await program.provider.connection.getBalance(creatorVault);
-    const collected = vaultBalanceBefore - vaultBalanceAfter;
-
-    log('💸', `Collected: ${formatSOL(collected)} SOL (${collected} lamports)`, colors.bright);
-
-    return collected;
-
-  } catch (error) {
-    log('❌', `Failed to collect vault fees: ${(error as Error).message || String(error)}`, colors.red);
-    throw error;
-  }
+  log('💸', `Total collected from secondaries: ${formatSOL(totalCollected)} SOL`, colors.bright);
+  return totalCollected;
 }
 
 // ============================================================================
@@ -624,6 +694,26 @@ async function getDatAuthorityBalance(connection: Connection, programId: PublicK
 }
 
 /**
+ * Get the vault balance for a token (N+1 pattern: fees are still in vault)
+ */
+async function getTokenVaultBalance(connection: Connection, token: TokenConfig): Promise<number> {
+  if (token.poolType === 'pumpswap_amm') {
+    // AMM: Check WSOL ATA balance
+    const vaultAta = getAmmCreatorVaultAta(token.creator);
+    try {
+      const account = await connection.getTokenAccountBalance(vaultAta);
+      return Number(account.value.amount);
+    } catch {
+      return 0; // ATA doesn't exist yet
+    }
+  } else {
+    // Bonding Curve: Check native SOL balance
+    const vault = getBcCreatorVault(token.creator);
+    return await connection.getBalance(vault);
+  }
+}
+
+/**
  * Calculate dynamic allocation based on actual remaining balance
  * CRITICAL: Reserves minimum allocations for remaining tokens before calculating current allocation
  * This ensures all tokens can be processed if there's enough total balance
@@ -688,8 +778,16 @@ function calculateDynamicAllocation(
 }
 
 /**
- * Execute secondary tokens with dynamic balance checking
- * This replaces the pre-calculated allocation approach
+ * Execute secondary tokens with SHARED VAULT support
+ *
+ * ARCHITECTURE: All tokens share the SAME creator vault (single creator = single vault)
+ *
+ * Flow:
+ * 1. Check shared vault balance ONCE
+ * 2. Calculate proportional allocations based on pending_fees ratio
+ * 3. First token: collect (drains vault to datAuthority) + buy (with its SHARE only)
+ * 4. Other tokens: collect (vault empty, no-op) + buy (from remaining datAuthority balance)
+ * 5. All collected fees are used for buyback & burn (100%)
  */
 async function executeSecondaryTokensDynamic(
   program: Program,
@@ -697,66 +795,134 @@ async function executeSecondaryTokensDynamic(
   secondaryAllocations: TokenAllocation[],
   adminKeypair: Keypair
 ): Promise<{ results: { [key: string]: CycleResult }; viable: TokenAllocation[]; deferred: TokenAllocation[] }> {
-  logSection('STEP 4: EXECUTE SECONDARY TOKEN CYCLES (DYNAMIC)');
+  logSection('STEP 2: EXECUTE SECONDARY TOKEN CYCLES (SHARED VAULT N+1)');
 
   const results: { [key: string]: CycleResult } = {};
   const viable: TokenAllocation[] = [];
   const deferred: TokenAllocation[] = [];
 
-  // Sort by pending fees descending - process largest first
-  const sorted = [...secondaryAllocations].sort((a, b) => b.pendingFees - a.pendingFees);
+  if (secondaryAllocations.length === 0) {
+    return { results, viable, deferred };
+  }
 
-  // Track remaining tokens and their pending fees
-  let remainingTokens = [...sorted];
+  // STEP 1: Check SHARED vault balance (all tokens use same creator = same vault)
+  // Use first token to get the shared vault address
+  const sharedVaultBalance = await getTokenVaultBalance(connection, secondaryAllocations[0].token);
 
-  for (const allocation of sorted) {
-    // Get ACTUAL balance before this cycle
-    const actualBalance = await getDatAuthorityBalance(connection, program.programId);
+  log('📊', `SHARED VAULT STATUS:`, colors.bright);
+  log('  💰', `Total fees in shared vault: ${formatSOL(sharedVaultBalance)} SOL`, colors.cyan);
+  log('  👥', `Secondary tokens to process: ${secondaryAllocations.length}`, colors.cyan);
 
-    // Calculate remaining pending fees (excluding already processed tokens)
-    const totalRemainingPending = remainingTokens.reduce((sum, t) => sum + t.pendingFees, 0);
+  const MIN_FEES_FOR_SPLIT = 5_500_000; // 0.0055 SOL (program minimum)
 
-    log('📊', `Balance check for ${allocation.token.symbol}:`, colors.cyan);
-    log('  💰', `datAuthority balance: ${formatSOL(actualBalance)} SOL`, colors.cyan);
-    log('  📋', `Remaining tokens: ${remainingTokens.length}`, colors.cyan);
-    log('  📊', `Total remaining pending: ${formatSOL(totalRemainingPending)} SOL`, colors.cyan);
+  // STEP 2: Check if we have enough total fees for at least one token
+  if (sharedVaultBalance < MIN_FEES_FOR_SPLIT) {
+    log('⚠️', `Shared vault ${formatSOL(sharedVaultBalance)} < minimum ${formatSOL(MIN_FEES_FOR_SPLIT)} SOL`, colors.yellow);
+    log('ℹ️', `All secondary tokens will be DEFERRED until more fees accumulate`, colors.cyan);
 
-    // Calculate dynamic allocation
-    const { allocation: dynamicAlloc, viable: isViable, reason } = calculateDynamicAllocation(
-      actualBalance,
-      allocation.pendingFees,
-      totalRemainingPending,
-      remainingTokens.length
-    );
-
-    // Update allocation with dynamic value
-    allocation.allocation = dynamicAlloc;
-
-    if (!isViable) {
-      log('⏭️', `${allocation.token.symbol} DEFERRED: ${reason}`, colors.yellow);
+    for (const allocation of secondaryAllocations) {
       deferred.push(allocation);
       results[allocation.token.symbol] = {
         token: allocation.token.symbol,
         success: true, // Deferred is not a failure
         pendingFees: allocation.pendingFees,
-        allocation: dynamicAlloc,
-        error: `DEFERRED: ${reason}`,
+        allocation: 0,
+        error: `DEFERRED: Shared vault insufficient (${formatSOL(sharedVaultBalance)} SOL)`,
       };
+    }
+    return { results, viable, deferred };
+  }
+
+  // STEP 3: Calculate proportional allocations based on pending_fees
+  // pending_fees comes from daemon tracking per-token trading activity
+  const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
+
+  log('📐', `Calculating proportional distribution:`, colors.cyan);
+  log('  📊', `Total tracked pending fees: ${formatSOL(totalPending)} SOL`, colors.cyan);
+
+  // If no pending_fees tracked (daemon not running), distribute equally
+  const useEqualDistribution = totalPending === 0;
+  if (useEqualDistribution) {
+    log('  ⚠️', `No pending_fees tracked - using equal distribution`, colors.yellow);
+  }
+
+  // Calculate each token's allocation from the shared vault
+  const allocationsWithShare: Array<TokenAllocation & { calculatedShare: number; isViable: boolean }> = [];
+
+  for (const allocation of secondaryAllocations) {
+    let share: number;
+
+    if (useEqualDistribution) {
+      // Equal distribution when daemon hasn't tracked fees
+      share = Math.floor(sharedVaultBalance / secondaryAllocations.length);
     } else {
-      log('✅', `${allocation.token.symbol} VIABLE: allocation = ${formatSOL(dynamicAlloc)} SOL`, colors.green);
-
-      // Execute the cycle
-      const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
-      results[allocation.token.symbol] = result;
-
-      if (result.success) {
-        viable.push(allocation);
-      }
+      // Proportional distribution based on pending_fees ratio
+      const ratio = allocation.pendingFees / totalPending;
+      share = Math.floor(sharedVaultBalance * ratio);
     }
 
-    // Remove from remaining tokens
-    remainingTokens = remainingTokens.filter(t => t.token.symbol !== allocation.token.symbol);
-    console.log(''); // Spacing
+    const isViable = share >= MIN_FEES_FOR_SPLIT;
+
+    allocationsWithShare.push({
+      ...allocation,
+      calculatedShare: share,
+      isViable,
+    });
+
+    const statusIcon = isViable ? '✅' : '⏭️';
+    const statusColor = isViable ? colors.green : colors.yellow;
+    log(`  ${statusIcon}`, `${allocation.token.symbol}: ${formatSOL(share)} SOL (${useEqualDistribution ? 'equal' : ((allocation.pendingFees / totalPending * 100).toFixed(1) + '%')})`, statusColor);
+  }
+
+  // Sort by share descending - process largest allocations first
+  const sorted = allocationsWithShare.sort((a, b) => b.calculatedShare - a.calculatedShare);
+
+  console.log('');
+  log('🔄', `Processing ${sorted.filter(a => a.isViable).length} viable tokens, deferring ${sorted.filter(a => !a.isViable).length}`, colors.bright);
+  console.log('');
+
+  // STEP 4: Execute each token's cycle
+  // First token will collect from vault (drains it)
+  // Subsequent tokens will collect from empty vault (no-op) but use remaining datAuthority balance
+  let isFirstToken = true;
+
+  for (const allocation of sorted) {
+    if (!allocation.isViable) {
+      // Token's share is below minimum - defer to next cycle
+      log('⏭️', `${allocation.token.symbol} DEFERRED: share ${formatSOL(allocation.calculatedShare)} < ${formatSOL(MIN_FEES_FOR_SPLIT)} minimum`, colors.yellow);
+      deferred.push(allocation);
+      results[allocation.token.symbol] = {
+        token: allocation.token.symbol,
+        success: true, // Deferred is not a failure
+        pendingFees: allocation.pendingFees,
+        allocation: allocation.calculatedShare,
+        error: `DEFERRED: Share below minimum`,
+      };
+      console.log('');
+      continue;
+    }
+
+    // Update allocation with calculated share
+    allocation.allocation = allocation.calculatedShare;
+
+    log('🔄', `Processing ${allocation.token.symbol}:`, colors.cyan);
+    log('  💰', `Allocated share: ${formatSOL(allocation.calculatedShare)} SOL`, colors.cyan);
+    if (isFirstToken) {
+      log('  📦', `Will collect ${formatSOL(sharedVaultBalance)} SOL from shared vault`, colors.cyan);
+    } else {
+      log('  📦', `Vault already drained - using datAuthority balance`, colors.cyan);
+    }
+
+    // Execute the cycle (N+1: collect + buy + finalize + burn in single TX)
+    const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
+    results[allocation.token.symbol] = result;
+
+    if (result.success) {
+      viable.push(allocation);
+      isFirstToken = false; // Only first successful token drains the vault
+    }
+
+    console.log('');
   }
 
   return { results, viable, deferred };
@@ -775,7 +941,7 @@ async function executeSecondaryWithAllocation(
   };
 
   try {
-    log('🔄', `Processing ${allocation.token.symbol}...`, colors.cyan);
+    log('🔄', `Processing ${allocation.token.symbol} (BATCH TX)...`, colors.cyan);
 
     // Derive all required PDAs
     const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
@@ -829,14 +995,32 @@ async function executeSecondaryWithAllocation(
 
     const protocolFeeRecipient = allocation.token.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
-    // Route based on pool type
-    let buyTx: string;
+    // Derive root treasury PDA (required for secondary tokens)
+    const [rootTreasury] = PublicKey.findProgramAddressSync(
+      [ROOT_TREASURY_SEED, rootMint.toBuffer()],
+      program.programId
+    );
 
+    // Build instructions array for batch transaction
+    const instructions: TransactionInstruction[] = [];
+
+    // Add compute budget for complex batch transaction (collect + buy + finalize + burn)
+    instructions.push(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 500_000 })
+    );
+
+    // Derive pump event authority for collect_fees
+    const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
+      [Buffer.from('__event_authority')],
+      PUMP_PROGRAM
+    );
+
+    // Route based on pool type
     if (allocation.token.poolType === 'pumpswap_amm') {
       // ═══════════════════════════════════════════════════════════════════════
-      // PumpSwap AMM Buy Execution
+      // PumpSwap AMM: Collect + Unwrap + Wrap + Buy (optimized N+1 pattern)
       // ═══════════════════════════════════════════════════════════════════════
-      log('  🔄', `Executing AMM buy with ${formatSOL(allocation.allocation)} SOL (PumpSwap)...`, colors.cyan);
+      log('  📦', `Building AMM batch (collect + unwrap + wrap + buy)...`, colors.cyan);
 
       // Derive AMM-specific PDAs
       const pool = allocation.token.bondingCurve; // For AMM, this is the pool address
@@ -846,6 +1030,10 @@ async function executeSecondaryWithAllocation(
         [datAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
         ASSOCIATED_TOKEN_PROGRAM
       );
+
+      // AMM creator vault accounts (for collect_fees_amm)
+      const [creatorVaultAuthority] = deriveAmmCreatorVaultAuthority(creator);
+      const creatorVaultAta = getAmmCreatorVaultAta(creator);
 
       // Pool's token accounts (base = token, quote = WSOL)
       const [poolBaseTokenAccount] = PublicKey.findProgramAddressSync(
@@ -864,7 +1052,7 @@ async function executeSecondaryWithAllocation(
         ASSOCIATED_TOKEN_PROGRAM
       );
 
-      // Coin creator vault accounts
+      // Coin creator vault accounts (for buy)
       const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(
         [Buffer.from('creator_vault_authority'), allocation.token.mint.toBuffer()],
         PUMP_SWAP_PROGRAM
@@ -891,11 +1079,62 @@ async function executeSecondaryWithAllocation(
         FEE_PROGRAM
       );
 
-      // Calculate desired tokens based on allocation (simplified - in prod use price oracle)
+      // Step 1: Collect fees from AMM creator vault (WSOL → datWsolAccount)
+      log('  📦', `Building collect_fees_amm instruction...`, colors.cyan);
+      const collectAmmIx = await program.methods
+        .collectFeesAmm()
+        .accounts({
+          datState,
+          tokenStats,
+          tokenMint: allocation.token.mint,
+          datAuthority,
+          datWsolAccount,
+          creatorVaultAuthority,
+          creatorVaultAta,
+          wsolMint: WSOL_MINT,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          pumpSwapProgram: PUMP_SWAP_PROGRAM,
+        })
+        .instruction();
+
+      instructions.push(collectAmmIx);
+
+      // Step 2: Unwrap WSOL → SOL (moves from datWsolAccount to datAuthority)
+      log('  📦', `Building unwrap_wsol instruction...`, colors.cyan);
+      const unwrapIx = await program.methods
+        .unwrapWsol()
+        .accounts({
+          datState,
+          datAuthority,
+          datWsolAccount,
+          wsolMint: WSOL_MINT,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .instruction();
+
+      instructions.push(unwrapIx);
+
+      // Step 3: Wrap SOL → WSOL for AMM buy
+      log('  📦', `Building wrap_wsol instruction (${formatSOL(allocation.allocation)} SOL)...`, colors.cyan);
+      const wrapIx = await program.methods
+        .wrapWsol(new BN(allocation.allocation))
+        .accounts({
+          datState,
+          datAuthority,
+          datWsolAccount,
+          wsolMint: WSOL_MINT,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
+
+      instructions.push(wrapIx);
+
+      // Step 4: Calculate desired tokens based on allocation (simplified - in prod use price oracle)
       const desiredTokens = new BN(1_000_000); // 1M tokens minimum, will get actual amount from CPI
       const maxSolCost = new BN(allocation.allocation);
 
-      buyTx = await program.methods
+      const buyIx = await program.methods
         .executeBuyAmm(desiredTokens, maxSolCost)
         .accounts({
           datState,
@@ -923,16 +1162,37 @@ async function executeSecondaryWithAllocation(
           feeConfig,
           feeProgram: FEE_PROGRAM,
         })
-        .signers([adminKeypair])
-        .rpc();
+        .instruction();
 
-      log('  ✅', `AMM Buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
+      instructions.push(buyIx);
 
     } else {
       // ═══════════════════════════════════════════════════════════════════════
-      // Bonding Curve Buy Execution (existing logic)
+      // Bonding Curve: Collect + Buy (optimized N+1 pattern)
       // ═══════════════════════════════════════════════════════════════════════
-      log('  💸', `Executing bonding curve buy with ${formatSOL(allocation.allocation)} SOL...`, colors.cyan);
+
+      // Step 1: Collect fees from creator vault → datAuthority
+      log('  📦', `Building collect_fees instruction...`, colors.cyan);
+      const collectIx = await program.methods
+        .collectFees(false, true) // is_root_token=false, for_ecosystem=true
+        .accounts({
+          datState,
+          tokenStats,
+          tokenMint: allocation.token.mint,
+          datAuthority,
+          creatorVault,
+          pumpEventAuthority,
+          pumpSwapProgram: PUMP_PROGRAM,
+          rootTreasury,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
+
+      instructions.push(collectIx);
+
+      // Step 2: Buy tokens with PROPORTIONAL allocation from shared vault
+      // CRITICAL: Pass calculated allocation, NOT null (to leave balance for other tokens)
+      log('  📦', `Building bonding curve buy instruction (${formatSOL(allocation.allocation)} SOL)...`, colors.cyan);
 
       // PumpFun volume accumulator accounts
       const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
@@ -950,8 +1210,10 @@ async function executeSecondaryWithAllocation(
         FEE_PROGRAM
       );
 
-      buyTx = await program.methods
-        .executeBuy(true, new BN(allocation.allocation)) // is_secondary=true, allocated_lamports
+      // Pass calculated allocation (proportional share from shared vault)
+      // This leaves remaining balance in datAuthority for other secondary tokens
+      const buyIx = await program.methods
+        .executeBuySecondary(new BN(allocation.allocation))
         .accounts({
           datState,
           datAuthority,
@@ -968,38 +1230,31 @@ async function executeSecondaryWithAllocation(
           userVolumeAccumulator,
           feeConfig,
           feeProgram: FEE_PROGRAM,
+          rootTreasury,
           tokenProgram,
           systemProgram: SystemProgram.programId,
         })
-        .signers([adminKeypair])
-        .rpc();
+        .instruction();
 
-      log('  ✅', `Bonding curve buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
+      instructions.push(buyIx);
     }
 
-    result.buyTx = buyTx;
-
-    // Step 4b: Finalize allocated cycle (reset pending_fees, increment cycles_participated)
-    // Pass true because this token actually participated in the cycle
-    log('  🔄', 'Finalizing cycle (actually_participated=true)...', colors.cyan);
-
-    const finalizeTx = await program.methods
+    // Finalize instruction
+    log('  📦', 'Building finalize instruction...', colors.cyan);
+    const finalizeIx = await program.methods
       .finalizeAllocatedCycle(true) // Token participated - reset pending_fees
       .accounts({
         datState,
         tokenStats,
         admin: adminKeypair.publicKey,
       })
-      .signers([adminKeypair])
-      .rpc();
+      .instruction();
 
-    result.finalizeTx = finalizeTx;
-    log('  ✅', `Finalized: ${finalizeTx.slice(0, 16)}...`, colors.green);
+    instructions.push(finalizeIx);
 
-    // Step 4c: Burn tokens
-    log('  🔥', 'Burning tokens...', colors.cyan);
-
-    const burnTx = await program.methods
+    // Burn instruction
+    log('  📦', 'Building burn instruction...', colors.cyan);
+    const burnIx = await program.methods
       .burnAndUpdate()
       .accounts({
         datState,
@@ -1009,17 +1264,46 @@ async function executeSecondaryWithAllocation(
         datAsdfAccount,
         tokenProgram,
       })
-      .signers([adminKeypair])
-      .rpc();
+      .instruction();
 
-    result.burnTx = burnTx;
+    instructions.push(burnIx);
+
+    // Create and send batch transaction
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
+
+    const tx = new Transaction();
+    instructions.forEach(ix => tx.add(ix));
+
+    // Get latest blockhash
+    const { blockhash, lastValidBlockHeight } = await program.provider.connection.getLatestBlockhash('confirmed');
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = adminKeypair.publicKey;
+
+    // Sign and send
+    tx.sign(adminKeypair);
+    const signature = await program.provider.connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    });
+
+    // Wait for confirmation
+    await program.provider.connection.confirmTransaction({
+      signature,
+      blockhash,
+      lastValidBlockHeight,
+    }, 'confirmed');
+
+    result.buyTx = signature;
+    result.finalizeTx = signature; // Same TX
+    result.burnTx = signature; // Same TX
 
     // Fetch final stats to get burned amount
     const finalStats: any = await (program.account as any).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
-    log('  🔥', `Burned: ${burnTx.slice(0, 16)}...`, colors.green);
-    log('  ✅', `${allocation.token.symbol} cycle complete!`, colors.bright);
+    log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
+    log('  ✅', `${allocation.token.symbol} cycle complete (1 TX instead of 3)!`, colors.bright);
 
     result.success = true;
     return result;
@@ -1087,7 +1371,7 @@ async function executeRootCycle(
   rootToken: TokenConfig,
   adminKeypair: Keypair
 ): Promise<CycleResult> {
-  logSection('STEP 5: EXECUTE ROOT TOKEN CYCLE');
+  logSection('STEP 3: EXECUTE ROOT TOKEN CYCLE');
 
   const result: CycleResult = {
     token: rootToken.symbol,
@@ -1095,7 +1379,8 @@ async function executeRootCycle(
   };
 
   try {
-    log('🔄', `Processing ${rootToken.symbol} (ROOT)...`, colors.cyan);
+    const isAmm = rootToken.poolType === 'pumpswap_amm';
+    log('🔄', `Processing ${rootToken.symbol} (ROOT - ${isAmm ? 'AMM' : 'BC'} BATCH TX)...`, colors.cyan);
 
     // Derive PDAs
     const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
@@ -1106,10 +1391,7 @@ async function executeRootCycle(
     );
 
     const creator = rootToken.creator;
-    const [creatorVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from('creator-vault'), creator.toBuffer()],
-      PUMP_PROGRAM
-    );
+    const creatorVault = getBcCreatorVault(creator);
 
     const [rootTreasury] = PublicKey.findProgramAddressSync(
       [ROOT_TREASURY_SEED, rootToken.mint.toBuffer()],
@@ -1118,6 +1400,7 @@ async function executeRootCycle(
 
     // Dynamic token program selection for root (supports Token-2022/Mayhem as root)
     const tokenProgram = rootToken.isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+    const poolAddress = rootToken.bondingCurve; // For AMM, this is the pool address
 
     const [datAsdfAccount] = PublicKey.findProgramAddressSync(
       [
@@ -1130,7 +1413,7 @@ async function executeRootCycle(
 
     const [poolAsdfAccount] = PublicKey.findProgramAddressSync(
       [
-        rootToken.bondingCurve.toBuffer(),
+        poolAddress.toBuffer(),
         tokenProgram.toBuffer(),
         rootToken.mint.toBuffer(),
       ],
@@ -1142,18 +1425,21 @@ async function executeRootCycle(
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
     const protocolFeeRecipient = rootToken.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
+    // Select swap program based on pool type
+    const swapProgram = isAmm ? PUMP_SWAP_PROGRAM : PUMP_PROGRAM;
+
     const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
       [Buffer.from('global_volume_accumulator')],
-      PUMP_PROGRAM
+      swapProgram
     );
 
     const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
       [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
-      PUMP_PROGRAM
+      swapProgram
     );
 
     const [feeConfig] = PublicKey.findProgramAddressSync(
-      [Buffer.from('fee_config'), PUMP_PROGRAM.toBuffer()],
+      [Buffer.from('fee_config'), swapProgram.toBuffer()],
       FEE_PROGRAM
     );
 
@@ -1162,61 +1448,160 @@ async function executeRootCycle(
       PUMP_PROGRAM
     );
 
-    // Step 5a: Collect fees from root treasury
-    log('  💰', 'Collecting fees from root treasury...', colors.cyan);
+    // Build instructions array for batch transaction
+    const instructions: TransactionInstruction[] = [];
 
-    const collectTx = await program.methods
-      .collectFees(true, false) // is_root_token=true, for_ecosystem=false
-      .accounts({
-        datState,
-        tokenStats,
-        tokenMint: rootToken.mint,
-        datAuthority,
-        creatorVault,
-        pumpEventAuthority,
-        pumpSwapProgram: PUMP_PROGRAM,
-        rootTreasury,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([adminKeypair])
-      .rpc();
+    // Add compute budget for complex batch transaction
+    instructions.push(
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+    );
 
-    log('  ✅', `Collected: ${collectTx.slice(0, 16)}...`, colors.green);
+    if (isAmm) {
+      // AMM: Fees collected in Step 2 (unwrapped to SOL) + treasury SOL
+      // Need to wrap SOL → WSOL, then execute buy + burn
+      log('  📦', 'AMM: Building wrap_wsol + buy instructions...', colors.cyan);
 
-    // Step 5b: Execute buy (100% for buyback, no split)
-    log('  💸', 'Executing buy (100% for buyback)...', colors.cyan);
+      // Derive AMM-specific accounts
+      const [datWsolAccount] = PublicKey.findProgramAddressSync(
+        [datAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
 
-    const buyTx = await program.methods
-      .executeBuy(false, null) // is_secondary=false, no allocated_lamports (use balance)
-      .accounts({
-        datState,
-        datAuthority,
-        datAsdfAccount,
-        pool: rootToken.bondingCurve,
-        asdfMint: rootToken.mint,
-        poolAsdfAccount,
-        pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
-        protocolFeeRecipient,
-        creatorVault,
-        pumpEventAuthority: PUMP_EVENT_AUTHORITY,
-        pumpSwapProgram: PUMP_PROGRAM,
-        globalVolumeAccumulator,
-        userVolumeAccumulator,
-        feeConfig,
-        feeProgram: FEE_PROGRAM,
-        tokenProgram,
-        systemProgram: SystemProgram.programId,
-      })
-      .signers([adminKeypair])
-      .rpc();
+      const [poolQuoteTokenAccount] = PublicKey.findProgramAddressSync(
+        [poolAddress.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
 
-    result.buyTx = buyTx;
-    log('  ✅', `Buy completed: ${buyTx.slice(0, 16)}...`, colors.green);
+      const [protocolFeeRecipientAta] = PublicKey.findProgramAddressSync(
+        [PUMPSWAP_PROTOCOL_FEE_RECIPIENT.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
 
-    // Step 5c: Burn tokens
-    log('  🔥', 'Burning tokens...', colors.cyan);
+      const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(
+        [Buffer.from('creator_vault_authority'), rootToken.mint.toBuffer()],
+        PUMP_SWAP_PROGRAM
+      );
 
-    const burnTx = await program.methods
+      const [coinCreatorVaultAta] = PublicKey.findProgramAddressSync(
+        [coinCreatorVaultAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+        ASSOCIATED_TOKEN_PROGRAM
+      );
+
+      // PumpSwap global config
+      const [pumpSwapGlobalConfig] = PublicKey.findProgramAddressSync(
+        [Buffer.from('global')],
+        PUMP_SWAP_PROGRAM
+      );
+
+      // Get available SOL balance for wrap
+      const datAuthorityBalance = await program.provider.connection.getBalance(datAuthority);
+      const availableForWrap = Math.max(0, datAuthorityBalance - RENT_EXEMPT_MINIMUM - SAFETY_BUFFER);
+
+      if (availableForWrap > 0) {
+        // Step 1: Wrap SOL → WSOL for AMM buy
+        const wrapIx = await program.methods
+          .wrapWsol(new BN(availableForWrap))
+          .accounts({
+            datState,
+            datAuthority,
+            datWsolAccount,
+            wsolMint: WSOL_MINT,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .instruction();
+
+        instructions.push(wrapIx);
+        log('  📦', `Wrap instruction added: ${formatSOL(availableForWrap)} SOL → WSOL`, colors.cyan);
+      }
+
+      // Step 2: Execute buy via AMM
+      const desiredTokens = new BN(1_000_000);
+      const maxSolCost = new BN(10_000_000_000); // 10 SOL max (will use actual balance)
+
+      const buyIx = await program.methods
+        .executeBuyAmm(desiredTokens, maxSolCost)
+        .accounts({
+          datState,
+          datAuthority,
+          datTokenAccount: datAsdfAccount,
+          pool: poolAddress,
+          globalConfig: pumpSwapGlobalConfig,
+          baseMint: rootToken.mint,
+          quoteMint: WSOL_MINT,
+          datWsolAccount,
+          poolBaseTokenAccount: poolAsdfAccount,
+          poolQuoteTokenAccount,
+          protocolFeeRecipient: PUMPSWAP_PROTOCOL_FEE_RECIPIENT,
+          protocolFeeRecipientAta,
+          baseTokenProgram: tokenProgram,
+          quoteTokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM,
+          eventAuthority: PUMPSWAP_EVENT_AUTHORITY,
+          pumpSwapProgram: PUMP_SWAP_PROGRAM,
+          coinCreatorVaultAta,
+          coinCreatorVaultAuthority,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+        })
+        .instruction();
+
+      instructions.push(buyIx);
+
+    } else {
+      // Bonding Curve: Collect fees + execute buy
+      log('  📦', 'Building collect fees instruction...', colors.cyan);
+      const collectIx = await program.methods
+        .collectFees(true, false) // is_root_token=true, for_ecosystem=false
+        .accounts({
+          datState,
+          tokenStats,
+          tokenMint: rootToken.mint,
+          datAuthority,
+          creatorVault,
+          pumpEventAuthority,
+          pumpSwapProgram: PUMP_PROGRAM,
+          rootTreasury,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
+
+      instructions.push(collectIx);
+
+      // Execute buy instruction
+      log('  📦', 'Building buy instruction (100% buyback)...', colors.cyan);
+      const buyIx = await program.methods
+        .executeBuy(null) // No allocated_lamports = use full balance
+        .accounts({
+          datState,
+          datAuthority,
+          datAsdfAccount,
+          pool: poolAddress,
+          asdfMint: rootToken.mint,
+          poolAsdfAccount,
+          pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
+          protocolFeeRecipient,
+          creatorVault,
+          pumpEventAuthority: PUMP_EVENT_AUTHORITY,
+          pumpSwapProgram: PUMP_PROGRAM,
+          globalVolumeAccumulator,
+          userVolumeAccumulator,
+          feeConfig,
+          feeProgram: FEE_PROGRAM,
+          tokenProgram,
+          systemProgram: SystemProgram.programId,
+        })
+        .instruction();
+
+      instructions.push(buyIx);
+    }
+
+    // Burn instruction (same for both BC and AMM)
+    log('  📦', 'Building burn instruction...', colors.cyan);
+    const burnIx = await program.methods
       .burnAndUpdate()
       .accounts({
         datState,
@@ -1226,16 +1611,44 @@ async function executeRootCycle(
         datAsdfAccount,
         tokenProgram,
       })
-      .signers([adminKeypair])
-      .rpc();
+      .instruction();
 
-    result.burnTx = burnTx;
+    instructions.push(burnIx);
+
+    // Create and send batch transaction
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + burn)...`, colors.cyan);
+
+    const tx = new Transaction();
+    instructions.forEach(ix => tx.add(ix));
+
+    // Get latest blockhash
+    const { blockhash, lastValidBlockHeight } = await program.provider.connection.getLatestBlockhash('confirmed');
+    tx.recentBlockhash = blockhash;
+    tx.lastValidBlockHeight = lastValidBlockHeight;
+    tx.feePayer = adminKeypair.publicKey;
+
+    // Sign and send
+    tx.sign(adminKeypair);
+    const signature = await program.provider.connection.sendRawTransaction(tx.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: 'confirmed',
+    });
+
+    // Wait for confirmation
+    await program.provider.connection.confirmTransaction({
+      signature,
+      blockhash,
+      lastValidBlockHeight,
+    }, 'confirmed');
+
+    result.buyTx = signature;
+    result.burnTx = signature; // Same TX
 
     const finalStats: any = await (program.account as any).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
-    log('  🔥', `Burned: ${burnTx.slice(0, 16)}...`, colors.green);
-    log('  ✅', `${rootToken.symbol} cycle complete!`, colors.bright);
+    log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
+    log('  ✅', `${rootToken.symbol} cycle complete (1 TX instead of 3)!`, colors.bright);
 
     result.success = true;
     return result;
@@ -1354,6 +1767,10 @@ function displayCycleSummary(
 // ============================================================================
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.log(colors.bright + colors.magenta);
   console.log('╔════════════════════════════════════════════════════════════════════════════╗');
   console.log('║                    ECOSYSTEM CYCLE ORCHESTRATOR                             ║');
@@ -1361,11 +1778,14 @@ async function main() {
   console.log('╚════════════════════════════════════════════════════════════════════════════╝');
   console.log(colors.reset + '\n');
 
-  // Setup connection and provider
-  const rpcUrl = process.env.RPC_URL || 'https://api.devnet.solana.com';
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
+  // Setup connection and provider using network config
+  const rpcUrl = process.env.RPC_URL || networkConfig.rpcUrl;
   const connection = new Connection(rpcUrl, 'confirmed');
 
-  const walletPath = process.env.WALLET_PATH || 'devnet-wallet.json';
+  const walletPath = process.env.WALLET_PATH || networkConfig.wallet;
   if (!fs.existsSync(walletPath)) {
     throw new Error(`Wallet file not found: ${walletPath}`);
   }
@@ -1387,12 +1807,12 @@ async function main() {
 
   log('🔗', `Connected to: ${rpcUrl}`, colors.cyan);
   log('👤', `Admin: ${adminKeypair.publicKey.toBase58()}`, colors.cyan);
-  log('📜', `Program: ${PROGRAM_ID.toBase58()}`, colors.cyan);
+  log('📜', `Program: ${networkConfig.programId}`, colors.cyan);
   console.log('');
 
   try {
-    // Load all ecosystem tokens
-    const tokens = await loadEcosystemTokens(connection);
+    // Load all ecosystem tokens from network config
+    const tokens = await loadEcosystemTokens(connection, networkConfig);
     const rootToken = tokens.find(t => t.isRoot);
     const secondaryTokens = tokens.filter(t => !t.isRoot);
 
@@ -1410,23 +1830,22 @@ async function main() {
       log('ℹ️', `Proceeding with ${syncResult.tokensWithFees.length} synced tokens`, colors.cyan);
     }
 
-    // Step 1: Query pending fees
+    // Step 1: Query pending fees (for display/allocation calculation)
     const allocations = await queryPendingFees(program, tokens);
 
-    // Step 2: Collect all vault fees
-    const totalCollected = await collectAllVaultFees(program, rootToken, adminKeypair);
-
-    // Step 3: Calculate proportional distribution (for display and ratio only - actual allocation is dynamic)
-    const { ratio } = normalizeAllocations(allocations, totalCollected);
-
-    // Get secondary allocations for dynamic processing
+    // Get secondary allocations for processing
     const secondaryAllocations = allocations.filter(a => !a.isRoot);
 
     if (secondaryAllocations.length === 0) {
       log('⚠️', 'No secondary tokens with pending fees. Skipping secondary cycles.', colors.yellow);
     }
 
-    // Step 4: Execute secondary cycles with DYNAMIC allocation (balance-aware)
+    // Calculate total pending for ratio display (actual collection happens per-token in batch TX)
+    const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
+    const ratio = 1.0; // Will be recalculated based on actual collected amounts
+
+    // Step 2: Execute secondary cycles (each batch TX: collect + buy + finalize + burn)
+    // This is the optimized N+1 pattern - collection is now INSIDE each secondary's batch TX
     const { results, viable: actualViable, deferred: actualDeferred } = await executeSecondaryTokensDynamic(
       program,
       connection,
@@ -1434,16 +1853,19 @@ async function main() {
       adminKeypair
     );
 
-    // Step 4b: Finalize deferred tokens (preserve their pending_fees for next cycle)
+    // Step 2b: Finalize deferred tokens (preserve their pending_fees for next cycle)
     await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
 
-    // Step 5: Execute root cycle
+    // Step 3: Execute root cycle (batch TX: collect + buy + burn)
     const rootResult = await executeRootCycle(program, rootToken, adminKeypair);
     results[rootToken.symbol] = rootResult;
 
-    // Step 6: Display summary
+    // Step 4: Display summary
     const endTime = Date.now();
     const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+    // Calculate total collected from viable results
+    const totalCollected = actualViable.reduce((sum, a) => sum + (a.allocation || 0), 0);
 
     displayCycleSummary({ viable: actualViable, skipped: actualDeferred, ratio }, results, totalCollected);
 

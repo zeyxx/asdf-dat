@@ -1,10 +1,17 @@
 import { Connection, PublicKey } from '@solana/web3.js';
+import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
 
 const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 
 async function main() {
-  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
 
   const tokens = [
     { symbol: 'DATSPL', mint: 'rxeo277TLJfPYX6zaSfbtyHWY7BkTREL9AidoNi38jr' },

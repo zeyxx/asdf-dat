@@ -22,13 +22,12 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 import { PumpFunFeeMonitor, TokenConfig } from "../lib/fee-monitor";
+import { getNetworkConfig, printNetworkBanner, NetworkConfig } from "../lib/network-config";
 
 // Program ID
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
-// Configuration
-const RPC_URL = process.env.RPC_URL || "https://api.devnet.solana.com";
-const WALLET_PATH = process.env.WALLET_PATH || "devnet-wallet.json";
+// Configuration (can be overridden by env vars)
 const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "30000"); // 30 seconds
 const VERBOSE = process.env.VERBOSE === "true";
 
@@ -38,44 +37,33 @@ interface EcosystemConfig {
 }
 
 /**
- * Load ecosystem configuration from files
+ * Load ecosystem configuration from network config
  */
-function loadEcosystemConfig(): EcosystemConfig {
+function loadEcosystemConfig(networkConfig: NetworkConfig): EcosystemConfig {
   const config: EcosystemConfig = {
     secondaries: [],
   };
 
-  // Load root token if exists
-  const rootTokenPath = "devnet-token-spl.json";
-  if (fs.existsSync(rootTokenPath)) {
-    const rootData = JSON.parse(fs.readFileSync(rootTokenPath, "utf-8"));
-    config.root = {
-      mint: new PublicKey(rootData.mint),
-      bondingCurve: new PublicKey(rootData.bondingCurve),
-      creator: new PublicKey(rootData.creator),
-      symbol: rootData.symbol || "ROOT",
-      name: rootData.name || "Root Token",
-    };
-  }
-
-  // Load secondary tokens
-  const tokenFiles = [
-    "devnet-token-secondary.json",
-    "devnet-token-mayhem.json",
-    // Add more token files as needed
-  ];
-
-  for (const file of tokenFiles) {
+  // Load tokens from network config
+  for (const file of networkConfig.tokens) {
     if (fs.existsSync(file)) {
       try {
         const data = JSON.parse(fs.readFileSync(file, "utf-8"));
-        config.secondaries.push({
+        const tokenConfig: TokenConfig = {
           mint: new PublicKey(data.mint),
-          bondingCurve: new PublicKey(data.bondingCurve),
+          bondingCurve: new PublicKey(data.bondingCurve || data.pool),
+          pool: data.pool ? new PublicKey(data.pool) : undefined,
           creator: new PublicKey(data.creator),
-          symbol: data.symbol || "SECONDARY",
-          name: data.name || "Secondary Token",
-        });
+          symbol: data.symbol || "TOKEN",
+          name: data.name || "Token",
+          poolType: data.poolType || 'bonding_curve',
+        };
+
+        if (data.isRoot) {
+          config.root = tokenConfig;
+        } else {
+          config.secondaries.push(tokenConfig);
+        }
       } catch (error: any) {
         console.warn(`⚠️  Failed to load ${file}:`, error.message);
       }
@@ -125,14 +113,20 @@ function displayStats(monitor: PumpFunFeeMonitor, tokens: TokenConfig[]): void {
  * Main monitoring function
  */
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.clear();
   console.log("╔═══════════════════════════════════════════════════════════╗");
   console.log("║         ASDF DAT - ECOSYSTEM FEE MONITOR DAEMON          ║");
   console.log("╚═══════════════════════════════════════════════════════════╝\n");
 
+  printNetworkBanner(networkConfig);
+
   // Load configuration
   console.log("⚙️  Loading configuration...");
-  const ecosystem = loadEcosystemConfig();
+  const ecosystem = loadEcosystemConfig(networkConfig);
 
   if (ecosystem.secondaries.length === 0 && !ecosystem.root) {
     console.error("❌ No tokens found in ecosystem configuration");
@@ -152,16 +146,16 @@ async function main() {
 
   // Setup connection and program
   console.log("\n🔗 Connecting to Solana...");
-  const connection = new Connection(RPC_URL, "confirmed");
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   console.log("🔑 Loading wallet...");
-  if (!fs.existsSync(WALLET_PATH)) {
-    console.error(`❌ Wallet not found: ${WALLET_PATH}`);
+  if (!fs.existsSync(networkConfig.wallet)) {
+    console.error(`❌ Wallet not found: ${networkConfig.wallet}`);
     process.exit(1);
   }
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync(WALLET_PATH, "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
   console.log(`   Admin: ${admin.publicKey.toString()}`);
 
