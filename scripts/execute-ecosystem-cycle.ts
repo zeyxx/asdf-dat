@@ -20,18 +20,20 @@
  *   - Fee monitoring should be running (to populate pending_fees)
  */
 
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction, Commitment } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, BN, Idl } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig } from '../lib/network-config';
+import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../lib/network-config';
 import {
   getBcCreatorVault,
   getAmmCreatorVaultAta,
   deriveAmmCreatorVaultAuthority,
 } from '../lib/amm-utils';
 import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
+import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep } from '../lib/rpc-utils';
+import { ExecutionLock, LockError } from '../lib/execution-lock';
 
 // ============================================================================
 // Constants & Configuration
@@ -156,8 +158,49 @@ function formatSOL(lamports: number): string {
   return (lamports / LAMPORTS_PER_SOL).toFixed(6);
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+// Use sleep from rpc-utils (imported as rpcSleep)
+const sleep = rpcSleep;
+
+/**
+ * Validate wallet file format and return keypair
+ * Throws descriptive error if file is invalid
+ */
+function loadAndValidateWallet(walletPath: string): Keypair {
+  if (!fs.existsSync(walletPath)) {
+    throw new Error(`Wallet file not found: ${walletPath}`);
+  }
+
+  let walletData: unknown;
+  try {
+    const fileContent = fs.readFileSync(walletPath, 'utf-8');
+    walletData = JSON.parse(fileContent);
+  } catch (error) {
+    throw new Error(`Invalid wallet JSON: ${(error as Error).message}`);
+  }
+
+  // Validate it's an array of numbers
+  if (!Array.isArray(walletData)) {
+    throw new Error(`Invalid wallet format: Expected array of numbers, got ${typeof walletData}`);
+  }
+
+  // Validate array length (64 bytes for secret key)
+  if (walletData.length !== 64) {
+    throw new Error(`Invalid wallet format: Expected 64 bytes, got ${walletData.length}`);
+  }
+
+  // Validate all elements are numbers in valid range (0-255)
+  for (let i = 0; i < walletData.length; i++) {
+    const val = walletData[i];
+    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0 || val > 255) {
+      throw new Error(`Invalid wallet format: Element at index ${i} is not a valid byte (0-255)`);
+    }
+  }
+
+  try {
+    return Keypair.fromSecretKey(new Uint8Array(walletData));
+  } catch (error) {
+    throw new Error(`Invalid keypair: ${(error as Error).message}`);
+  }
 }
 
 /**
@@ -1313,25 +1356,35 @@ async function executeSecondaryWithAllocation(
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
 
-    // Get latest blockhash
-    const { blockhash, lastValidBlockHeight } = await program.provider.connection.getLatestBlockhash('confirmed');
+    // Get latest blockhash with retry (30s timeout for mainnet)
+    const { blockhash, lastValidBlockHeight } = await withRetryAndTimeout(
+      () => program.provider.connection.getLatestBlockhash('confirmed'),
+      { maxRetries: 3 },
+      30000
+    );
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = adminKeypair.publicKey;
 
-    // Sign and send
+    // Sign and send with retry (45s timeout for mainnet)
     tx.sign(adminKeypair);
-    const signature = await program.provider.connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed',
-    });
+    const signature = await withRetryAndTimeout(
+      () => program.provider.connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+      }),
+      { maxRetries: 3, baseDelayMs: 1000 },
+      45000
+    );
 
-    // Wait for confirmation
-    await program.provider.connection.confirmTransaction({
+    // Wait for confirmation with retry
+    await confirmTransactionWithRetry(
+      program.provider.connection,
       signature,
       blockhash,
       lastValidBlockHeight,
-    }, 'confirmed');
+      { maxRetries: 3 }
+    );
 
     result.buyTx = signature;
     result.finalizeTx = signature; // Same TX
@@ -1660,25 +1713,35 @@ async function executeRootCycle(
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
 
-    // Get latest blockhash
-    const { blockhash, lastValidBlockHeight } = await program.provider.connection.getLatestBlockhash('confirmed');
+    // Get latest blockhash with retry (30s timeout for mainnet)
+    const { blockhash, lastValidBlockHeight } = await withRetryAndTimeout(
+      () => program.provider.connection.getLatestBlockhash('confirmed'),
+      { maxRetries: 3 },
+      30000
+    );
     tx.recentBlockhash = blockhash;
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = adminKeypair.publicKey;
 
-    // Sign and send
+    // Sign and send with retry (45s timeout for mainnet)
     tx.sign(adminKeypair);
-    const signature = await program.provider.connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed',
-    });
+    const signature = await withRetryAndTimeout(
+      () => program.provider.connection.sendRawTransaction(tx.serialize(), {
+        skipPreflight: false,
+        preflightCommitment: 'confirmed',
+      }),
+      { maxRetries: 3, baseDelayMs: 1000 },
+      45000
+    );
 
-    // Wait for confirmation
-    await program.provider.connection.confirmTransaction({
+    // Wait for confirmation with retry
+    await confirmTransactionWithRetry(
+      program.provider.connection,
       signature,
       blockhash,
       lastValidBlockHeight,
-    }, 'confirmed');
+      { maxRetries: 3 }
+    );
 
     result.buyTx = signature;
     result.burnTx = signature; // Same TX
@@ -1810,6 +1873,10 @@ async function main() {
   const args = process.argv.slice(2);
   const networkConfig = getNetworkConfig(args);
 
+  // Determine commitment level based on network (finalized for mainnet, confirmed for devnet)
+  const commitment: Commitment = getCommitment(networkConfig);
+  const onMainnet = isMainnet(networkConfig);
+
   console.log(colors.bright + colors.magenta);
   console.log('╔════════════════════════════════════════════════════════════════════════════╗');
   console.log('║                    ECOSYSTEM CYCLE ORCHESTRATOR                             ║');
@@ -1820,23 +1887,33 @@ async function main() {
   // Print network banner
   printNetworkBanner(networkConfig);
 
+  // Acquire execution lock (prevents concurrent cycles)
+  const executionLock = new ExecutionLock();
+  if (!executionLock.acquire('ecosystem-cycle')) {
+    const status = executionLock.getStatus();
+    log('❌', `Cannot start: Another cycle is already running (PID: ${status.lockInfo?.pid})`, colors.red);
+    log('ℹ️', `Started: ${new Date(status.lockInfo?.timestamp || 0).toISOString()}`, colors.cyan);
+    process.exit(1);
+  }
+  log('🔒', 'Execution lock acquired', colors.green);
+
   // Setup connection and provider using network config
   const rpcUrl = process.env.RPC_URL || networkConfig.rpcUrl;
-  const connection = new Connection(rpcUrl, 'confirmed');
+  const connection = new Connection(rpcUrl, commitment);
 
   const walletPath = process.env.WALLET_PATH || networkConfig.wallet;
-  if (!fs.existsSync(walletPath)) {
-    throw new Error(`Wallet file not found: ${walletPath}`);
+  let adminKeypair: Keypair;
+  try {
+    adminKeypair = loadAndValidateWallet(walletPath);
+  } catch (error) {
+    executionLock.release();
+    throw error;
   }
-
-  const adminKeypair = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync(walletPath, 'utf-8')))
-  );
 
   const provider = new AnchorProvider(
     connection,
     new Wallet(adminKeypair),
-    { commitment: 'confirmed' }
+    { commitment }
   );
 
   // Load IDL
@@ -1847,6 +1924,7 @@ async function main() {
   log('🔗', `Connected to: ${rpcUrl}`, colors.cyan);
   log('👤', `Admin: ${adminKeypair.publicKey.toBase58()}`, colors.cyan);
   log('📜', `Program: ${networkConfig.programId}`, colors.cyan);
+  log('⚙️', `Commitment: ${commitment} (${onMainnet ? 'MAINNET' : 'DEVNET'})`, colors.cyan);
   console.log('');
 
   try {
@@ -1915,11 +1993,19 @@ async function main() {
     console.log(colors.bright + `⏱️  Total execution time: ${duration}s` + colors.reset);
     console.log('');
 
+    // Release lock before exit
+    executionLock.release();
+    log('🔓', 'Execution lock released', colors.green);
+
     // Exit with appropriate code
     const hasFailures = Object.values(results).some(r => !r.success);
     process.exit(hasFailures ? 1 : 0);
 
   } catch (error) {
+    // Always release lock on error
+    executionLock.release();
+    log('🔓', 'Execution lock released (error)', colors.yellow);
+
     console.error(colors.red + '\n❌ Fatal error:' + colors.reset);
     console.error(colors.red + ((error as Error).message || String(error)) + colors.reset);
     console.error((error as Error).stack);

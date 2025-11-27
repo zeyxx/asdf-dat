@@ -23,6 +23,7 @@ import { BN } from "bn.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
+import { withRetryAndTimeout, sleep } from "./rpc-utils";
 
 export type PoolType = 'bonding_curve' | 'pumpswap_amm';
 
@@ -53,6 +54,10 @@ export interface MonitorConfig {
   verbose?: boolean;
   stateFile?: string;        // Path to persist state (default: .daemon-state.json)
   txLimit?: number;          // Max transactions per poll (default: 50)
+  // Adaptive polling config
+  minPollInterval?: number;  // Minimum poll interval (default: 3000 = 3s)
+  maxPollInterval?: number;  // Maximum poll interval (default: 30000 = 30s)
+  adaptivePolling?: boolean; // Enable adaptive polling (default: true)
 }
 
 // State persistence interface
@@ -89,6 +94,18 @@ export class PumpFunFeeMonitor {
   private isRunning: boolean = false;
   private stateFile: string;
   private txLimit: number;
+  // Adaptive polling state
+  private minPollInterval: number;
+  private maxPollInterval: number;
+  private adaptivePolling: boolean;
+  private currentPollInterval: number;
+  private consecutiveErrors: number = 0;
+  private consecutiveSuccess: number = 0;
+  // Health metrics
+  private pollCount: number = 0;
+  private errorCount: number = 0;
+  private feesCaptured: number = 0;
+  private lastPollTime: number = 0;
 
   constructor(config: MonitorConfig) {
     this.connection = config.connection;
@@ -103,6 +120,11 @@ export class PumpFunFeeMonitor {
     this.updateTimer = null;
     this.stateFile = config.stateFile || DEFAULT_STATE_FILE;
     this.txLimit = config.txLimit || DEFAULT_TX_LIMIT;
+    // Adaptive polling
+    this.minPollInterval = config.minPollInterval || 3000;   // 3s minimum
+    this.maxPollInterval = config.maxPollInterval || 30000;  // 30s maximum
+    this.adaptivePolling = config.adaptivePolling !== false; // default true
+    this.currentPollInterval = this.pollInterval;
 
     // Initialize token map (keyed by mint)
     for (const token of config.tokens) {
@@ -164,6 +186,9 @@ export class PumpFunFeeMonitor {
   async start(): Promise<void> {
     this.log("🔍 Starting PumpFun Fee Monitor v2 (Balance Polling)...");
     this.log(`📊 Monitoring ${this.tokens.size} tokens (limit: ${this.txLimit} TX/poll)`);
+    if (this.adaptivePolling) {
+      this.log(`🔄 Adaptive polling enabled (${this.minPollInterval/1000}s - ${this.maxPollInterval/1000}s)`);
+    }
 
     // Initialize last known signatures for tokens WITHOUT persisted state
     let loadedCount = 0;
@@ -177,12 +202,13 @@ export class PumpFunFeeMonitor {
         continue;
       }
 
-      // Initialize from blockchain
+      // Initialize from blockchain with retry
       const poolAddress = this.getPoolAddress(token);
       try {
-        const sigs = await this.connection.getSignaturesForAddress(
-          poolAddress,
-          { limit: 1 }
+        const sigs = await withRetryAndTimeout(
+          () => this.connection.getSignaturesForAddress(poolAddress, { limit: 1 }),
+          { maxRetries: 3, baseDelayMs: 1000 },
+          10000
         );
         if (sigs.length > 0) {
           this.lastSignatures.set(mintKey, sigs[0].signature);
@@ -190,7 +216,7 @@ export class PumpFunFeeMonitor {
           this.log(`   📡 ${token.symbol}: Initialized at signature ${sigs[0].signature.slice(0, 20)}...`);
         }
       } catch (error: any) {
-        this.log(`   ⚠️ ${token.symbol}: Could not initialize signature`);
+        this.log(`   ⚠️ ${token.symbol}: Could not initialize signature: ${error.message}`);
       }
     }
 
@@ -200,9 +226,9 @@ export class PumpFunFeeMonitor {
 
     this.isRunning = true;
 
-    // Start polling timer (replaces WebSocket subscriptions)
-    this.pollTimer = setInterval(() => this.pollAllTokens(), this.pollInterval);
-    this.log(`⏰ Poll timer started (interval: ${this.pollInterval / 1000}s)`);
+    // Start adaptive polling loop (instead of fixed interval)
+    this.startAdaptivePolling();
+    this.log(`⏰ Poll loop started (initial: ${this.currentPollInterval / 1000}s)`);
 
     // Start periodic flush timer
     this.updateTimer = setInterval(() => this.flushPendingFees(), this.updateInterval);
@@ -212,22 +238,76 @@ export class PumpFunFeeMonitor {
   }
 
   /**
+   * Start adaptive polling loop
+   * Adjusts poll interval based on success/error rates
+   */
+  private async startAdaptivePolling(): Promise<void> {
+    while (this.isRunning) {
+      const startTime = Date.now();
+      this.lastPollTime = startTime;
+      this.pollCount++;
+
+      try {
+        await this.pollAllTokens();
+
+        // Track success for adaptive interval
+        if (this.adaptivePolling) {
+          this.consecutiveSuccess++;
+          this.consecutiveErrors = 0;
+
+          // Decrease interval on sustained success (speed up)
+          if (this.consecutiveSuccess >= 5) {
+            this.currentPollInterval = Math.max(
+              this.minPollInterval,
+              this.currentPollInterval * 0.9
+            );
+            this.consecutiveSuccess = 0;
+          }
+        }
+      } catch (error: any) {
+        this.errorCount++;
+
+        if (this.adaptivePolling) {
+          this.consecutiveErrors++;
+          this.consecutiveSuccess = 0;
+
+          // Increase interval on errors (back off)
+          if (this.consecutiveErrors >= 2) {
+            this.currentPollInterval = Math.min(
+              this.maxPollInterval,
+              this.currentPollInterval * 1.5
+            );
+            this.log(`⚠️ Backing off poll interval to ${(this.currentPollInterval/1000).toFixed(1)}s due to errors`);
+          }
+        }
+
+        if (this.verbose) {
+          console.error(`Poll cycle error: ${error.message}`);
+        }
+      }
+
+      // Wait for next poll (accounting for execution time)
+      const elapsed = Date.now() - startTime;
+      const waitTime = Math.max(100, this.currentPollInterval - elapsed);
+      await sleep(waitTime);
+    }
+  }
+
+  /**
    * Stop monitoring and cleanup
    */
   async stop(): Promise<void> {
     this.log("🛑 Stopping monitor...");
     this.isRunning = false;
 
-    // Stop timers
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
-
+    // Stop flush timer
     if (this.updateTimer) {
       clearInterval(this.updateTimer);
       this.updateTimer = null;
     }
+
+    // Wait for current poll to finish (max 5s)
+    await sleep(Math.min(this.currentPollInterval, 5000));
 
     // Flush any remaining pending fees
     await this.flushPendingFees();
@@ -235,6 +315,10 @@ export class PumpFunFeeMonitor {
     // Save state for next startup
     this.saveState();
     this.log(`💾 State saved to ${this.stateFile}`);
+
+    // Log health metrics
+    const errorRate = this.pollCount > 0 ? (this.errorCount / this.pollCount * 100).toFixed(1) : '0';
+    this.log(`📊 Session stats: ${this.pollCount} polls, ${this.errorCount} errors (${errorRate}%), ${this.feesCaptured} fees captured`);
 
     this.log("✅ Monitor stopped");
   }
@@ -295,10 +379,15 @@ export class PumpFunFeeMonitor {
     const poolAddress = this.getPoolAddress(token);
     const lastSig = this.lastSignatures.get(mintKey);
 
-    // Get recent signatures since last known (scalable limit)
-    const sigs = await this.connection.getSignaturesForAddress(
-      poolAddress,
-      { limit: this.txLimit, until: lastSig }
+    // Get recent signatures since last known with retry
+    // 30s timeout for mainnet resilience
+    const sigs = await withRetryAndTimeout(
+      () => this.connection.getSignaturesForAddress(
+        poolAddress,
+        { limit: this.txLimit, until: lastSig }
+      ),
+      { maxRetries: 3, baseDelayMs: 1000 },
+      30000
     );
 
     if (sigs.length === 0) return;
@@ -309,9 +398,12 @@ export class PumpFunFeeMonitor {
     }
 
     // Process new transactions (oldest first for correct ordering)
+    let feesInBatch = 0;
     for (const sig of sigs.reverse()) {
       const fee = await this.extractFeeFromBalances(sig.signature, token);
       if (fee > 0) {
+        feesInBatch++;
+        this.feesCaptured++;
         const currentPending = this.pendingFees.get(mintKey) || 0n;
         const newPending = currentPending + BigInt(fee);
         this.pendingFees.set(mintKey, newPending);
@@ -326,6 +418,10 @@ export class PumpFunFeeMonitor {
     // Update last signature to most recent and persist
     this.lastSignatures.set(mintKey, sigs[0].signature);
     this.saveState();  // Persist after each update for resilience
+
+    if (this.verbose && feesInBatch > 0) {
+      this.log(`   📈 ${token.symbol}: Processed ${sigs.length} txs, ${feesInBatch} with fees`);
+    }
   }
 
   /**
@@ -337,9 +433,13 @@ export class PumpFunFeeMonitor {
     token: TokenConfig
   ): Promise<number> {
     try {
-      const tx = await this.connection.getTransaction(signature, {
-        maxSupportedTransactionVersion: 0,
-      });
+      const tx = await withRetryAndTimeout(
+        () => this.connection.getTransaction(signature, {
+          maxSupportedTransactionVersion: 0,
+        }),
+        { maxRetries: 2, baseDelayMs: 300 },
+        10000
+      );
 
       if (!tx || !tx.meta) return 0;
 
@@ -487,15 +587,20 @@ export class PumpFunFeeMonitor {
       this.program.programId
     );
 
-    const tx = await this.program.methods
-      .updatePendingFees(new BN(amountLamports))
-      .accounts({
-        datState,
-        tokenStats,
-        mint,
-        admin: (this.program.provider as AnchorProvider).wallet.publicKey,
-      })
-      .rpc();
+    // Use retry for on-chain update (important for reliability)
+    const tx = await withRetryAndTimeout(
+      () => this.program.methods
+        .updatePendingFees(new BN(amountLamports))
+        .accounts({
+          datState,
+          tokenStats,
+          mint,
+          admin: (this.program.provider as AnchorProvider).wallet.publicKey,
+        })
+        .rpc(),
+      { maxRetries: 3, baseDelayMs: 1000 },
+      30000
+    );
 
     return tx;
   }
@@ -542,6 +647,51 @@ export class PumpFunFeeMonitor {
   public async forceFlush(): Promise<void> {
     this.log("🔄 Force flush triggered by cycle orchestrator");
     await this.flushPendingFees();
+  }
+
+  /**
+   * Get health metrics for monitoring/alerting
+   */
+  public getHealthMetrics(): {
+    isRunning: boolean;
+    pollCount: number;
+    errorCount: number;
+    errorRate: number;
+    feesCaptured: number;
+    currentPollInterval: number;
+    lastPollTime: number;
+    timeSinceLastPoll: number;
+    tokensMonitored: number;
+  } {
+    return {
+      isRunning: this.isRunning,
+      pollCount: this.pollCount,
+      errorCount: this.errorCount,
+      errorRate: this.pollCount > 0 ? this.errorCount / this.pollCount : 0,
+      feesCaptured: this.feesCaptured,
+      currentPollInterval: this.currentPollInterval,
+      lastPollTime: this.lastPollTime,
+      timeSinceLastPoll: this.lastPollTime > 0 ? Date.now() - this.lastPollTime : 0,
+      tokensMonitored: this.tokens.size,
+    };
+  }
+
+  /**
+   * Check if monitor is healthy (useful for orchestrator)
+   */
+  public isHealthy(): boolean {
+    const metrics = this.getHealthMetrics();
+
+    // Not running = not healthy
+    if (!metrics.isRunning) return false;
+
+    // Too many errors = not healthy
+    if (metrics.errorRate > 0.3) return false;
+
+    // Haven't polled recently = not healthy (allow 2x current interval)
+    if (metrics.timeSinceLastPoll > this.currentPollInterval * 2 + 5000) return false;
+
+    return true;
   }
 
   private log(message: string): void {

@@ -26,6 +26,7 @@ import { PumpFunFeeMonitor, TokenConfig } from "../lib/fee-monitor";
 import { getNetworkConfig, printNetworkBanner, NetworkConfig } from "../lib/network-config";
 import { monitoring, MonitoringService } from "../lib/monitoring";
 import { createLogger, Logger } from "../lib/logger";
+import { ExecutionLock } from "../lib/execution-lock";
 
 // Program ID
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
@@ -221,6 +222,18 @@ async function main() {
     filePath: `./logs/asdf-daemon-${networkConfig.name.toLowerCase()}.log`,
   });
 
+  // Acquire daemon lock to prevent multiple instances
+  const daemonLock = new ExecutionLock({ lockFile: '.daemon-lock.json' });
+  if (!daemonLock.acquire('fee-monitor-daemon')) {
+    const status = daemonLock.getStatus();
+    console.error("❌ Cannot start: Another daemon instance is already running");
+    console.error(`   PID: ${status.lockInfo?.pid}`);
+    console.error(`   Started: ${new Date(status.lockInfo?.timestamp || 0).toISOString()}`);
+    console.error("\n   To force start, delete .daemon-lock.json");
+    process.exit(1);
+  }
+  logger.info("Daemon lock acquired");
+
   console.clear();
   console.log("╔═══════════════════════════════════════════════════════════╗");
   console.log("║         ASDF DAT - ECOSYSTEM FEE MONITOR DAEMON          ║");
@@ -315,11 +328,20 @@ async function main() {
       await monitor.stop();
       logger.success("Monitor stopped successfully");
       console.log("✅ Monitor stopped successfully");
+
+      // Release daemon lock
+      daemonLock.release();
+      logger.info("Daemon lock released");
+
       logger.close();
       process.exit(0);
     } catch (error: any) {
       logger.error("Error during shutdown", { error: error.message });
       console.error("❌ Error during shutdown:", error.message);
+
+      // Always release lock even on error
+      daemonLock.release();
+
       logger.close();
       process.exit(1);
     }

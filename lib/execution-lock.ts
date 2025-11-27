@@ -12,7 +12,7 @@ import * as path from 'path';
 // Configuration
 // ============================================================================
 
-const LOCK_FILE_NAME = '.cycle-lock.json';
+const DEFAULT_LOCK_FILE_NAME = '.cycle-lock.json';
 const DEFAULT_LOCK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes - auto-expire stale locks
 
 export interface LockInfo {
@@ -30,6 +30,12 @@ export interface LockStatus {
   isStale?: boolean;
 }
 
+export interface ExecutionLockOptions {
+  lockDir?: string;
+  lockFile?: string;
+  lockTimeoutMs?: number;
+}
+
 // ============================================================================
 // Lock Manager
 // ============================================================================
@@ -38,12 +44,11 @@ export class ExecutionLock {
   private lockFilePath: string;
   private lockTimeoutMs: number;
 
-  constructor(
-    lockDir: string = process.cwd(),
-    lockTimeoutMs: number = DEFAULT_LOCK_TIMEOUT_MS
-  ) {
-    this.lockFilePath = path.join(lockDir, LOCK_FILE_NAME);
-    this.lockTimeoutMs = lockTimeoutMs;
+  constructor(options: ExecutionLockOptions = {}) {
+    const lockDir = options.lockDir ?? process.cwd();
+    const lockFile = options.lockFile ?? DEFAULT_LOCK_FILE_NAME;
+    this.lockFilePath = path.join(lockDir, lockFile);
+    this.lockTimeoutMs = options.lockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   }
 
   /**
@@ -262,11 +267,11 @@ export class TokenLockManager {
     if (!this.locks.has(tokenMint)) {
       // Create a unique lock file per token
       const lockFileName = `.lock-${tokenMint.slice(0, 8)}.json`;
-      const lockPath = path.join(this.lockDir, lockFileName);
-      // We need to create a lock with custom path
-      const lock = new ExecutionLock(path.dirname(lockPath), this.lockTimeoutMs);
-      // Override the lock file path
-      (lock as any).lockFilePath = lockPath;
+      const lock = new ExecutionLock({
+        lockDir: this.lockDir,
+        lockFile: lockFileName,
+        lockTimeoutMs: this.lockTimeoutMs,
+      });
       this.locks.set(tokenMint, lock);
     }
     return this.locks.get(tokenMint)!;
