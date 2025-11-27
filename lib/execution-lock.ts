@@ -128,6 +128,7 @@ export class ExecutionLock {
 
   /**
    * Get current lock status
+   * Now includes PID verification - if process doesn't exist, lock is stale
    */
   getStatus(): LockStatus {
     try {
@@ -138,7 +139,20 @@ export class ExecutionLock {
       const content = fs.readFileSync(this.lockFilePath, 'utf-8');
       const lockInfo: LockInfo = JSON.parse(content);
       const ageMs = Date.now() - lockInfo.timestamp;
-      const isStale = ageMs > this.lockTimeoutMs;
+
+      // Check if PID still exists (process still running)
+      let pidAlive = false;
+      try {
+        // Signal 0 doesn't kill, just checks if process exists
+        process.kill(lockInfo.pid, 0);
+        pidAlive = true;
+      } catch {
+        // Process doesn't exist - lock is definitely stale
+        pidAlive = false;
+      }
+
+      // Lock is stale if: timeout exceeded OR process no longer exists
+      const isStale = ageMs > this.lockTimeoutMs || !pidAlive;
 
       return {
         locked: true,

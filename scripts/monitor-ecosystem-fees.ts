@@ -314,6 +314,7 @@ async function main() {
 
   // Graceful shutdown handlers
   let shuttingDown = false;
+  const SHUTDOWN_TIMEOUT_MS = 30000; // 30 seconds hard timeout
 
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
@@ -321,6 +322,15 @@ async function main() {
 
     logger.info(`Received ${signal}, shutting down gracefully...`);
     console.log(`\n\n📌 Received ${signal}, shutting down gracefully...`);
+
+    // Hard timeout to prevent zombie process
+    const hardTimeout = setTimeout(() => {
+      console.error("⚠️ Shutdown timeout exceeded, forcing exit...");
+      logger.error("Shutdown timeout - forcing exit");
+      daemonLock.release();
+      process.exit(1);
+    }, SHUTDOWN_TIMEOUT_MS);
+
     clearInterval(statsInterval);
     apiServer.close();
 
@@ -333,6 +343,7 @@ async function main() {
       daemonLock.release();
       logger.info("Daemon lock released");
 
+      clearTimeout(hardTimeout);
       logger.close();
       process.exit(0);
     } catch (error: any) {
@@ -342,6 +353,7 @@ async function main() {
       // Always release lock even on error
       daemonLock.release();
 
+      clearTimeout(hardTimeout);
       logger.close();
       process.exit(1);
     }

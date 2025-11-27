@@ -5,7 +5,7 @@
  * Designed for mainnet conditions with Helius as primary provider.
  */
 
-import { Connection, ConnectionConfig, Commitment } from '@solana/web3.js';
+import { Connection, ConnectionConfig, Commitment, Transaction, Keypair, SendOptions } from '@solana/web3.js';
 
 // ============================================================================
 // Configuration
@@ -457,6 +457,118 @@ export async function confirmTransactionWithRetry(
       await sleep(retryDelayMs);
     }
   }
+}
+
+// ============================================================================
+// Transaction with Blockhash Refresh
+// ============================================================================
+
+export interface SendTransactionWithRefreshOptions {
+  maxRetries?: number;
+  confirmationTimeout?: number;
+  commitment?: Commitment;
+  skipPreflight?: boolean;
+  onRetry?: (attempt: number, error: Error) => void;
+}
+
+/**
+ * Send a transaction with automatic blockhash refresh on expiration
+ * This is critical for mainnet where congestion can cause blockhash to expire
+ * before the transaction is confirmed.
+ *
+ * @param connection - Solana connection
+ * @param transaction - Transaction to send (will be modified with new blockhash)
+ * @param signers - Signers for the transaction
+ * @param options - Send options
+ * @returns Transaction signature
+ */
+export async function sendTransactionWithBlockhashRefresh(
+  connection: Connection,
+  transaction: Transaction,
+  signers: Keypair[],
+  options: SendTransactionWithRefreshOptions = {}
+): Promise<string> {
+  const {
+    maxRetries = 3,
+    confirmationTimeout = 45000,
+    commitment = 'confirmed',
+    skipPreflight = false,
+    onRetry,
+  } = options;
+
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      // Get fresh blockhash for each attempt
+      const { blockhash, lastValidBlockHeight } = await withRetryAndTimeout(
+        () => connection.getLatestBlockhash(commitment),
+        { maxRetries: 2, baseDelayMs: 500 },
+        15000
+      );
+
+      // Update transaction with fresh blockhash
+      transaction.recentBlockhash = blockhash;
+      transaction.lastValidBlockHeight = lastValidBlockHeight;
+      transaction.feePayer = signers[0].publicKey;
+
+      // Sign transaction
+      transaction.sign(...signers);
+
+      // Send transaction
+      const sendOptions: SendOptions = {
+        skipPreflight,
+        preflightCommitment: commitment,
+        maxRetries: 0, // We handle retries ourselves
+      };
+
+      const signature = await connection.sendRawTransaction(
+        transaction.serialize(),
+        sendOptions
+      );
+
+      // Wait for confirmation with timeout
+      const confirmResult = await Promise.race([
+        connection.confirmTransaction(
+          { signature, blockhash, lastValidBlockHeight },
+          commitment
+        ),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Confirmation timeout')), confirmationTimeout)
+        ),
+      ]);
+
+      if (confirmResult.value.err) {
+        throw new RpcError(`Transaction failed: ${JSON.stringify(confirmResult.value.err)}`);
+      }
+
+      return signature;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const errorMessage = lastError.message.toLowerCase();
+
+      // Check if this is a blockhash-related error that warrants retry
+      const isBlockhashError =
+        errorMessage.includes('blockhash') ||
+        errorMessage.includes('expired') ||
+        errorMessage.includes('block height exceeded') ||
+        errorMessage.includes('confirmation timeout');
+
+      if (!isBlockhashError || attempt >= maxRetries) {
+        throw lastError;
+      }
+
+      // Notify caller of retry
+      if (onRetry) {
+        onRetry(attempt, lastError);
+      }
+
+      // Small delay before retry
+      await sleep(1000);
+    }
+  }
+
+  throw lastError || new Error('Transaction failed after retries');
 }
 
 // ============================================================================

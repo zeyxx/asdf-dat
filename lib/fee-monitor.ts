@@ -163,7 +163,8 @@ export class PumpFunFeeMonitor {
   }
 
   /**
-   * Save current state to disk
+   * Save current state to disk with backup
+   * Creates a backup before writing to prevent corruption loss
    */
   private saveState(): void {
     try {
@@ -172,7 +173,23 @@ export class PumpFunFeeMonitor {
         lastUpdated: new Date().toISOString(),
         version: STATE_VERSION,
       };
-      fs.writeFileSync(this.stateFile, JSON.stringify(state, null, 2));
+
+      const stateJson = JSON.stringify(state, null, 2);
+      const backupFile = this.stateFile.replace('.json', '.backup.json');
+
+      // Create backup of existing state before overwriting
+      if (fs.existsSync(this.stateFile)) {
+        try {
+          fs.copyFileSync(this.stateFile, backupFile);
+        } catch {
+          // Ignore backup errors, proceed with save
+        }
+      }
+
+      // Write new state atomically using temp file + rename
+      const tempFile = `${this.stateFile}.tmp.${process.pid}`;
+      fs.writeFileSync(tempFile, stateJson);
+      fs.renameSync(tempFile, this.stateFile);
     } catch (error: any) {
       if (this.verbose) {
         console.error(`Error saving state: ${error.message}`);
