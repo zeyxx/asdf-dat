@@ -12,13 +12,13 @@ This audit covers the ASDF-DAT Solana program and supporting TypeScript infrastr
 
 ### Current Status (Post-Fix)
 
-| Severity | Initial | Fixed | Remaining |
-|----------|---------|-------|-----------|
+| Severity | Initial | Fixed/Resolved | Remaining |
+|----------|---------|----------------|-----------|
 | Critical | 4 | 4 | **0** |
 | High | 5 | 5 | **0** |
-| Medium | 5 | 2 | 3 |
+| Medium | 5 | 5 | **0** |
 
-**All CRITICAL and HIGH vulnerabilities have been fixed.**
+**All vulnerabilities have been fixed or resolved as by-design.**
 
 ---
 
@@ -208,9 +208,14 @@ require!(bonding_curve_data.len() >= 32, ErrorCode::InvalidPool);
 
 ### MEDIUM Severity
 
-#### MED-1: ValidatorState Bump Validation
+#### MED-1: ValidatorState Bump Validation - **ALREADY IMPLEMENTED**
 
-Store and validate bump on ValidatorState to prevent seed grinding attacks.
+**Status:** ✅ **FALSE POSITIVE** - Already correctly implemented
+
+**Analysis:**
+- `initialize_validator` stores bump at line 784: `state.bump = ctx.bumps.validator_state;`
+- `RegisterValidatedFees` validates bump at line 2288: `bump = validator_state.bump`
+- Seed grinding attack is properly prevented.
 
 #### MED-2: `token_program` Not Explicitly Validated - **FIXED**
 
@@ -236,13 +241,36 @@ Token program validation added:
 pub token_stats: Account<'info, TokenStats>,
 ```
 
-#### MED-4: Manual Realloc Pattern
+#### MED-4: Manual Realloc Pattern - **ACCEPTABLE**
 
-Some account resizing uses manual realloc. Prefer Anchor's `realloc` constraint.
+**Status:** ✅ **BY DESIGN** - Required for migration function
 
-#### MED-5: Inconsistent `pending_fees` Reset
+**Analysis:**
+- `migrate_token_stats` is a one-time migration function for upgrading existing accounts
+- Manual realloc is necessary because:
+  - Old accounts have different schema
+  - Anchor's `realloc` constraint only works for Accounts struct definitions
+  - Migration needs to manually handle data copying
+- The deprecation warning (`realloc` vs `resize`) is a Rust naming issue, not security
 
-`pending_fees` is reset differently in standalone vs ecosystem mode. Document clearly or unify behavior.
+#### MED-5: Inconsistent `pending_fees` Reset - **BY DESIGN**
+
+**Status:** ✅ **INTENTIONAL** - Two modes require different behavior
+
+**Analysis:**
+The "inconsistency" is intentional design for the N+1 ecosystem pattern:
+
+1. **Standalone mode** (`collect_fees(for_ecosystem=false)`):
+   - Single token operates independently
+   - Reset immediately after collection
+
+2. **Ecosystem mode** (`collect_fees(for_ecosystem=true)`):
+   - Multiple tokens share a vault
+   - Don't reset - orchestrator manages proportional distribution
+   - `finalize_allocated_cycle(true)` resets after successful participation
+   - `finalize_allocated_cycle(false)` preserves for deferred tokens
+
+This allows tokens with insufficient fees to accumulate until viable.
 
 ---
 
