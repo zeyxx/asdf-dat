@@ -2004,10 +2004,15 @@ pub struct ExecuteBuy<'info> {
     /// CHECK: PDA (holds native SOL for buying)
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
+    /// DAT's token account for receiving bought tokens - validated mint and authority
+    #[account(
+        mut,
+        constraint = dat_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter,
+        constraint = dat_asdf_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
     pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool (bonding curve)
-    #[account(mut)]
+    /// CHECK: Pool (bonding curve) - validated by PumpFun program
+    #[account(mut, constraint = pool.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
     pub pool: AccountInfo<'info>,
     /// CHECK: Token mint (validation done by PumpFun)
     #[account(mut)]
@@ -2048,14 +2053,23 @@ pub struct ExecuteBuySecondary<'info> {
     /// CHECK: PDA (holds native SOL for buying)
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
+    /// DAT's token account - validated mint and authority
+    #[account(
+        mut,
+        constraint = dat_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter,
+        constraint = dat_asdf_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
     pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool
-    #[account(mut)]
+    /// CHECK: Pool (bonding curve) - validated owner
+    #[account(mut, constraint = pool.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
     pub pool: AccountInfo<'info>,
     #[account(mut)]
     pub asdf_mint: InterfaceAccount<'info, Mint>,
-    #[account(mut)]
+    /// Pool's token account - validated mint matches
+    #[account(
+        mut,
+        constraint = pool_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter
+    )]
     pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: Config
     pub pump_global_config: AccountInfo<'info>,
@@ -2067,7 +2081,8 @@ pub struct ExecuteBuySecondary<'info> {
     pub creator_vault: AccountInfo<'info>,
     /// CHECK: Event auth
     pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
+    /// CHECK: Pump program - validated program ID via constraint
+    #[account(constraint = pump_swap_program.key() == PUMP_PROGRAM @ ErrorCode::InvalidParameter)]
     pub pump_swap_program: AccountInfo<'info>,
     /// CHECK: Global volume accumulator (PDA)
     pub global_volume_accumulator: AccountInfo<'info>,
@@ -2095,13 +2110,17 @@ pub struct ExecuteBuyAMM<'info> {
     /// CHECK: PDA authority (holds WSOL, acts as "user" in AMM)
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    /// DAT's token account for receiving bought tokens
-    #[account(mut)]
+    /// DAT's token account for receiving bought tokens - validated mint and authority
+    #[account(
+        mut,
+        constraint = dat_token_account.mint == base_mint.key() @ ErrorCode::InvalidParameter,
+        constraint = dat_token_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
     pub dat_token_account: InterfaceAccount<'info, TokenAccount>,
 
     // PumpSwap AMM Core accounts (1-9)
-    /// CHECK: AMM Pool account
-    #[account(mut)]
+    /// CHECK: AMM Pool account - owned by PumpSwap program
+    #[account(mut, constraint = pool.owner == &PUMP_SWAP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
     pub pool: AccountInfo<'info>,
     /// CHECK: PumpSwap global config
     pub global_config: AccountInfo<'info>,
@@ -2129,14 +2148,16 @@ pub struct ExecuteBuyAMM<'info> {
     // Program accounts (12-17)
     /// Base token program (SPL Token or Token2022)
     pub base_token_program: Interface<'info, TokenInterface>,
-    /// CHECK: Quote token program (always SPL Token for WSOL)
+    /// CHECK: Quote token program (always SPL Token for WSOL) - validated via constraint
+    #[account(constraint = quote_token_program.key() == anchor_spl::token::ID @ ErrorCode::InvalidParameter)]
     pub quote_token_program: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: Associated token program
     pub associated_token_program: AccountInfo<'info>,
-    /// CHECK: PumpSwap event authority (PDA)
+    /// CHECK: PumpSwap event authority (PDA) - derived from program
     pub event_authority: AccountInfo<'info>,
-    /// CHECK: PumpSwap AMM program
+    /// CHECK: PumpSwap AMM program - validated via constraint
+    #[account(constraint = pump_swap_program.key() == PUMP_SWAP_PROGRAM @ ErrorCode::InvalidParameter)]
     pub pump_swap_program: AccountInfo<'info>,
 
     // Creator fee accounts (18-19)
