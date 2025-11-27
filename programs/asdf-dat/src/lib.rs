@@ -1067,7 +1067,8 @@ pub mod asdf_dat {
                 let treasury_amt = root_treasury.lamports();
                 if treasury_amt > 0 {
                     // Root treasury is a PDA: seeds = ["root_treasury", root_token_mint, bump]
-                    let root_mint = state.root_token_mint.unwrap();
+                    let root_mint = state.root_token_mint
+                        .ok_or(ErrorCode::InvalidRootToken)?;
                     let (expected_treasury, bump) = Pubkey::find_program_address(
                         &[ROOT_TREASURY_SEED, root_mint.as_ref()],
                         ctx.program_id
@@ -1099,7 +1100,7 @@ pub mod asdf_dat {
                         ctx.accounts.token_stats.total_sol_collected.saturating_add(treasury_amt);
 
                     emit!(RootTreasuryCollected {
-                        root_mint: state.root_token_mint.unwrap(),
+                        root_mint,
                         amount: treasury_amt,
                         timestamp: clock.unix_timestamp
                     });
