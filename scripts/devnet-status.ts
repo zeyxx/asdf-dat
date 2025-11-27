@@ -34,7 +34,7 @@ async function getStatus() {
 
   try {
     // Récupérer l'état
-    const state = await (program.account as any).datState.fetch(datState);
+    const state = await program.account.datState.fetch(datState);
 
     console.log("================================");
     console.log("PROTOCOL STATE");

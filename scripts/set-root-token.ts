@@ -13,6 +13,7 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
+import { getTypedAccounts } from "../lib/types";
 
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
@@ -101,7 +102,7 @@ async function main() {
   // Check current state
   log("\n📋", "État actuel:", colors.yellow);
   try {
-    const state = await (program.account as any).datState.fetch(datState);
+    const state = await getTypedAccounts(program).datState.fetch(datState);
     if (state.rootTokenMint) {
       log("⚠️", `Root token déjà défini: ${state.rootTokenMint.toString()}`, colors.yellow);
       log("💡", `Fee split: ${state.feeSplitBps / 100}% keep, ${(10000 - state.feeSplitBps) / 100}% to root`, colors.yellow);
@@ -115,7 +116,7 @@ async function main() {
 
   // Check if TokenStats exists
   try {
-    await (program.account as any).tokenStats.fetch(rootTokenStats);
+    await getTypedAccounts(program).tokenStats.fetch(rootTokenStats);
     log("✅", "TokenStats existe pour ce token", colors.green);
   } catch {
     log("❌", "TokenStats n'existe pas pour ce token", colors.red);
@@ -143,13 +144,13 @@ async function main() {
     log("🔗", `TX: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
 
     // Fetch updated state
-    const updatedState = await (program.account as any).datState.fetch(datState);
+    const updatedState = await getTypedAccounts(program).datState.fetch(datState);
 
     console.log(`\n${"=".repeat(70)}`);
     console.log(`${colors.bright}${colors.green}📊 CONFIGURATION ROOT TOKEN${colors.reset}`);
     console.log(`${"=".repeat(70)}\n`);
 
-    log("🏆", `Root Token: ${updatedState.rootTokenMint.toString()}`, colors.green);
+    log("🏆", `Root Token: ${updatedState.rootTokenMint?.toString() ?? 'Not set'}`, colors.green);
     log("📊", `Fee Split: ${updatedState.feeSplitBps / 100}% keep, ${(10000 - updatedState.feeSplitBps) / 100}% to root`, colors.green);
     log("", "", colors.reset);
     log("💡", "Les tokens secondaires enverront maintenant 44.8% de leurs fees au root treasury", colors.cyan);

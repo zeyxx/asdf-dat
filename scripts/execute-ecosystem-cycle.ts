@@ -21,7 +21,7 @@
  */
 
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
-import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
+import { AnchorProvider, Program, Wallet, BN, Idl } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -31,6 +31,7 @@ import {
   getAmmCreatorVaultAta,
   deriveAmmCreatorVaultAuthority,
 } from '../lib/amm-utils';
+import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
 
 // ============================================================================
 // Constants & Configuration
@@ -282,7 +283,7 @@ async function waitForDaemonSync(
           program.programId
         );
 
-        const tokenStats: any = await (program.account as any).tokenStats.fetch(tokenStatsPDA);
+        const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
         const pendingFees = tokenStats.pendingFeesLamports.toNumber();
 
         if (pendingFees > 0) {
@@ -326,7 +327,7 @@ async function waitForDaemonSync(
         [TOKEN_STATS_SEED, token.mint.toBuffer()],
         program.programId
       );
-      const tokenStats: any = await (program.account as any).tokenStats.fetch(tokenStatsPDA);
+      const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
       if (tokenStats.pendingFeesLamports.toNumber() > 0) {
         finalTokensWithFees.push(token.symbol);
       } else {
@@ -439,7 +440,7 @@ async function queryPendingFees(
       );
 
       // Fetch TokenStats account
-      const tokenStats: any = await (program.account as any).tokenStats.fetch(tokenStatsPDA);
+      const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
 
       const pendingFees = tokenStats.pendingFeesLamports.toNumber();
 
@@ -990,7 +991,7 @@ async function executeSecondaryWithAllocation(
     );
 
     // Get state to determine root token and other params
-    const state: any = await (program.account as any).datState.fetch(datState);
+    const state = await getTypedAccounts(program).datState.fetch(datState);
     const rootMint = state.rootTokenMint;
 
     if (!rootMint) {
@@ -1337,7 +1338,7 @@ async function executeSecondaryWithAllocation(
     result.burnTx = signature; // Same TX
 
     // Fetch final stats to get burned amount
-    const finalStats: any = await (program.account as any).tokenStats.fetch(tokenStats);
+    const finalStats = await getTypedAccounts(program).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
     log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
@@ -1682,7 +1683,7 @@ async function executeRootCycle(
     result.buyTx = signature;
     result.burnTx = signature; // Same TX
 
-    const finalStats: any = await (program.account as any).tokenStats.fetch(tokenStats);
+    const finalStats = await getTypedAccounts(program).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
     log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
@@ -1840,8 +1841,8 @@ async function main() {
 
   // Load IDL
   const idlPath = path.join(__dirname, '../target/idl/asdf_dat.json');
-  const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
-  const program = new Program(idl as any, provider);
+  const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8')) as Idl;
+  const program = new Program(idl, provider);
 
   log('🔗', `Connected to: ${rpcUrl}`, colors.cyan);
   log('👤', `Admin: ${adminKeypair.publicKey.toBase58()}`, colors.cyan);
