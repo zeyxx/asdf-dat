@@ -331,3 +331,16 @@ manual-test-report-*.md
 # Script temporary outputs
 scripts/testing/*.log
 scripts/testing/output/logs/
+
+# Daemon state (runtime)
+.daemon-state.json
+
+# Temporary files at root
+Program
+continue
+start
+debug
+
+# Rust backup files
+programs/**/backup-*
+programs/**/*.backup-*
