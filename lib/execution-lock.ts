@@ -65,12 +65,18 @@ export class ExecutionLock {
       return false;
     }
 
-    // If stale, log warning and proceed to overwrite
+    // If stale, log warning and clean up first
     if (status.locked && status.isStale) {
       console.warn(
         `[LOCK] Found stale lock from PID ${status.lockInfo?.pid} ` +
-        `(age: ${Math.round((status.ageMs ?? 0) / 1000)}s). Overwriting.`
+        `(age: ${Math.round((status.ageMs ?? 0) / 1000)}s). Cleaning up.`
       );
+      // Clean stale lock before attempting to acquire
+      try {
+        fs.unlinkSync(this.lockFilePath);
+      } catch {
+        // Ignore - another process might have cleaned it
+      }
     }
 
     // Create new lock
@@ -83,12 +89,19 @@ export class ExecutionLock {
     };
 
     try {
-      // Write atomically using rename pattern
-      const tempPath = `${this.lockFilePath}.tmp.${process.pid}`;
-      fs.writeFileSync(tempPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
-      fs.renameSync(tempPath, this.lockFilePath);
+      // Use exclusive flag (wx) to prevent TOCTOU race condition
+      // This will fail if file already exists, making acquire atomic
+      fs.writeFileSync(
+        this.lockFilePath,
+        JSON.stringify(lockInfo, null, 2),
+        { encoding: 'utf-8', flag: 'wx' }
+      );
       return true;
-    } catch (error) {
+    } catch (error: any) {
+      // EEXIST means another process won the race - this is expected
+      if (error.code === 'EEXIST') {
+        return false;
+      }
       console.error(`[LOCK] Failed to acquire lock: ${error}`);
       return false;
     }
@@ -141,14 +154,22 @@ export class ExecutionLock {
       const ageMs = Date.now() - lockInfo.timestamp;
 
       // Check if PID still exists (process still running)
+      // Cross-platform: works on Linux, macOS, and Windows
       let pidAlive = false;
       try {
         // Signal 0 doesn't kill, just checks if process exists
         process.kill(lockInfo.pid, 0);
         pidAlive = true;
-      } catch {
-        // Process doesn't exist - lock is definitely stale
-        pidAlive = false;
+      } catch (err: any) {
+        // ESRCH = process doesn't exist (Linux/macOS)
+        // EPERM = process exists but no permission (Windows behavior)
+        if (err.code === 'EPERM') {
+          // Process exists but we don't have permission - consider it alive
+          pidAlive = true;
+        } else {
+          // ESRCH or other error - process doesn't exist
+          pidAlive = false;
+        }
       }
 
       // Lock is stale if: timeout exceeded OR process no longer exists

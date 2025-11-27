@@ -86,6 +86,7 @@ export class PumpFunFeeMonitor {
   private tokens: Map<string, TokenConfig>;  // keyed by mint
   private pendingFees: Map<string, bigint>;  // keyed by mint
   private lastSignatures: Map<string, string>;  // keyed by mint -> last processed signature
+  private processedSignatures: Set<string>;  // Deduplication: track all processed signatures
   private pollInterval: number;
   private updateInterval: number;
   private verbose: boolean;
@@ -113,6 +114,7 @@ export class PumpFunFeeMonitor {
     this.tokens = new Map();
     this.pendingFees = new Map();
     this.lastSignatures = new Map();
+    this.processedSignatures = new Set();
     this.pollInterval = config.pollInterval || 5000;  // 5 seconds
     this.updateInterval = config.updateInterval || 30000;  // 30 seconds
     this.verbose = config.verbose || false;
@@ -416,7 +418,17 @@ export class PumpFunFeeMonitor {
 
     // Process new transactions (oldest first for correct ordering)
     let feesInBatch = 0;
+    const processedInBatch: string[] = [];
+
     for (const sig of sigs.reverse()) {
+      // Deduplication: Skip if already processed (prevents double-counting)
+      if (this.processedSignatures.has(sig.signature)) {
+        if (this.verbose) {
+          console.log(`   ⏭️ Skipping duplicate signature: ${sig.signature.slice(0, 20)}...`);
+        }
+        continue;
+      }
+
       const fee = await this.extractFeeFromBalances(sig.signature, token);
       if (fee > 0) {
         feesInBatch++;
@@ -430,11 +442,28 @@ export class PumpFunFeeMonitor {
           `(pending: ${(Number(newPending) / 1e9).toFixed(6)} SOL)`
         );
       }
+
+      // Track processed signatures for deduplication
+      processedInBatch.push(sig.signature);
+      this.processedSignatures.add(sig.signature);
+
+      // Limit memory usage: keep only recent signatures (last 10000)
+      if (this.processedSignatures.size > 10000) {
+        const iterator = this.processedSignatures.values();
+        const oldest = iterator.next().value;
+        if (oldest) {
+          this.processedSignatures.delete(oldest);
+        }
+      }
     }
 
-    // Update last signature to most recent and persist
+    // CRITICAL: Save state BEFORE updating lastSignatures to prevent duplication on crash
+    // If we crash after this save but before lastSignatures update, we'll re-process
+    // but the processedSignatures Set will filter duplicates
+    this.saveState();
+
+    // Update last signature to most recent
     this.lastSignatures.set(mintKey, sigs[0].signature);
-    this.saveState();  // Persist after each update for resilience
 
     if (this.verbose && feesInBatch > 0) {
       this.log(`   📈 ${token.symbol}: Processed ${sigs.length} txs, ${feesInBatch} with fees`);
@@ -560,6 +589,8 @@ export class PumpFunFeeMonitor {
 
   /**
    * Flush pending fees to on-chain TokenStats
+   * CRITICAL: Only reset pending AFTER successful on-chain update
+   * If flush fails, fees remain in pending for retry on next flush cycle
    */
   private async flushPendingFees(): Promise<void> {
     for (const [mintKey, pendingAmount] of this.pendingFees.entries()) {
@@ -572,14 +603,19 @@ export class PumpFunFeeMonitor {
         // Call update_pending_fees instruction
         await this.updatePendingFeesOnChain(token.mint, Number(pendingAmount));
 
-        // Reset pending after successful update
+        // ONLY reset pending after SUCCESSFUL on-chain update
+        // This prevents fee loss if flush fails
         this.pendingFees.set(mintKey, 0n);
 
         this.log(
           `✅ ${token.symbol}: Flushed ${(Number(pendingAmount) / 1e9).toFixed(6)} SOL to on-chain`
         );
       } catch (error: any) {
-        console.error(`Error flushing fees for ${token.symbol}:`, error.message);
+        // DO NOT reset pendingFees on error - fees will be retried on next flush
+        console.error(
+          `❌ ${token.symbol}: Failed to flush ${(Number(pendingAmount) / 1e9).toFixed(6)} SOL: ${error.message}. ` +
+          `Will retry on next flush cycle.`
+        );
       }
     }
   }

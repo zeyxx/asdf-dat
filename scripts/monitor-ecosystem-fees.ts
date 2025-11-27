@@ -332,7 +332,16 @@ async function main() {
     }, SHUTDOWN_TIMEOUT_MS);
 
     clearInterval(statsInterval);
-    apiServer.close();
+
+    // Properly close HTTP server with promise wrapper
+    await new Promise<void>((resolve) => {
+      apiServer.close(() => {
+        logger.info("HTTP API server closed");
+        resolve();
+      });
+      // Timeout in case server doesn't close gracefully
+      setTimeout(() => resolve(), 5000);
+    });
 
     try {
       await monitor.stop();

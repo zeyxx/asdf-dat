@@ -15,8 +15,8 @@ asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
-wallet = "./devnet-wallet.json"
+cluster = "mainnet-beta"
+wallet = "./mainnet-wallet.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

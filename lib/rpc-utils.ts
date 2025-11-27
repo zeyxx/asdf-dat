@@ -258,9 +258,13 @@ export class CircuitBreaker {
       if (this.successCount >= this.config.halfOpenSuccessThreshold) {
         this.state = 'closed';
         this.failureCount = 0;
+        this.lastFailureTime = 0; // Reset failure time when circuit closes
       }
     } else {
       this.failureCount = 0;
+      // Also reset lastFailureTime on success in closed state
+      // This prevents premature re-opening after sustained success
+      this.lastFailureTime = 0;
     }
   }
 
@@ -359,7 +363,13 @@ export class ResilientConnection {
         if (!this.usingFallback && this.fallbackConnection && error instanceof CircuitBreakerOpenError) {
           this.usingFallback = true;
           console.log('[RPC] Switching to fallback connection');
-          return fn(this.fallbackConnection);
+          // Apply same retry logic to fallback connection
+          return withRetryAndTimeout(
+            () => fn(this.fallbackConnection!),
+            { ...this.retryConfig, ...options.retryConfig },
+            options.timeoutMs ?? this.timeoutConfig.defaultTimeoutMs,
+            options.onRetry
+          );
         }
         throw error;
       }
@@ -528,21 +538,34 @@ export async function sendTransactionWithBlockhashRefresh(
       );
 
       // Wait for confirmation with timeout
-      const confirmResult = await Promise.race([
-        connection.confirmTransaction(
-          { signature, blockhash, lastValidBlockHeight },
-          commitment
-        ),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Confirmation timeout')), confirmationTimeout)
-        ),
-      ]);
+      // Using proper cleanup to avoid unhandled promise rejection
+      let timeoutId: NodeJS.Timeout | undefined;
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error('Confirmation timeout')), confirmationTimeout);
+      });
 
-      if (confirmResult.value.err) {
-        throw new RpcError(`Transaction failed: ${JSON.stringify(confirmResult.value.err)}`);
+      try {
+        const confirmResult = await Promise.race([
+          connection.confirmTransaction(
+            { signature, blockhash, lastValidBlockHeight },
+            commitment
+          ),
+          timeoutPromise,
+        ]);
+
+        // Clear timeout on success
+        if (timeoutId) clearTimeout(timeoutId);
+
+        if (confirmResult.value.err) {
+          throw new RpcError(`Transaction failed: ${JSON.stringify(confirmResult.value.err)}`);
+        }
+
+        return signature;
+      } catch (raceError) {
+        // Clear timeout on error to prevent memory leaks
+        if (timeoutId) clearTimeout(timeoutId);
+        throw raceError;
       }
-
-      return signature;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
       const errorMessage = lastError.message.toLowerCase();

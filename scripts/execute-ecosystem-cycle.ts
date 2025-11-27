@@ -223,8 +223,14 @@ async function triggerDaemonFlush(): Promise<boolean> {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const result = await response.json();
-    log('✅', `Daemon flush completed (timestamp: ${result.timestamp})`, colors.green);
+    // Safe JSON parsing with error handling
+    let result: { timestamp?: string };
+    try {
+      result = await response.json();
+    } catch (parseError) {
+      throw new Error(`Invalid JSON response from daemon: ${(parseError as Error).message}`);
+    }
+    log('✅', `Daemon flush completed (timestamp: ${result.timestamp || 'unknown'})`, colors.green);
 
     // Wait for blockchain confirmation
     await sleep(2000);
@@ -1021,6 +1027,12 @@ async function executeSecondaryWithAllocation(
     pendingFees: allocation.pendingFees,
     allocation: allocation.allocation,
   };
+
+  // Validate allocation before proceeding
+  if (!allocation.allocation || allocation.allocation <= 0) {
+    log('⚠️', `${allocation.token.symbol}: Invalid allocation (${allocation.allocation || 0}) - skipping`, colors.yellow);
+    return result;
+  }
 
   try {
     log('🔄', `Processing ${allocation.token.symbol} (BATCH TX)...`, colors.cyan);
@@ -1983,8 +1995,12 @@ async function main() {
     console.log('');
 
     // Release lock before exit
-    executionLock.release();
-    log('🔓', 'Execution lock released', colors.green);
+    const released = executionLock.release();
+    if (released) {
+      log('🔓', 'Execution lock released', colors.green);
+    } else {
+      log('⚠️', 'Warning: Could not release execution lock - may need manual cleanup', colors.yellow);
+    }
 
     // Exit with appropriate code
     const hasFailures = Object.values(results).some(r => !r.success);
@@ -1992,8 +2008,12 @@ async function main() {
 
   } catch (error) {
     // Always release lock on error
-    executionLock.release();
-    log('🔓', 'Execution lock released (error)', colors.yellow);
+    const released = executionLock.release();
+    if (released) {
+      log('🔓', 'Execution lock released (error)', colors.yellow);
+    } else {
+      log('⚠️', 'Warning: Could not release execution lock - may need manual cleanup', colors.yellow);
+    }
 
     console.error(colors.red + '\n❌ Fatal error:' + colors.reset);
     console.error(colors.red + ((error as Error).message || String(error)) + colors.reset);
