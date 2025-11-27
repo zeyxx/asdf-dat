@@ -15,7 +15,7 @@ import path from "path";
 import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 import { getTypedAccounts } from "../lib/types";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 const colors = {
   reset: "\x1b[0m",

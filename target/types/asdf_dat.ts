@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/asdf_dat.json`.
  */
 export type AsdfDat = {
-  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
+  "address": "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui",
   "metadata": {
     "name": "asdfDat",
     "version": "0.1.0",

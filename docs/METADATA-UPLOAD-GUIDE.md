@@ -169,4 +169,4 @@ After configuring metadata upload:
 3. Test on devnet
 4. Deploy on mainnet with real metadata
 
-For more info, see the [Mayhem Mode Launch Guide](../MAYHEM-MODE-LAUNCH-GUIDE.md).
+For more info, see the [Devnet Testing Procedure](./DEVNET_TESTING_PROCEDURE.md).

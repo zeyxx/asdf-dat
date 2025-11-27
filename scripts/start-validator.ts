@@ -23,7 +23,7 @@ import { PoolType } from '../lib/amm-utils';
 import { syncValidatorIfNeeded } from './sync-validator-slots';
 import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
 
-const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
+const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
 
 // Parse command line arguments
 const args = process.argv.slice(2);

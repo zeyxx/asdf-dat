@@ -17,7 +17,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { getNetworkConfig, printNetworkBanner, parseNetworkArg } from "../lib/network-config";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 const VALIDATOR_STATE_SEED = Buffer.from("validator_v1");
 const MAX_SLOT_RANGE = 1000;
 

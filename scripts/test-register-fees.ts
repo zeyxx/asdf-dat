@@ -8,7 +8,7 @@ import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
+const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
 const VALIDATOR_STATE_SEED = Buffer.from('validator_v1');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 

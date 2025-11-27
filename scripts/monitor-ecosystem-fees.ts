@@ -29,7 +29,7 @@ import { createLogger, Logger } from "../lib/logger";
 import { ExecutionLock } from "../lib/execution-lock";
 
 // Program ID
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 // Configuration (can be overridden by env vars)
 const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "30000"); // 30 seconds

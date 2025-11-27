@@ -51,7 +51,7 @@ export interface NetworkConfig {
 }
 
 // Same program ID deployed on both networks
-const PROGRAM_ID = 'ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ';
+const PROGRAM_ID = 'ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui';
 
 // Jito tip accounts (for load balancing)
 const JITO_TIP_ACCOUNTS = {

@@ -39,7 +39,7 @@ import { ExecutionLock, LockError } from '../lib/execution-lock';
 // Constants & Configuration
 // ============================================================================
 
-const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
+const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
 const DAT_STATE_SEED = Buffer.from('dat_v3');
 const DAT_AUTHORITY_SEED = Buffer.from('auth_v3');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');

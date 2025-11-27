@@ -78,7 +78,7 @@ const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
 
 // ASDF-DAT program - transactions from this program are internal operations
 // (buyback, burn, collect) and do NOT generate Pump.fun creator fees
-const ASDF_PROGRAM = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const ASDF_PROGRAM = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 export class PumpFunFeeMonitor {
   private connection: Connection;

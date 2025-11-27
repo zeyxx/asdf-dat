@@ -12,7 +12,7 @@ import fs from "fs";
 import idl from "../target/idl/asdf_dat.json";
 import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 const TOKEN_STATS_SEED = Buffer.from("token_stats_v1");
 
 async function main() {

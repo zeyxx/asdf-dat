@@ -18,7 +18,7 @@ import {
 } from "@solana/spl-token";
 import fs from "fs";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 async function main() {
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
