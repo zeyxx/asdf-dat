@@ -142,12 +142,12 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 // ══════════════════════════════════════════════════════════════════════════════
 // When true (TESTING):
 //   - Disables minimum cycle interval check (allows rapid testing)
-//   - Disables AM/PM execution limits (allows unlimited cycles per day)
 //   - Disables minimum fees threshold (allows cycles with any amount)
 // When false (PRODUCTION):
 //   - Enforces minimum 60s between cycles
-//   - Limits to 2 executions per day (1 AM, 1 PM)
 //   - Requires minimum fees threshold to be met
+// NOTE: Random cycle timing (1/day per token) is controlled by TypeScript daemon
+//       The program no longer enforces AM/PM limits - only min interval
 // ══════════════════════════════════════════════════════════════════════════════
 pub const TESTING_MODE: bool = false;
 
@@ -1022,26 +1022,8 @@ pub mod asdf_dat {
 
         state.last_cycle_timestamp = clock.unix_timestamp;
 
-        // Enforce AM/PM execution limits (disabled in testing mode)
-        if !TESTING_MODE {
-            let hour = (clock.unix_timestamp / 3600) % 24;
-            let is_am = hour < 12;
-            let today = (clock.unix_timestamp / 86400) * 86400;
-
-            let valid = if is_am {
-                if state.last_am_execution < today {
-                    state.last_am_execution = clock.unix_timestamp;
-                    true
-                } else { false }
-            } else {
-                if state.last_pm_execution < today {
-                    state.last_pm_execution = clock.unix_timestamp;
-                    true
-                } else { false }
-            };
-
-            require!(valid, ErrorCode::AlreadyExecutedThisPeriod);
-        }
+        // NOTE: AM/PM execution limits removed - random timing now controlled by TypeScript daemon
+        // The orchestrator handles 1/day per token scheduling with randomized timing
 
         // Enforce minimum fees threshold (disabled in testing mode)
         if !TESTING_MODE {
