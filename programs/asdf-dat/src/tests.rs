@@ -20,6 +20,7 @@ mod tests {
     use crate::{
         // Constants
         MIN_FEES_TO_CLAIM, MAX_FEES_PER_CYCLE, INITIAL_SLIPPAGE_BPS, MIN_CYCLE_INTERVAL,
+        MAX_PENDING_FEES,
         DAT_STATE_SEED, DAT_AUTHORITY_SEED, TOKEN_STATS_SEED, ROOT_TREASURY_SEED,
         // Functions
         calculate_tokens_out_pumpfun, deserialize_bonding_curve,
@@ -232,6 +233,7 @@ mod tests {
             let _ = ErrorCode::InvalidRootTreasury;
             let _ = ErrorCode::InvalidFeeSplit;
             let _ = ErrorCode::InsufficientPoolLiquidity;
+            let _ = ErrorCode::PendingFeesOverflow; // New: 69 SOL cap
         }
 
         #[test]
@@ -390,6 +392,19 @@ mod tests {
         fn test_slippage_not_too_high() {
             // Slippage should not exceed 20%
             assert!(INITIAL_SLIPPAGE_BPS <= 2000);
+        }
+
+        #[test]
+        fn test_max_pending_fees() {
+            // 69 SOL = 69,000,000,000 lamports
+            assert_eq!(MAX_PENDING_FEES, 69_000_000_000);
+        }
+
+        #[test]
+        fn test_max_pending_fees_is_reasonable() {
+            // MAX_PENDING_FEES should be at least 10 SOL and at most 1000 SOL
+            assert!(MAX_PENDING_FEES >= 10_000_000_000, "MAX_PENDING_FEES too low");
+            assert!(MAX_PENDING_FEES <= 1_000_000_000_000, "MAX_PENDING_FEES too high");
         }
     }
 }

@@ -31,6 +31,7 @@ pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
 pub const MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;
 pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
 pub const MIN_CYCLE_INTERVAL: i64 = 60;
+pub const MAX_PENDING_FEES: u64 = 69_000_000_000; // 69 SOL max pending fees per token
 
 pub const DAT_STATE_SEED: &[u8] = b"dat_v3";
 pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
@@ -743,10 +744,12 @@ pub mod asdf_dat {
         let token_stats = &mut ctx.accounts.token_stats;
         let clock = Clock::get()?;
 
+        // Check pending fees cap (69 SOL max)
+        let new_total = token_stats.pending_fees_lamports.saturating_add(amount_lamports);
+        require!(new_total <= MAX_PENDING_FEES, ErrorCode::PendingFeesOverflow);
+
         // Accumulate pending fees
-        token_stats.pending_fees_lamports = token_stats
-            .pending_fees_lamports
-            .saturating_add(amount_lamports);
+        token_stats.pending_fees_lamports = new_total;
 
         token_stats.last_fee_update_timestamp = clock.unix_timestamp;
 
@@ -849,6 +852,10 @@ pub mod asdf_dat {
         // Validation 4: TX count sanity (max 100 TX per slot)
         require!(tx_count <= (slot_delta as u32).saturating_mul(100), ErrorCode::TooManyTransactions);
 
+        // Validation 5: Pending fees cap (69 SOL max)
+        let new_pending = token_stats.pending_fees_lamports.saturating_add(fee_amount);
+        require!(new_pending <= MAX_PENDING_FEES, ErrorCode::PendingFeesOverflow);
+
         // Update validator state
         validator.last_validated_slot = end_slot;
         validator.total_validated_lamports = validator
@@ -859,9 +866,7 @@ pub mod asdf_dat {
             .saturating_add(1);
 
         // Update token stats (THIS IS THE KEY - trustless fee attribution!)
-        token_stats.pending_fees_lamports = token_stats
-            .pending_fees_lamports
-            .saturating_add(fee_amount);
+        token_stats.pending_fees_lamports = new_pending;
         token_stats.last_fee_update_timestamp = clock.unix_timestamp;
 
         emit!(ValidatedFeesRegistered {
@@ -1277,6 +1282,8 @@ pub mod asdf_dat {
 
         let bump = state.dat_authority_bump;
         let fee_split_bps = state.fee_split_bps;
+        // Defensive check: fee_split_bps must be valid (1000-9000 range enforced by update_fee_split)
+        require!(fee_split_bps > 0 && fee_split_bps <= 10000, ErrorCode::InvalidFeeSplit);
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
 
         // Calculate available and split to root
@@ -2238,7 +2245,12 @@ pub struct AdminControl<'info> {
 pub struct UpdatePendingFees<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
-    #[account(mut, seeds = [TOKEN_STATS_SEED, mint.key().as_ref()], bump)]
+    #[account(
+        mut,
+        seeds = [TOKEN_STATS_SEED, mint.key().as_ref()],
+        bump,
+        constraint = token_stats.mint == mint.key() @ ErrorCode::MintMismatch
+    )]
     pub token_stats: Account<'info, TokenStats>,
     /// CHECK: Token mint being tracked
     pub mint: AccountInfo<'info>,
@@ -2720,4 +2732,6 @@ pub enum ErrorCode {
     InvalidBondingCurve,
     #[msg("Mint mismatch between accounts")]
     MintMismatch,
+    #[msg("Pending fees would exceed maximum (69 SOL)")]
+    PendingFeesOverflow,
 }

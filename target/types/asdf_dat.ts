@@ -695,6 +695,9 @@ export type AsdfDat = {
         },
         {
           "name": "datAsdfAccount",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -816,7 +819,7 @@ export type AsdfDat = {
         {
           "name": "datTokenAccount",
           "docs": [
-            "DAT's token account for receiving bought tokens"
+            "DAT's token account for receiving bought tokens - validated mint and authority"
           ],
           "writable": true
         },
@@ -966,6 +969,9 @@ export type AsdfDat = {
         },
         {
           "name": "datAsdfAccount",
+          "docs": [
+            "DAT's token account - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -978,6 +984,9 @@ export type AsdfDat = {
         },
         {
           "name": "poolAsdfAccount",
+          "docs": [
+            "Pool's token account - validated mint matches"
+          ],
           "writable": true
         },
         {
@@ -2517,6 +2526,11 @@ export type AsdfDat = {
       "code": 6024,
       "name": "mintMismatch",
       "msg": "Mint mismatch between accounts"
+    },
+    {
+      "code": 6025,
+      "name": "pendingFeesOverflow",
+      "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [

@@ -15,10 +15,10 @@ This audit covers the ASDF-DAT Solana program and supporting TypeScript infrastr
 | Severity | Initial | Fixed | Remaining |
 |----------|---------|-------|-----------|
 | Critical | 4 | 4 | **0** |
-| High | 5 | 4 | 1 |
-| Medium | 5 | 1 | 4 |
+| High | 5 | 5 | **0** |
+| Medium | 5 | 2 | 3 |
 
-**All CRITICAL vulnerabilities have been fixed.**
+**All CRITICAL and HIGH vulnerabilities have been fixed.**
 
 ---
 
@@ -109,25 +109,24 @@ pub pump_swap_program: AccountInfo<'info>,
 
 ### HIGH Severity
 
-#### HIGH-1: No Limit on `pending_fees_lamports` Accumulation
+#### HIGH-1: No Limit on `pending_fees_lamports` Accumulation - **FIXED**
 
-**Location:** `lib.rs:744-746`
+**Location:** `lib.rs:747-749` and `lib.rs:855-857`
+**Status:** ✅ **FIXED** in commit (pending)
 
-**Code:**
+**Description:**
+`pending_fees_lamports` could grow unbounded if cycles don't execute.
+
+**Fix Applied:**
 ```rust
-token_stats.pending_fees_lamports = token_stats
-    .pending_fees_lamports
-    .saturating_add(amount_lamports);
-```
+// Added MAX_PENDING_FEES constant (69 SOL)
+pub const MAX_PENDING_FEES: u64 = 69_000_000_000;
 
-**Impact:** While `saturating_add` prevents overflow, there's no business logic limit. Accumulated fees could grow unbounded if cycles don't execute.
+// Check in update_pending_fees:
+let new_total = token_stats.pending_fees_lamports.saturating_add(amount_lamports);
+require!(new_total <= MAX_PENDING_FEES, ErrorCode::PendingFeesOverflow);
 
-**Recommendation:** Add maximum accumulation check:
-```rust
-require!(
-    token_stats.pending_fees_lamports.saturating_add(amount_lamports) <= MAX_PENDING_FEES,
-    ErrorCode::PendingFeesOverflow
-);
+// Same check added to register_validated_fees
 ```
 
 ---
@@ -143,14 +142,19 @@ Validator state initialization lacks comprehensive validation of the bonding cur
 
 ---
 
-#### HIGH-3: Division Without Zero-Check on `fee_split_bps`
+#### HIGH-3: Division Without Zero-Check on `fee_split_bps` - **FIXED**
 
-**Location:** `lib.rs:1301`
+**Location:** `lib.rs:1285-1286`
+**Status:** ✅ **FIXED** in commit (pending)
 
 **Description:**
-Fee calculations divide by `fee_split_bps` which could theoretically be zero.
+Fee calculations use `fee_split_bps` which could theoretically be zero.
 
-**Recommendation:** Add require check before division.
+**Fix Applied:**
+```rust
+// Defensive check in execute_buy_secondary:
+require!(fee_split_bps > 0 && fee_split_bps <= 10000, ErrorCode::InvalidFeeSplit);
+```
 
 ---
 
@@ -217,9 +221,20 @@ Token program validation added:
 #[account(constraint = quote_token_program.key() == anchor_spl::token::ID @ ErrorCode::InvalidParameter)]
 ```
 
-#### MED-3: Mint Mismatch in `update_pending_fees`
+#### MED-3: Mint Mismatch in `update_pending_fees` - **FIXED**
 
-Verify that the mint passed matches the mint in token_stats.
+**Status:** ✅ **FIXED** in commit (pending)
+
+**Fix Applied:**
+```rust
+#[account(
+    mut,
+    seeds = [TOKEN_STATS_SEED, mint.key().as_ref()],
+    bump,
+    constraint = token_stats.mint == mint.key() @ ErrorCode::MintMismatch
+)]
+pub token_stats: Account<'info, TokenStats>,
+```
 
 #### MED-4: Manual Realloc Pattern
 

@@ -689,6 +689,9 @@
         },
         {
           "name": "dat_asdf_account",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -810,7 +813,7 @@
         {
           "name": "dat_token_account",
           "docs": [
-            "DAT's token account for receiving bought tokens"
+            "DAT's token account for receiving bought tokens - validated mint and authority"
           ],
           "writable": true
         },
@@ -960,6 +963,9 @@
         },
         {
           "name": "dat_asdf_account",
+          "docs": [
+            "DAT's token account - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -972,6 +978,9 @@
         },
         {
           "name": "pool_asdf_account",
+          "docs": [
+            "Pool's token account - validated mint matches"
+          ],
           "writable": true
         },
         {
@@ -2511,6 +2520,11 @@
       "code": 6024,
       "name": "MintMismatch",
       "msg": "Mint mismatch between accounts"
+    },
+    {
+      "code": 6025,
+      "name": "PendingFeesOverflow",
+      "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [
