@@ -330,4 +330,4 @@ manual-test-report-*.md
 
 # Script temporary outputs
 scripts/testing/*.log
-scripts/testing/output/
+scripts/testing/output/logs/

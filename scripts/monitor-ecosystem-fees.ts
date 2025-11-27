@@ -24,6 +24,8 @@ import path from "path";
 import http from "http";
 import { PumpFunFeeMonitor, TokenConfig } from "../lib/fee-monitor";
 import { getNetworkConfig, printNetworkBanner, NetworkConfig } from "../lib/network-config";
+import { monitoring, MonitoringService } from "../lib/monitoring";
+import { createLogger, Logger } from "../lib/logger";
 
 // Program ID
 const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
@@ -112,14 +114,13 @@ function displayStats(monitor: PumpFunFeeMonitor, tokens: TokenConfig[]): void {
 }
 
 /**
- * Start HTTP API server for external flush triggers
+ * Start HTTP API server for external flush triggers and monitoring
  */
-function startApiServer(monitor: PumpFunFeeMonitor): http.Server {
+function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server {
   const server = http.createServer(async (req, res) => {
     // CORS headers
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-    res.setHeader("Content-Type", "application/json");
 
     if (req.method === "OPTIONS") {
       res.writeHead(200);
@@ -127,20 +128,29 @@ function startApiServer(monitor: PumpFunFeeMonitor): http.Server {
       return;
     }
 
+    // POST /flush - Force flush pending fees
     if (req.method === "POST" && req.url === "/flush") {
       try {
+        logger.info("Force flush triggered via API");
         await monitor.forceFlush();
+        monitoring.daemonMetrics.flushCount++;
+        res.setHeader("Content-Type", "application/json");
         res.writeHead(200);
         res.end(JSON.stringify({ success: true, timestamp: Date.now() }));
       } catch (error: any) {
+        logger.error("Flush failed", { error: error.message });
+        monitoring.recordError();
+        res.setHeader("Content-Type", "application/json");
         res.writeHead(500);
         res.end(JSON.stringify({ success: false, error: error.message }));
       }
       return;
     }
 
+    // GET /status - Basic daemon status (legacy)
     if (req.method === "GET" && req.url === "/status") {
       const pending = monitor.getTotalPendingFees();
+      res.setHeader("Content-Type", "application/json");
       res.writeHead(200);
       res.end(JSON.stringify({
         running: true,
@@ -150,14 +160,45 @@ function startApiServer(monitor: PumpFunFeeMonitor): http.Server {
       return;
     }
 
+    // GET /metrics - Prometheus format metrics
+    if (req.method === "GET" && req.url === "/metrics") {
+      res.setHeader("Content-Type", "text/plain; version=0.0.4");
+      res.writeHead(200);
+      res.end(monitoring.toPrometheus());
+      return;
+    }
+
+    // GET /stats - JSON format detailed stats
+    if (req.method === "GET" && req.url === "/stats") {
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(monitoring.toJSON(), null, 2));
+      return;
+    }
+
+    // GET /health - Health check endpoint
+    if (req.method === "GET" && req.url === "/health") {
+      const health = monitoring.getHealth();
+      const statusCode = health.status === "healthy" ? 200 : 503;
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(statusCode);
+      res.end(JSON.stringify(health, null, 2));
+      return;
+    }
+
+    res.setHeader("Content-Type", "application/json");
     res.writeHead(404);
     res.end(JSON.stringify({ error: "Not found" }));
   });
 
   server.listen(API_PORT, () => {
+    logger.info(`API server listening on port ${API_PORT}`);
     console.log(`🌐 API server listening on port ${API_PORT}`);
-    console.log(`   POST /flush - Force flush pending fees`);
-    console.log(`   GET /status - Get daemon status`);
+    console.log(`   POST /flush   - Force flush pending fees`);
+    console.log(`   GET /status   - Basic daemon status`);
+    console.log(`   GET /metrics  - Prometheus format metrics`);
+    console.log(`   GET /stats    - JSON detailed statistics`);
+    console.log(`   GET /health   - Health check endpoint`);
   });
 
   return server;
@@ -170,6 +211,15 @@ async function main() {
   // Parse network argument
   const args = process.argv.slice(2);
   const networkConfig = getNetworkConfig(args);
+  const isVerbose = args.includes("--verbose") || VERBOSE;
+
+  // Initialize logger
+  const logger = createLogger("daemon", {
+    level: isVerbose ? "debug" : "info",
+    console: true,
+    file: true,
+    filePath: `./logs/asdf-daemon-${networkConfig.name.toLowerCase()}.log`,
+  });
 
   console.clear();
   console.log("╔═══════════════════════════════════════════════════════════╗");
@@ -177,6 +227,7 @@ async function main() {
   console.log("╚═══════════════════════════════════════════════════════════╝\n");
 
   printNetworkBanner(networkConfig);
+  logger.info("Daemon starting", { network: networkConfig.name });
 
   // Load configuration
   console.log("⚙️  Loading configuration...");
@@ -196,7 +247,10 @@ async function main() {
   console.log(`✅ Loaded ${allTokens.length} tokens:`);
   for (const token of allTokens) {
     console.log(`   • ${token.name} (${token.symbol})`);
+    // Initialize monitoring for each token
+    monitoring.initToken(token.mint.toBase58(), token.symbol);
   }
+  logger.info("Tokens loaded", { count: allTokens.length });
 
   // Setup connection and program
   console.log("\n🔗 Connecting to Solana...");
@@ -232,9 +286,10 @@ async function main() {
 
   // Start monitoring
   await monitor.start();
+  logger.success("Monitor started successfully");
 
-  // Start API server for external flush triggers
-  const apiServer = startApiServer(monitor);
+  // Start API server for external flush triggers and monitoring
+  const apiServer = startApiServer(monitor, logger);
 
   // Display stats every minute
   const statsInterval = setInterval(() => {
@@ -251,16 +306,21 @@ async function main() {
     if (shuttingDown) return;
     shuttingDown = true;
 
+    logger.info(`Received ${signal}, shutting down gracefully...`);
     console.log(`\n\n📌 Received ${signal}, shutting down gracefully...`);
     clearInterval(statsInterval);
     apiServer.close();
 
     try {
       await monitor.stop();
+      logger.success("Monitor stopped successfully");
       console.log("✅ Monitor stopped successfully");
+      logger.close();
       process.exit(0);
     } catch (error: any) {
+      logger.error("Error during shutdown", { error: error.message });
       console.error("❌ Error during shutdown:", error.message);
+      logger.close();
       process.exit(1);
     }
   };
