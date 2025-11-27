@@ -1939,7 +1939,11 @@ pub struct CollectFeesAMM<'info> {
     /// WSOL mint (So11111111111111111111111111111111111111112)
     pub wsol_mint: InterfaceAccount<'info, Mint>,
     /// DAT's WSOL token account (destination for collected fees)
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = dat_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidParameter,
+        constraint = dat_wsol_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
     pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
     /// CHECK: PumpSwap creator vault authority PDA - seeds: ["creator_vault", dat_authority]
     pub creator_vault_authority: AccountInfo<'info>,
@@ -1961,7 +1965,10 @@ pub struct UnwrapWsol<'info> {
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
     /// DAT's WSOL token account (will be closed)
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = dat_wsol_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
     pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
     pub token_program: Interface<'info, TokenInterface>,
 }
