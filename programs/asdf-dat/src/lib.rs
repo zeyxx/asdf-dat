@@ -248,6 +248,9 @@ fn calculate_buy_amount_and_slippage(
     // buy_amount already has rent subtracted, just cap it
     let capped = buy_amount.min(max_fees_per_cycle);
 
+    // Validate bonding curve data size: 8-byte discriminator + 24 bytes for reserves
+    require!(bonding_curve_data.len() >= 32, ErrorCode::InvalidPool);
+
     // Deserialize bonding curve manually (skip 8-byte discriminator)
     let (virtual_token_reserves, virtual_sol_reserves) = deserialize_bonding_curve(&bonding_curve_data[8..])?;
 
