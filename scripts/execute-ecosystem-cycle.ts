@@ -1135,15 +1135,9 @@ async function executeSecondaryWithAllocation(
       );
 
       // Coin creator vault accounts (for buy)
-      const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(
-        [Buffer.from('creator_vault_authority'), allocation.token.mint.toBuffer()],
-        PUMP_SWAP_PROGRAM
-      );
-
-      const [coinCreatorVaultAta] = PublicKey.findProgramAddressSync(
-        [coinCreatorVaultAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
-        ASSOCIATED_TOKEN_PROGRAM
-      );
+      // Use deriveAmmCreatorVaultAuthority which uses correct seeds: ["creator_vault", creator]
+      const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(creator);
+      const coinCreatorVaultAta = getAmmCreatorVaultAta(creator);
 
       // Volume accumulator PDAs (PumpSwap uses same program)
       const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
@@ -1569,15 +1563,10 @@ async function executeRootCycle(
         ASSOCIATED_TOKEN_PROGRAM
       );
 
-      const [coinCreatorVaultAuthority] = PublicKey.findProgramAddressSync(
-        [Buffer.from('creator_vault_authority'), rootToken.mint.toBuffer()],
-        PUMP_SWAP_PROGRAM
-      );
-
-      const [coinCreatorVaultAta] = PublicKey.findProgramAddressSync(
-        [coinCreatorVaultAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
-        ASSOCIATED_TOKEN_PROGRAM
-      );
+      // Coin creator vault accounts (for root AMM buy)
+      // Use deriveAmmCreatorVaultAuthority which uses correct seeds: ["creator_vault", creator]
+      const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(rootToken.creator);
+      const coinCreatorVaultAta = getAmmCreatorVaultAta(rootToken.creator);
 
       // PumpSwap global config
       const [pumpSwapGlobalConfig] = PublicKey.findProgramAddressSync(
