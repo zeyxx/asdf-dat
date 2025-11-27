@@ -21,6 +21,8 @@ import {
 import { AnchorProvider, Program } from "@coral-xyz/anchor";
 import { BN } from "bn.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import * as fs from "fs";
+import * as path from "path";
 
 export type PoolType = 'bonding_curve' | 'pumpswap_amm';
 
@@ -49,12 +51,29 @@ export interface MonitorConfig {
   pollInterval?: number;     // ms between polls (default: 5000 = 5s)
   updateInterval?: number;   // ms between batch updates (default: 30000 = 30s)
   verbose?: boolean;
+  stateFile?: string;        // Path to persist state (default: .daemon-state.json)
+  txLimit?: number;          // Max transactions per poll (default: 50)
 }
+
+// State persistence interface
+interface DaemonState {
+  lastSignatures: Record<string, string>;
+  lastUpdated: string;
+  version: number;
+}
+
+const STATE_VERSION = 1;
+const DEFAULT_STATE_FILE = ".daemon-state.json";
+const DEFAULT_TX_LIMIT = 50;  // Increased from 10 for scalability
 
 // PumpFun program IDs
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 const PUMPSWAP_PROGRAM = new PublicKey("pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA");
 const WSOL_MINT = new PublicKey("So11111111111111111111111111111111111111112");
+
+// ASDF-DAT program - transactions from this program are internal operations
+// (buyback, burn, collect) and do NOT generate Pump.fun creator fees
+const ASDF_PROGRAM = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
 
 export class PumpFunFeeMonitor {
   private connection: Connection;
@@ -68,6 +87,8 @@ export class PumpFunFeeMonitor {
   private pollTimer: NodeJS.Timeout | null;
   private updateTimer: NodeJS.Timeout | null;
   private isRunning: boolean = false;
+  private stateFile: string;
+  private txLimit: number;
 
   constructor(config: MonitorConfig) {
     this.connection = config.connection;
@@ -80,11 +101,60 @@ export class PumpFunFeeMonitor {
     this.verbose = config.verbose || false;
     this.pollTimer = null;
     this.updateTimer = null;
+    this.stateFile = config.stateFile || DEFAULT_STATE_FILE;
+    this.txLimit = config.txLimit || DEFAULT_TX_LIMIT;
 
     // Initialize token map (keyed by mint)
     for (const token of config.tokens) {
       this.tokens.set(token.mint.toBase58(), token);
       this.pendingFees.set(token.mint.toBase58(), 0n);
+    }
+
+    // Load persisted state if exists
+    this.loadState();
+  }
+
+  /**
+   * Load persisted state from disk
+   */
+  private loadState(): void {
+    try {
+      if (fs.existsSync(this.stateFile)) {
+        const data = fs.readFileSync(this.stateFile, 'utf8');
+        const state: DaemonState = JSON.parse(data);
+
+        if (state.version === STATE_VERSION) {
+          // Restore last signatures for known tokens only
+          for (const [mintKey, signature] of Object.entries(state.lastSignatures)) {
+            if (this.tokens.has(mintKey)) {
+              this.lastSignatures.set(mintKey, signature);
+            }
+          }
+          this.log(`📂 Loaded state from ${this.stateFile} (${Object.keys(state.lastSignatures).length} signatures)`);
+        } else {
+          this.log(`⚠️ State file version mismatch, starting fresh`);
+        }
+      }
+    } catch (error: any) {
+      this.log(`⚠️ Could not load state: ${error.message}`);
+    }
+  }
+
+  /**
+   * Save current state to disk
+   */
+  private saveState(): void {
+    try {
+      const state: DaemonState = {
+        lastSignatures: Object.fromEntries(this.lastSignatures),
+        lastUpdated: new Date().toISOString(),
+        version: STATE_VERSION,
+      };
+      fs.writeFileSync(this.stateFile, JSON.stringify(state, null, 2));
+    } catch (error: any) {
+      if (this.verbose) {
+        console.error(`Error saving state: ${error.message}`);
+      }
     }
   }
 
@@ -93,10 +163,21 @@ export class PumpFunFeeMonitor {
    */
   async start(): Promise<void> {
     this.log("🔍 Starting PumpFun Fee Monitor v2 (Balance Polling)...");
-    this.log(`📊 Monitoring ${this.tokens.size} tokens`);
+    this.log(`📊 Monitoring ${this.tokens.size} tokens (limit: ${this.txLimit} TX/poll)`);
 
-    // Initialize last known signatures for each token
+    // Initialize last known signatures for tokens WITHOUT persisted state
+    let loadedCount = 0;
+    let initializedCount = 0;
+
     for (const [mintKey, token] of this.tokens.entries()) {
+      // Skip if already loaded from persisted state
+      if (this.lastSignatures.has(mintKey)) {
+        loadedCount++;
+        this.log(`   📂 ${token.symbol}: Restored from state`);
+        continue;
+      }
+
+      // Initialize from blockchain
       const poolAddress = this.getPoolAddress(token);
       try {
         const sigs = await this.connection.getSignaturesForAddress(
@@ -105,11 +186,16 @@ export class PumpFunFeeMonitor {
         );
         if (sigs.length > 0) {
           this.lastSignatures.set(mintKey, sigs[0].signature);
+          initializedCount++;
           this.log(`   📡 ${token.symbol}: Initialized at signature ${sigs[0].signature.slice(0, 20)}...`);
         }
       } catch (error: any) {
         this.log(`   ⚠️ ${token.symbol}: Could not initialize signature`);
       }
+    }
+
+    if (loadedCount > 0) {
+      this.log(`📂 Restored ${loadedCount} tokens from state, initialized ${initializedCount} new`);
     }
 
     this.isRunning = true;
@@ -145,6 +231,10 @@ export class PumpFunFeeMonitor {
 
     // Flush any remaining pending fees
     await this.flushPendingFees();
+
+    // Save state for next startup
+    this.saveState();
+    this.log(`💾 State saved to ${this.stateFile}`);
 
     this.log("✅ Monitor stopped");
   }
@@ -205,13 +295,18 @@ export class PumpFunFeeMonitor {
     const poolAddress = this.getPoolAddress(token);
     const lastSig = this.lastSignatures.get(mintKey);
 
-    // Get recent signatures since last known
+    // Get recent signatures since last known (scalable limit)
     const sigs = await this.connection.getSignaturesForAddress(
       poolAddress,
-      { limit: 10, until: lastSig }
+      { limit: this.txLimit, until: lastSig }
     );
 
     if (sigs.length === 0) return;
+
+    // Warn if we hit the limit (might have missed transactions)
+    if (sigs.length >= this.txLimit) {
+      this.log(`⚠️ ${token.symbol}: Hit TX limit (${this.txLimit}), may have missed older transactions`);
+    }
 
     // Process new transactions (oldest first for correct ordering)
     for (const sig of sigs.reverse()) {
@@ -228,8 +323,9 @@ export class PumpFunFeeMonitor {
       }
     }
 
-    // Update last signature to most recent
+    // Update last signature to most recent and persist
     this.lastSignatures.set(mintKey, sigs[0].signature);
+    this.saveState();  // Persist after each update for resilience
   }
 
   /**
@@ -246,6 +342,21 @@ export class PumpFunFeeMonitor {
       });
 
       if (!tx || !tx.meta) return 0;
+
+      // Filter out ASDF-DAT program transactions
+      // These are internal operations (buyback, burn, collect) that do NOT generate creator fees
+      // Only real Pump.fun trades generate fees
+      const accountKeys = tx.transaction.message.staticAccountKeys;
+      const isASDFTransaction = accountKeys.some(
+        (key: PublicKey) => key.equals(ASDF_PROGRAM)
+      );
+
+      if (isASDFTransaction) {
+        if (this.verbose) {
+          console.log(`   ⏭️ Skipping ASDF-DAT transaction: ${signature.slice(0, 20)}...`);
+        }
+        return 0;
+      }
 
       if (token.poolType === 'bonding_curve') {
         return this.extractBcFee(tx, token);
@@ -422,6 +533,15 @@ export class PumpFunFeeMonitor {
       }
     }
     return breakdown;
+  }
+
+  /**
+   * Force immediate flush of all pending fees to on-chain
+   * Called by cycle orchestrator before execution to ensure synchronization
+   */
+  public async forceFlush(): Promise<void> {
+    this.log("🔄 Force flush triggered by cycle orchestrator");
+    await this.flushPendingFees();
   }
 
   private log(message: string): void {

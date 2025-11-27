@@ -159,6 +159,44 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/**
+ * Trigger daemon flush to ensure all pending fees are written on-chain
+ * This solves the race condition between daemon detection and cycle execution
+ */
+async function triggerDaemonFlush(): Promise<boolean> {
+  const DAEMON_API_PORT = parseInt(process.env.DAEMON_API_PORT || '3030');
+  const DAEMON_API_URL = `http://localhost:${DAEMON_API_PORT}/flush`;
+
+  try {
+    log('🔄', 'Triggering daemon flush to sync fees on-chain...', colors.cyan);
+
+    const response = await fetch(DAEMON_API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    log('✅', `Daemon flush completed (timestamp: ${result.timestamp})`, colors.green);
+
+    // Wait for blockchain confirmation
+    await sleep(2000);
+    return true;
+
+  } catch (error) {
+    const errorMsg = (error as Error).message || String(error);
+    if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch failed')) {
+      log('⚠️', 'Daemon not running - proceeding with on-chain pending_fees', colors.yellow);
+    } else {
+      log('⚠️', `Could not trigger daemon flush: ${errorMsg}`, colors.yellow);
+    }
+    return false;
+  }
+}
+
 // ============================================================================
 // Scalability Validation
 // ============================================================================
@@ -1822,6 +1860,10 @@ async function main() {
 
     // Execute the complete ecosystem cycle
     const startTime = Date.now();
+
+    // Pre-flight: Trigger daemon flush to ensure fees are synced on-chain
+    // This solves the race condition where daemon detects fees but hasn't flushed yet
+    await triggerDaemonFlush();
 
     // Pre-flight: Wait for daemon synchronization (optional, 30s timeout)
     // This helps ensure all tokens have their pending_fees populated

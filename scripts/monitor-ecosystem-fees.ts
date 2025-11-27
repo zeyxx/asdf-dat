@@ -21,6 +21,7 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import http from "http";
 import { PumpFunFeeMonitor, TokenConfig } from "../lib/fee-monitor";
 import { getNetworkConfig, printNetworkBanner, NetworkConfig } from "../lib/network-config";
 
@@ -30,6 +31,7 @@ const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ")
 // Configuration (can be overridden by env vars)
 const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "30000"); // 30 seconds
 const VERBOSE = process.env.VERBOSE === "true";
+const API_PORT = parseInt(process.env.API_PORT || "3030");
 
 interface EcosystemConfig {
   root?: TokenConfig;
@@ -110,6 +112,58 @@ function displayStats(monitor: PumpFunFeeMonitor, tokens: TokenConfig[]): void {
 }
 
 /**
+ * Start HTTP API server for external flush triggers
+ */
+function startApiServer(monitor: PumpFunFeeMonitor): http.Server {
+  const server = http.createServer(async (req, res) => {
+    // CORS headers
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+    res.setHeader("Content-Type", "application/json");
+
+    if (req.method === "OPTIONS") {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+
+    if (req.method === "POST" && req.url === "/flush") {
+      try {
+        await monitor.forceFlush();
+        res.writeHead(200);
+        res.end(JSON.stringify({ success: true, timestamp: Date.now() }));
+      } catch (error: any) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ success: false, error: error.message }));
+      }
+      return;
+    }
+
+    if (req.method === "GET" && req.url === "/status") {
+      const pending = monitor.getTotalPendingFees();
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        running: true,
+        pendingFees: pending,
+        pendingFeesSOL: pending / 1e9
+      }));
+      return;
+    }
+
+    res.writeHead(404);
+    res.end(JSON.stringify({ error: "Not found" }));
+  });
+
+  server.listen(API_PORT, () => {
+    console.log(`🌐 API server listening on port ${API_PORT}`);
+    console.log(`   POST /flush - Force flush pending fees`);
+    console.log(`   GET /status - Get daemon status`);
+  });
+
+  return server;
+}
+
+/**
  * Main monitoring function
  */
 async function main() {
@@ -179,6 +233,9 @@ async function main() {
   // Start monitoring
   await monitor.start();
 
+  // Start API server for external flush triggers
+  const apiServer = startApiServer(monitor);
+
   // Display stats every minute
   const statsInterval = setInterval(() => {
     displayStats(monitor, allTokens);
@@ -196,6 +253,7 @@ async function main() {
 
     console.log(`\n\n📌 Received ${signal}, shutting down gracefully...`);
     clearInterval(statsInterval);
+    apiServer.close();
 
     try {
       await monitor.stop();
