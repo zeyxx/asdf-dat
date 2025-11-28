@@ -1,61 +1,122 @@
-# ASDF-DAT Ecosystem
+# ASDF-DAT
 
-**Automated Buyback & Burn Protocol for Solana**
+**Decentralized Autonomous Treasury Infrastructure for Solana**
 
-An automated system for collecting Pump.fun trading fees and executing buyback-and-burn cycles, with multi-token support and hierarchical redistribution.
+Automated buyback and burn infrastructure for Creator Capital Markets.
 
-[![Solana](https://img.shields.io/badge/Solana-Devnet-green)](https://solana.com)
+[![Solana](https://img.shields.io/badge/Solana-Mainnet-green)](https://solana.com)
 [![Anchor](https://img.shields.io/badge/Anchor-0.31.1-blue)](https://anchor-lang.com)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://typescriptlang.org)
 
 ---
 
-## Architecture
+## What is ASDF-DAT?
+
+ASDF-DAT is a protocol that enables token communities and creators to automate buyback and burn mechanisms, creating sustainable economic flywheels for pump.fun tokens.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    ASDF-DAT ECOSYSTEM                           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │  ROOT TOKEN  │◄───│  SECONDARY   │◄───│   MAYHEM     │      │
-│  │   (DATSPL)   │    │   (DATS2)    │    │   (DATM)     │      │
-│  │    100%      │    │  55.2%/44.8% │    │  55.2%/44.8% │      │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
-│         │                   │                   │               │
-│         └─────────┬─────────┴─────────┬─────────┘               │
-│                   ▼                   ▼                         │
-│           ┌──────────────────────────────────┐                  │
-│           │     ECOSYSTEM ORCHESTRATOR       │                  │
-│           │   Dynamic Balance Allocation     │                  │
-│           └──────────────┬───────────────────┘                  │
-│                          ▼                                      │
-│           ┌──────────────────────────────────┐                  │
-│           │      SOLANA SMART CONTRACT       │                  │
-│           │   ASDfNfUHwVGfrg3SV7SQYWhaVxnrCU │                  │
-│           └──────────────────────────────────┘                  │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+Trading Volume → Creator Fees → Buyback → Burn → Scarcity → Value
+       ↑                                                    │
+       └────────────────────────────────────────────────────┘
 ```
-
-### Economic Flow
-
-1. **Trading Fees** → Collected from Pump.fun creator vaults
-2. **Fee Split** → Secondary tokens send 44.8% to root treasury
-3. **Buyback** → SOL used to buy tokens on the bonding curve
-4. **Burn** → Purchased tokens are burned, reducing supply
 
 ---
 
-## Features
+## The Problem
 
-- **Multi-Token Ecosystem** - Unlimited secondary token support
-- **Token-Agnostic Architecture** - Both SPL and Token-2022 can serve as root or secondary
-- **Hierarchical Fee Distribution** - 44.8% of secondary fees → root token
-- **Dynamic Allocation** - Proportional distribution based on pending fees
-- **Mayhem Mode** - Token-2022 support with extensions
-- **Graceful Deferral** - Tokens with insufficient allocation deferred to next cycle
-- **Emergency Controls** - Pause/Resume for critical situations
+Tokens on pump.fun lack sustainability mechanisms:
+
+- Creators extract fees and dump
+- No creator/holder economic alignment
+- Absence of deflationary pressure
+- 99% of tokens die within weeks
+
+**Result**: A race to the bottom where everyone loses.
+
+---
+
+## The Solution: DAT Infrastructure
+
+DAT (Decentralized Autonomous Treasury) provides:
+
+- **Automated buyback**: Fees converted to market purchases
+- **Permanent burns**: Purchased tokens destroyed forever
+- **On-chain execution**: Transparent and verifiable
+- **Configurable parameters**: Adapt to community needs
+
+---
+
+## Roadmap
+
+### Phase 1: Validation (Current)
+
+Proving the infrastructure works with a single ecosystem.
+
+```
+                    $asdfasdfa (ROOT)
+                         │
+         ┌───────────────┼───────────────┐
+         │               │               │
+         ▼               ▼               ▼
+    [Secondary 1]   [Secondary 2]   [Secondary N]
+         │               │               │
+         └───────────────┼───────────────┘
+                         │
+              55.2% ◄────┴────► 44.8%
+           Secondary          Root
+            Buyback         Treasury
+```
+
+**Fee Split**: 55.2% to secondary token buyback / 44.8% to root treasury
+
+**Objective**: Demonstrate on-chain track record of:
+- Successful buyback cycles
+- Deflationary burns
+- Compound ecosystem effects
+
+### Phase 2: Universal Infrastructure
+
+Opening the protocol to all pump.fun communities and creators.
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    DAT PROTOCOL                              │
+│                                                              │
+│                  ┌─────────────────┐                         │
+│                  │   $asdfasdfa    │                         │
+│                  │ (Protocol Root) │                         │
+│                  └────────┬────────┘                         │
+│                           │                                  │
+│              ┌────────────┼────────────┐                     │
+│              │            │            │                     │
+│              ▼            ▼            ▼                     │
+│         ┌─────────┐ ┌─────────┐ ┌─────────┐                 │
+│         │  DAT A  │ │  DAT B  │ │  DAT N  │                 │
+│         │Community│ │ Creator │ │ Project │                 │
+│         └────┬────┘ └────┬────┘ └────┬────┘                 │
+│              │           │           │                       │
+│              └───────────┼───────────┘                       │
+│                          │                                   │
+│                       5.52%                                  │
+│                   to $asdfasdfa                              │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Protocol Fee**: 5.52% of ALL integrated DAT fees flow to $asdfasdfa
+
+**$asdfasdfa becomes an index fund**: Holders gain exposure to the entire DAT ecosystem without needing to pick individual winners.
+
+---
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | Technical system design |
+| [Tokenomics](docs/TOKENOMICS.md) | Economic model (Phase 1 & 2) |
+| [Integration Guide](docs/INTEGRATION.md) | How to integrate (Phase 2) |
+| [Glossary](docs/GLOSSARY.md) | Terminology definitions |
 
 ---
 
@@ -64,38 +125,88 @@ An automated system for collecting Pump.fun trading fees and executing buyback-a
 ### Prerequisites
 
 ```bash
-# Install dependencies
 npm install
-
-# Configure Solana CLI
 solana config set --url devnet
 ```
 
 ### Generate Test Volume
 
 ```bash
-# Generate trades (buys + sells) to accumulate fees
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
-npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 10 0.1
-npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 10 0.1
+# Buy + Sell cycles to generate fees
+npx ts-node scripts/generate-volume.ts devnet-token-spl.json 2 0.5
+npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
+```
+
+### Start Fee Monitor Daemon
+
+```bash
+npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet
 ```
 
 ### Execute Ecosystem Cycle
 
 ```bash
-# Full cycle: collect → distribute → buyback → burn (all tokens)
+# Wait 15s for daemon sync, then:
 npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
 ```
 
 ### Check Statistics
 
 ```bash
-# Current token state
 npx ts-node scripts/check-current-stats.ts
-
-# DAT protocol state
 npx ts-node scripts/check-dat-state.ts
 ```
+
+---
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ASDF-DAT SYSTEM                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   ┌──────────────────┐    ┌──────────────────┐                  │
+│   │   Fee Monitor    │    │   Orchestrator   │                  │
+│   │     Daemon       │    │    (Cycles)      │                  │
+│   └────────┬─────────┘    └────────┬─────────┘                  │
+│            │                       │                             │
+│            │    ┌──────────────────┘                             │
+│            │    │                                                │
+│            ▼    ▼                                                │
+│   ┌──────────────────────────────────┐                          │
+│   │      SOLANA SMART CONTRACT       │                          │
+│   │  ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5 │                          │
+│   └──────────────────────────────────┘                          │
+│                       │                                          │
+│            ┌──────────┼──────────┐                               │
+│            │          │          │                               │
+│            ▼          ▼          ▼                               │
+│       ┌────────┐ ┌────────┐ ┌────────┐                          │
+│       │ Token  │ │ Token  │ │ Token  │                          │
+│       │ Stats  │ │ Stats  │ │ Stats  │                          │
+│       └────────┘ └────────┘ └────────┘                          │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Components**:
+- **Fee Monitor Daemon**: Attributes fees to specific tokens (solves shared vault problem)
+- **Ecosystem Orchestrator**: Executes batched buyback/burn cycles
+- **Smart Contract**: On-chain logic for fee collection, buyback, and burns
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---------|-------------|
+| **Multi-Token Support** | Unlimited secondary tokens |
+| **Token-Agnostic** | SPL and Token-2022 supported |
+| **Hierarchical Distribution** | Configurable fee splits |
+| **Batch Execution** | N+1 pattern for efficiency |
+| **Emergency Controls** | Pause/Resume capabilities |
+| **State Persistence** | Crash recovery without fee loss |
 
 ---
 
@@ -104,259 +215,54 @@ npx ts-node scripts/check-dat-state.ts
 ```
 asdf-dat/
 ├── programs/asdf-dat/          # Solana Smart Contract (Rust)
-│   └── src/
-│       ├── lib.rs              # Main program (2,164 LOC)
-│       └── tests.rs            # Unit tests
+│   └── src/lib.rs              # Main program
 │
-├── scripts/                    # Operation scripts (56 files)
+├── scripts/                    # Operation scripts
 │   ├── execute-ecosystem-cycle.ts   # Main orchestrator
-│   ├── generate-volume.ts           # Trade generation
-│   ├── check-*.ts                   # Monitoring scripts
-│   ├── buy-*.ts / sell-*.ts         # Trading operations
-│   └── init-*.ts / create-*.ts      # Initialization
+│   ├── monitor-ecosystem-fees.ts    # Fee daemon
+│   ├── generate-volume.ts           # Test volume
+│   └── check-*.ts                   # Monitoring
 │
-├── src/                        # TypeScript applications
-│   ├── bot.ts                  # Automated bot
-│   ├── dashboard.ts            # Web dashboard
-│   └── index.ts                # CLI entry point
+├── lib/                        # Utilities
+│   ├── fee-monitor.ts          # Daemon library
+│   └── network-config.ts       # Configuration
 │
-├── lib/                        # Daemons and utilities
-│   ├── fee-monitor.ts          # Fee monitoring
-│   └── validator-daemon.ts     # Validator synchronization
-│
-├── tests/                      # Integration tests
 ├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md
+│   ├── TOKENOMICS.md
+│   ├── INTEGRATION.md
+│   └── GLOSSARY.md
 │
-├── devnet-token-spl.json       # Root token config
-├── devnet-token-secondary.json # Secondary token config
-├── devnet-token-mayhem.json    # Mayhem token config
-└── asdf_dat.json               # Program IDL
+└── devnet-token-*.json         # Token configurations
 ```
 
 ---
 
-## Smart Contract Instructions (21 total)
-
-### Core Operations
-| Instruction | Description |
-|-------------|-------------|
-| `initialize` | Initialize DAT state and authority PDAs |
-| `initialize_token_stats` | Create per-token tracking |
-| `collect_fees` | Collect SOL from Pump.fun vault |
-| `execute_buy` | Buy tokens with collected SOL |
-| `burn_and_update` | Burn tokens and update stats |
-| `finalize_allocated_cycle` | Finalize an orchestrated cycle |
-
-### Ecosystem Management
-| Instruction | Description |
-|-------------|-------------|
-| `set_root_token` | Configure root token for fee split |
-| `update_fee_split` | Adjust distribution ratio (1000-9000 bps) |
-| `register_validated_fees` | Register daemon-validated fees |
-| `sync_validator_slot` | Synchronize validator state |
-
-### Token Creation
-| Instruction | Description |
-|-------------|-------------|
-| `create_pumpfun_token` | Create standard SPL token |
-| `create_pumpfun_token_mayhem` | Create Mayhem token (Token-2022) |
-
-### Administration
-| Instruction | Description |
-|-------------|-------------|
-| `emergency_pause` | Pause all operations |
-| `resume` | Resume after pause |
-| `update_parameters` | Modify system parameters |
-| `transfer_admin` | Transfer admin authority |
-
----
-
-## Configuration
-
-### Token Configs
-
-Each token is configured via a JSON file:
-
-```json
-{
-  "mint": "rxeo277TLJfPYX6zaSfbtyHWY7BkTREL9AidoNi38jr",
-  "bondingCurve": "HDHVCfjbnxX3EzAhDpHj1Coiooq7yEPBXp74CDtkvCap",
-  "creator": "4nS8cak3SUafTXsmaZVi1SEVoL67tNotsnmHG1RH7Jjd",
-  "symbol": "DATSPL",
-  "isRoot": true,
-  "mayhemMode": false,
-  "network": "devnet"
-}
-```
-
-### Environment Variables
-
-```bash
-# .env
-RPC_URL=https://api.devnet.solana.com
-WALLET_PATH=./devnet-wallet.json
-```
-
----
-
-## Fee Distribution
-
-### Secondary Tokens (55.2% / 44.8%)
-
-```
-Received allocation: 100%
-    │
-    ├── 55.2% → Secondary token buyback
-    │
-    └── 44.8% → Root Treasury
-                    │
-                    └── Root token buyback
-```
-
-### Root Token (100%)
-
-```
-Collected fees: 100%
-    │
-    └── 100% → Root token buyback
-```
-
----
-
-## Main Scripts
-
-### Ecosystem Cycle
-```bash
-# Execute full cycle on all tokens
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
-```
-
-### Volume Generation
-```bash
-# Generate trades to accumulate fees
-# Args: <token-config> <rounds> <amount-sol>
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
-```
-
-### Monitoring
-```bash
-# Token statistics
-npx ts-node scripts/check-current-stats.ts
-
-# Protocol state
-npx ts-node scripts/check-dat-state.ts
-
-# Vault balance
-npx ts-node scripts/check-creator-vault.ts devnet-token-spl.json
-```
-
-### Token Sales
-```bash
-# Sell all SPL tokens
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
-
-# Sell Mayhem tokens
-npx ts-node scripts/sell-mayhem-tokens.ts devnet-token-mayhem.json
-```
-
----
-
-## Security
-
-### TESTING_MODE
-
-```rust
-// programs/asdf-dat/src/lib.rs:97
-pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE false FOR MAINNET
-```
-
-| Mode | Cycle Interval | AM/PM Limits | Min Fees |
-|------|----------------|--------------|----------|
-| `true` (devnet) | Disabled | Disabled | Disabled |
-| `false` (mainnet) | 60s min | Enforced | 10 SOL |
-
-### Sensitive Files (gitignored)
-
-- `devnet-wallet.json` / `mainnet-wallet.json`
-- `wallet.json`
-- `ASDF*.json` (program keypairs)
-- `*.key` / `*.pem`
-
----
-
-## Mainnet Deployment
-
-### Checklist
-
-- [ ] `TESTING_MODE = false` in lib.rs
-- [ ] New program keypair (never reuse devnet)
-- [ ] Mainnet RPC endpoint configured
-- [ ] Secure mainnet wallet
-- [ ] Mainnet token configs created
-- [ ] Tests on mainnet-beta completed
-- [ ] Monitoring/alerting configured
-
-### Commands
-
-```bash
-# Build with TESTING_MODE = false
-anchor build
-
-# Deploy mainnet
-anchor deploy --provider.cluster mainnet
-
-# Update IDL
-cp target/idl/asdf_dat.json .
-```
-
----
-
-## Dependencies
-
-### Rust
-- `anchor-lang` = "0.31.1"
-- `anchor-spl` = "0.31.1"
-
-### TypeScript
-- `@coral-xyz/anchor` = "0.31.1"
-- `@solana/web3.js` = "^1.91.0"
-- `@pump-fun/pump-sdk` = "^1.22.1"
-- `@pump-fun/pump-swap-sdk` = "^1.7.7"
-
----
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [AUDIT-REPORT-2025-11-25.md](AUDIT-REPORT-2025-11-25.md) | Complete professional audit |
-| [PRODUCTION-WORKFLOW.md](PRODUCTION-WORKFLOW.md) | Production guide |
-| [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) | Quick start guide |
-| [PUMPFUN_DEVNET_GUIDE.md](PUMPFUN_DEVNET_GUIDE.md) | Pump.fun integration |
-| [MAYHEM-MODE-LAUNCH-GUIDE.md](MAYHEM-MODE-LAUNCH-GUIDE.md) | Mayhem Mode guide |
-
----
-
-## Metrics
-
-| Component | Files | Lines |
-|-----------|-------|-------|
-| Smart Contract | 2 | 2,559 |
-| Scripts | 56 | 13,748 |
-| Utilities | 5 | 1,509 |
-| Documentation | 20+ | 4,835+ |
-| **Total** | **89+** | **~23,000** |
-
----
-
-## Addresses (Devnet)
+## Addresses
 
 | Element | Address |
 |---------|---------|
 | **Program ID** | `ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui` |
 | **PumpSwap** | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
 | **Pump.fun** | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` |
-| **Token-2022** | `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` |
+
+---
+
+## Security
+
+- **TESTING_MODE**: Must be `false` for mainnet
+- **Emergency Pause**: Admin can halt operations
+- **Slippage Protection**: Configurable tolerance on buybacks
+- **Audit Status**: See [Security Audit](docs/SECURITY-AUDIT-2025-11-27.md)
+
+---
+
+## Links
+
+| Resource | Link |
+|----------|------|
+| Twitter | [@asikiland](https://twitter.com/asikiland) |
+| GitHub | [asdf-dat](https://github.com/zeyxx/asdf-dat) |
 
 ---
 
