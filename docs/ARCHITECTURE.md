@@ -171,39 +171,33 @@ Cycle Execution (Orchestrator)
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                      ASDF-DAT UNIVERSAL PROTOCOL                         │
 │                                                                          │
-│                    ┌─────────────────────────────┐                       │
-│                    │    $asdfasdfa ROOT TOKEN    │                       │
-│                    │    (Protocol Root)          │                       │
-│                    └─────────────────────────────┘                       │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │              $asdfasdfa (PROTOCOL ROOT)                          │   │
+│   │         Receives 5.52% from ALL DATs ecosystem-wide              │   │
+│   │                  Immediate buyback/burn                          │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 │                                  ▲                                       │
-│                                  │                                       │
-│                    ┌─────────────┴─────────────┐                        │
-│                    │     Protocol Treasury      │                        │
-│                    │   (receives 5.52% from     │                        │
-│                    │    ALL integrated DATs)    │                        │
-│                    └─────────────┬─────────────┘                        │
-│                                  │                                       │
+│                    5.52% protocol fee (FIXED)                           │
 │     ┌────────────────────────────┼────────────────────────────┐         │
 │     │                            │                            │         │
-│     ▼                            ▼                            ▼         │
-│ ┌─────────┐               ┌─────────┐               ┌─────────┐         │
-│ │  DAT A  │               │  DAT B  │               │  DAT N  │         │
-│ │Community│               │ Creator │               │  Project│         │
-│ │   DAO   │               │   Solo  │               │   Team  │         │
-│ └────┬────┘               └────┬────┘               └────┬────┘         │
-│      │                         │                         │              │
-│      │ 5.52%                   │ 5.52%                   │ 5.52%        │
-│      │ to root                 │ to root                 │ to root      │
-│      │                         │                         │              │
-│      ▼                         ▼                         ▼              │
-│ ┌─────────┐               ┌─────────┐               ┌─────────┐         │
-│ │Token(s) │               │Token(s) │               │Token(s) │         │
-│ │Buyback  │               │Buyback  │               │Buyback  │         │
-│ │& Burn   │               │& Burn   │               │& Burn   │         │
-│ └─────────┘               └─────────┘               └─────────┘         │
+│     │                            │                            │         │
+│ ┌───┴─────────────────┐   ┌──────┴──────────────┐   ┌─────────┴───────┐ │
+│ │       DAT A         │   │       DAT B         │   │       DAT N     │ │
+│ │  (own ecosystem)    │   │  (own ecosystem)    │   │  (own ecosystem)│ │
+│ │                     │   │                     │   │                 │ │
+│ │  ┌───────────────┐  │   │  ┌───────────────┐  │   │  ┌───────────┐  │ │
+│ │  │ DAT A Root    │  │   │  │ DAT B Root    │  │   │  │ DAT N Root│  │ │
+│ │  │ (40% config)  │  │   │  │ (50% config)  │  │   │  │ (30%)     │  │ │
+│ │  └───────┬───────┘  │   │  └───────┬───────┘  │   │  └─────┬─────┘  │ │
+│ │          │          │   │          │          │   │        │        │ │
+│ │  ┌───────┴───────┐  │   │  ┌───────┴───────┐  │   │  ┌─────┴─────┐  │ │
+│ │  │ Secondaries   │  │   │  │ Secondaries   │  │   │  │Secondaries│  │ │
+│ │  │ (60% config)  │  │   │  │ (50% config)  │  │   │  │ (70%)     │  │ │
+│ │  └───────────────┘  │   │  └───────────────┘  │   │  └───────────┘  │ │
+│ └─────────────────────┘   └─────────────────────┘   └─────────────────┘ │
 │                                                                          │
-│     Each DAT configures their own internal fee split                     │
-│     (how to distribute the remaining 94.48%)                             │
+│    Each DAT = own root + secondaries with CONFIGURABLE internal split    │
+│         No treasury - ALL fees immediately converted to burns            │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -212,12 +206,35 @@ Cycle Execution (Orchestrator)
 
 | Aspect | Phase 1 | Phase 2 |
 |--------|---------|---------|
-| **Scope** | Single ecosystem | Multi-tenant |
-| **Root Fee** | 44.8% from secondaries | 5.52% from all DATs |
-| **DAT Creation** | Manual setup | Factory pattern |
-| **Fee Split** | Fixed 55.2%/44.8% | Configurable per DAT |
+| **Scope** | Single ecosystem | Multi-tenant (anyone can create a DAT) |
+| **Protocol Fee** | N/A | 5.52% → $asdfasdfa (FIXED) |
+| **DAT Structure** | Single root + secondaries | Each DAT has own root + secondaries |
+| **Internal Split** | Fixed 55.2%/44.8% | Configurable per DAT |
+| **DAT Creation** | Manual setup | Factory pattern (permissionless) |
 | **Daemon** | Single ecosystem | Supports N DATs |
-| **Integration** | Permissioned | Permissionless |
+| **Treasury** | Root treasury accumulates | No treasury (all immediate burns) |
+
+### Phase 2 Fee Formula
+
+```
+INPUTS:
+  total_fees = 100% of creator fees collected
+  protocol_fee_rate = 5.52% (FIXED, non-configurable)
+  internal_root_ratio = X% (CONFIGURABLE per DAT)
+
+STEP 1: Protocol Fee (taken first from total)
+  protocol_fee = total_fees × 5.52%
+  → Immediate $asdfasdfa buyback/burn
+
+STEP 2: DAT Internal Distribution (remaining 94.48%)
+  remaining = total_fees × 94.48%
+
+  dat_root_share = remaining × internal_root_ratio
+  → Immediate DAT root token buyback/burn
+
+  secondary_share = remaining × (1 - internal_root_ratio)
+  → Immediate secondary token buyback/burn
+```
 
 ### Component Evolution
 
@@ -228,60 +245,88 @@ New instruction for permissionless DAT creation:
 ```
 create_dat(
     creator: Pubkey,
-    token_mint: Pubkey,
-    internal_split_config: SplitConfig,
+    root_token_mint: Pubkey,
+    internal_root_ratio_bps: u16,  // e.g., 4000 = 40%
 ) → DATInstance
 ```
 
 Each DAT instance has:
-- Own state account
-- Configurable internal fee distribution
-- Fixed 5.52% protocol fee to root
+- Own state account (DATInstance PDA)
+- Own root token + ability to add secondary tokens
+- Configurable internal root/secondary split
+- Fixed 5.52% protocol fee to $asdfasdfa (automatic)
 
 #### 2. Universal Daemon
 
 ```
 Universal Daemon
         │
-        ├── Registry of all DATs
+        ├── Registry of all DATs (on-chain)
         │
         ├── For each DAT:
         │   ├── Monitor creator vault
-        │   ├── Attribute fees per token
-        │   └── Update pending_fees
+        │   ├── Attribute fees per token (root + secondaries)
+        │   └── Update pending_fees on-chain
         │
         └── Batch updates for efficiency
 ```
 
-#### 3. Protocol Treasury
+#### 3. Immediate Buyback/Burn
 
-Dedicated treasury for $asdfasdfa that receives 5.52% from ALL integrated DATs:
+No treasury accumulation at any level - all fees immediately converted to burns:
 
 ```
-DAT A fees ──► 5.52% ──┐
-DAT B fees ──► 5.52% ──┼──► Protocol Treasury ──► $asdfasdfa Buyback/Burn
-DAT N fees ──► 5.52% ──┘
+Example: DAT A with 40% internal root ratio
+
+Secondary Token Trade generates 1 SOL fees:
+├── 0.0552 SOL (5.52%) ──► $asdfasdfa buyback/burn
+└── 0.9448 SOL (94.48%) ──► DAT A internal
+    ├── 0.3779 SOL (40%) ──► DAT A Root buyback/burn
+    └── 0.5669 SOL (60%) ──► Secondary buyback/burn
 ```
 
 ### Fee Flow (Phase 2)
 
 ```
-Any pump.fun Token Trading
-        │
-        ▼
-Creator Fee Collected
-        │
-        ▼
-Integrated DAT Processing
-        │
-        ├── 5.52% → Protocol Treasury ($asdfasdfa)
-        │
-        └── 94.48% → DAT Internal Distribution
-            │
-            ├── X% → Token buyback/burn
-            ├── Y% → Community treasury (optional)
-            └── Z% → Creator allocation (optional)
+Trading on Secondary Token in DAT X
+              │
+              ▼
+       Creator Fee (100%)
+              │
+              ▼
+┌─────────────┴─────────────┐
+│                           │
+▼                           ▼
+5.52% (FIXED)          94.48% (remaining)
+$asdfasdfa             DAT X Internal
+buyback/burn           (CONFIGURABLE)
+                            │
+                   ┌────────┴────────┐
+                   │                 │
+                   ▼                 ▼
+           (94.48% × X%)      (94.48% × (1-X)%)
+           DAT X Root          Secondary Token
+           buyback/burn        buyback/burn
 ```
+
+### Phase 2 Use Case Example
+
+**Community "MemeDAO" creates their DAT:**
+- Root token: $MEME (their main community token)
+- Secondary tokens: $MEME2, $MEME3 (ecosystem tokens)
+- Internal root ratio: 40%
+- Protocol fee: 5.52% to $asdfasdfa (automatic)
+
+**When 1 SOL of fees is collected from $MEME2 trading:**
+
+| Recipient | Calculation | Amount |
+|-----------|-------------|--------|
+| $asdfasdfa (Protocol) | 1 × 5.52% | 0.0552 SOL |
+| $MEME (DAT Root) | 0.9448 × 40% | 0.3779 SOL |
+| $MEME2 (Secondary) | 0.9448 × 60% | 0.5669 SOL |
+| **Total** | | **1.0000 SOL** |
+
+**Core Principle**: No treasury accumulation at any level. Every SOL collected is immediately used for buyback and the purchased tokens are permanently burned.
 
 ---
 

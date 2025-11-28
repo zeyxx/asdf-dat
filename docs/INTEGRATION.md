@@ -1,149 +1,166 @@
 # DAT Integration Guide
 
-How to integrate your pump.fun token with the ASDF-DAT infrastructure (Phase 2).
+How to create and integrate your own DAT ecosystem with the ASDF-DAT universal infrastructure (Phase 2).
 
 ---
 
 ## Overview
 
-ASDF-DAT provides automated buyback and burn infrastructure for any pump.fun token. Integration gives your community:
+ASDF-DAT provides automated buyback and burn infrastructure for pump.fun communities. With Phase 2, you can create your own DAT ecosystem with:
 
-- Automated treasury management
-- Deflationary token mechanics
-- Association with the DAT ecosystem
-- Shared security and audits
+- **Your own root token** (main community token)
+- **Multiple secondary tokens** (ecosystem tokens)
+- **Configurable internal split** between root and secondaries
+- **Fixed 5.52% protocol fee** to $asdfasdfa
+
+### What You Get
+
+| Feature | Description |
+|---------|-------------|
+| **Automated Deflation** | No manual intervention required |
+| **Multi-Token Support** | Root + unlimited secondary tokens |
+| **Configurable Economics** | Choose your internal root/secondary split |
+| **Transparent** | All operations on-chain and verifiable |
+| **Audited** | Shared security infrastructure |
 
 ---
 
 ## Prerequisites
 
-Before integrating, ensure you have:
+Before creating your DAT, ensure you have:
 
-1. **Existing pump.fun token** (bonding curve or migrated to PumpSwap AMM)
-2. **Creator wallet access** (the wallet that created the token)
+1. **Existing pump.fun token(s)** (bonding curve or PumpSwap AMM)
+2. **Creator wallet access** (the wallet that created your tokens)
 3. **Understanding of DAT mechanics** (see [Architecture](ARCHITECTURE.md) and [Tokenomics](TOKENOMICS.md))
 
 ---
 
 ## Fee Structure
 
-All integrated DATs share this fee structure:
+### Protocol Fee (Fixed)
 
-| Allocation | Percentage | Destination |
-|------------|------------|-------------|
-| Protocol Fee | 5.52% | $asdfasdfa (non-configurable) |
-| Internal Split | 94.48% | Your configuration |
+All DATs pay **5.52%** of collected fees to $asdfasdfa buyback/burn. This is non-negotiable and applies equally to all integrated DATs.
 
-The 5.52% protocol fee funds buyback and burns of $asdfasdfa, making it an "index fund" of the entire DAT ecosystem.
+### Internal Split (Configurable)
 
----
-
-## Internal Split Configuration
-
-The remaining 94.48% can be configured according to your community's needs:
-
-### Option A: Pure Deflationary
-
-All fees go to buyback and burn.
+The remaining **94.48%** is distributed within your DAT according to your configured `internal_root_ratio`:
 
 ```
-94.48% → Token Buyback/Burn
+Creator Fees Collected (100%)
+              │
+              ▼
+┌─────────────┴─────────────┐
+│                           │
+▼                           ▼
+5.52% (FIXED)          94.48% (remaining)
+$asdfasdfa             Your DAT Internal Split
+buyback/burn           (CONFIGURABLE)
+                            │
+                   ┌────────┴────────┐
+                   │                 │
+                   ▼                 ▼
+           (94.48% × X%)      (94.48% × (1-X)%)
+           Your Root Token    Secondary Token
+           buyback/burn       buyback/burn
 ```
 
-Best for: Communities focused on price appreciation through scarcity.
-
-### Option B: Community Treasury
-
-Split between buyback and community fund.
+### Fee Formula
 
 ```
-70.00% → Token Buyback/Burn
-24.48% → Community Treasury
+INPUTS:
+  total_fees = 100% of creator fees collected
+  protocol_fee_rate = 5.52% (FIXED)
+  internal_root_ratio = X% (YOUR CHOICE, e.g., 40%)
+
+CALCULATIONS:
+  protocol_fee = total_fees × 5.52%       → $asdfasdfa buyback/burn
+  remaining = total_fees × 94.48%
+  root_share = remaining × X%             → Your root token buyback/burn
+  secondary_share = remaining × (100-X)%  → Secondary token buyback/burn
 ```
 
-Best for: DAOs that want to fund development or initiatives.
+### Example: 1 SOL fees with 40% internal root ratio
 
-### Option C: Creator Revenue
-
-Include a creator allocation for ongoing work.
-
-```
-50.00% → Token Buyback/Burn
-24.48% → Community Treasury
-20.00% → Creator Wallet
-```
-
-Best for: Active creators providing ongoing value.
+| Recipient | Calculation | Amount |
+|-----------|-------------|--------|
+| $asdfasdfa (Protocol) | 1 × 5.52% | 0.0552 SOL |
+| Your Root Token | 0.9448 × 40% | 0.3779 SOL |
+| Secondary Token | 0.9448 × 60% | 0.5669 SOL |
+| **Total** | | **1.0000 SOL** |
 
 ---
 
 ## Integration Steps
 
-### Step 1: Register Your Token
+### Step 1: Create Your DAT
 
-Register your token with the DAT protocol:
+Register your DAT ecosystem with the protocol:
 
 ```bash
-npx ts-node scripts/register-dat.ts \
-  --token <YOUR_TOKEN_MINT> \
+npx ts-node scripts/create-dat.ts \
+  --root-token <YOUR_ROOT_TOKEN_MINT> \
   --creator <YOUR_CREATOR_WALLET> \
+  --internal-split 4000 \
   --network mainnet
 ```
+
+**Parameters:**
+- `--root-token`: Your main community token mint address
+- `--creator`: Wallet that created the tokens
+- `--internal-split`: Internal root ratio in basis points (4000 = 40%)
 
 This creates:
-- A DATInstance account for your token
-- Association with the DAT protocol
-- Default configuration (100% buyback/burn)
+- A DATInstance account for your ecosystem
+- Your root token configuration
+- Protocol fee of 5.52% (automatic)
 
-### Step 2: Configure Internal Split
+### Step 2: Add Secondary Tokens
 
-Set your preferred fee distribution:
+Add secondary tokens to your DAT ecosystem:
 
 ```bash
-npx ts-node scripts/configure-dat-split.ts \
-  --token <YOUR_TOKEN_MINT> \
-  --buyback 7000 \           # 70% in basis points
-  --treasury 2448 \          # 24.48% in basis points
-  --creator 0 \              # 0% (optional)
-  --treasury-wallet <TREASURY_PUBKEY> \
+npx ts-node scripts/add-secondary-token.ts \
+  --dat <YOUR_DAT_INSTANCE> \
+  --token <SECONDARY_TOKEN_MINT> \
   --network mainnet
 ```
 
-**Note**: Total must equal 9448 basis points (94.48%).
+You can add multiple secondaries. Each secondary's trading fees will be split according to your configured `internal_root_ratio`.
 
 ### Step 3: Verify Registration
 
-Confirm your DAT is registered:
+Confirm your DAT is correctly configured:
 
 ```bash
-npx ts-node scripts/check-dat-registration.ts \
-  --token <YOUR_TOKEN_MINT> \
+npx ts-node scripts/check-dat-status.ts \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 ```
 
 Expected output:
 ```
-DAT Registration Status
-=======================
-Token: <YOUR_TOKEN_MINT>
-Status: Active
-Protocol Fee: 5.52%
-Internal Split:
-  - Buyback/Burn: 70.00%
-  - Treasury: 24.48%
-  - Creator: 0.00%
+DAT Status
+==========
+Instance: <YOUR_DAT_INSTANCE>
+Root Token: <YOUR_ROOT_TOKEN>
+Secondary Tokens: 2
+Internal Root Ratio: 40%
+Protocol Fee: 5.52% → $asdfasdfa
+
+Fee Distribution (when secondary trades):
+  - $asdfasdfa: 5.52%
+  - Root Token: 37.79%
+  - Secondary: 56.69%
 ```
 
-### Step 4: Connect to Universal Daemon
-
-Two options for fee monitoring:
+### Step 4: Connect to Daemon
 
 **Option A: Use Shared Daemon (Recommended)**
 
 Register with the universal daemon service:
 ```bash
 npx ts-node scripts/register-with-daemon.ts \
-  --token <YOUR_TOKEN_MINT> \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 ```
 
@@ -152,23 +169,23 @@ npx ts-node scripts/register-with-daemon.ts \
 For full control, run a dedicated daemon:
 ```bash
 npx ts-node scripts/monitor-dat-fees.ts \
-  --token <YOUR_TOKEN_MINT> \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 ```
 
-### Step 5: Monitor and Verify
+### Step 5: Monitor Performance
 
-Track your DAT's performance:
+Track your DAT's activity:
 
 ```bash
 # Check pending fees
 npx ts-node scripts/check-dat-stats.ts \
-  --token <YOUR_TOKEN_MINT> \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 
 # View cycle history
-npx ts-node scripts/view-cycle-history.ts \
-  --token <YOUR_TOKEN_MINT> \
+npx ts-node scripts/view-dat-history.ts \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 ```
 
@@ -176,41 +193,62 @@ npx ts-node scripts/view-cycle-history.ts \
 
 ## Cycle Execution
 
-Cycles are executed automatically when:
+### Automatic Execution
 
-1. **Sufficient fees accumulated**: MIN_FEES_TO_CLAIM (0.01 SOL)
+Cycles execute automatically when:
+
+1. **Sufficient fees accumulated**: MIN_FEES_TO_CLAIM (0.019 SOL mainnet)
 2. **Minimum interval elapsed**: MIN_CYCLE_INTERVAL (60 seconds)
+
+### What Happens in a Cycle
+
+```
+1. Collect fees from creator vault
+2. Calculate splits:
+   - 5.52% for $asdfasdfa
+   - 94.48% × internal_root_ratio for your root token
+   - 94.48% × (1 - internal_root_ratio) for secondary token
+3. Execute buyback on all three tokens
+4. Burn all purchased tokens immediately
+5. Update on-chain statistics
+```
 
 ### Manual Cycle Execution
 
-If needed, trigger a cycle manually:
+Trigger a cycle manually if needed:
 
 ```bash
 npx ts-node scripts/execute-dat-cycle.ts \
-  --token <YOUR_TOKEN_MINT> \
+  --dat <YOUR_DAT_INSTANCE> \
   --network mainnet
 ```
 
 ---
 
-## Benefits of Integration
+## Configuration Options
 
-### For Your Community
+### Internal Root Ratio
 
-| Benefit | Description |
-|---------|-------------|
-| **Automated Treasury** | No manual management required |
-| **Deflationary Pressure** | Continuous buyback/burn reduces supply |
-| **Transparency** | All operations on-chain and verifiable |
-| **Security** | Audited smart contracts |
+Choose how the 94.48% is split between your root and secondary tokens:
 
-### For $asdfasdfa Holders
+| Ratio | Root Gets | Secondary Gets | Use Case |
+|-------|-----------|----------------|----------|
+| 0% | 0% | 94.48% | Secondary-only ecosystem |
+| 30% | 28.34% | 66.14% | Secondary-focused |
+| 50% | 47.24% | 47.24% | Balanced |
+| 70% | 66.14% | 28.34% | Root-focused |
+| 100% | 94.48% | 0% | Root-only ecosystem |
 
-| Benefit | Description |
-|---------|-------------|
-| **Ecosystem Exposure** | 5.52% from every integrated DAT |
-| **Network Effects** | More DATs = more burns |
-| **Index Fund Model** | Diversified across all tokens |
+### Modifying Configuration
+
+Internal split can be modified after creation (by DAT admin):
+
+```bash
+npx ts-node scripts/update-dat-config.ts \
+  --dat <YOUR_DAT_INSTANCE> \
+  --internal-split 5000 \
+  --network mainnet
+```
 
 ---
 
@@ -236,25 +274,29 @@ For daemon operation:
 
 ## Frequently Asked Questions
 
-### Can I change my internal split after registration?
+### Is the 5.52% protocol fee negotiable?
 
-Yes. Use the `configure-dat-split.ts` script to update your configuration. Changes take effect on the next cycle.
+No. The 5.52% protocol fee is fixed and applies equally to all integrated DATs. This ensures fair contribution to the ecosystem and maintains $asdfasdfa's role as an index of all DAT activity.
+
+### Can I change my internal split ratio?
+
+Yes. The internal root ratio can be modified by the DAT admin using `update-dat-config.ts`. Changes take effect on the next cycle.
+
+### What if I only want one token (no secondaries)?
+
+Set your internal root ratio to 100%. All 94.48% will go to your root token buyback/burn.
 
 ### What happens if the daemon goes down?
 
 Fee attribution is based on blockchain transactions. When the daemon restarts, it resumes from the last processed signature (stored in `.daemon-state.json`). No fees are lost.
 
-### Is the 5.52% protocol fee negotiable?
+### Can I unregister my DAT?
 
-No. The 5.52% protocol fee is fixed and applies equally to all integrated DATs. This ensures fair contribution to the ecosystem.
+Contact the protocol team to discuss deactivation. Pending fees will be processed in a final cycle before deactivation.
 
-### Can I unregister my token?
+### Why no treasury option?
 
-Contact the DAT team to discuss deactivation. Pending fees will be processed in a final cycle before deactivation.
-
-### How are multiple tokens from the same creator handled?
-
-Each token is registered separately. The shared vault architecture is handled by the daemon's fee attribution system.
+DAT's core principle is automated deflation through buyback and burn. Treasury accumulation would introduce centralization and reduce the deflationary impact. All collected fees are immediately used for buyback/burn at all levels.
 
 ---
 

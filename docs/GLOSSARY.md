@@ -9,15 +9,22 @@ Technical terminology and definitions for the ASDF-DAT protocol.
 ### DAT (Decentralized Autonomous Treasury)
 On-chain protocol that automates fee collection and buyback/burn cycles for pump.fun tokens. DAT creates economic alignment between tokens through automatic fee capture and redistribution.
 
-### Root Token
-The central token of the DAT ecosystem. In Phase 1, this is $asdfasdfa (also referred to as $ASDF in formal documentation).
-- **Phase 1**: Receives 44.8% of all secondary token fees
-- **Phase 2**: Receives 5.52% of ALL integrated DAT fees across the ecosystem
+### Protocol Root ($asdfasdfa)
+The central token of the ASDF-DAT protocol that receives 5.52% of ALL fees from ALL integrated DATs ecosystem-wide. Acts as an "index fund" of the entire DAT ecosystem.
+- **Phase 1**: Functions as the root token of a single ecosystem (receives 44.8%)
+- **Phase 2**: Becomes the protocol root (receives 5.52% from all DATs)
+
+### DAT Root
+The root token of a specific DAT ecosystem (Phase 2). Each community that creates a DAT chooses their own root token.
+- Receives a configurable percentage of the 94.48% remaining after protocol fee
+- Each DAT can have one root token and multiple secondary tokens
 
 ### Secondary Token
 A token connected to a DAT ecosystem that:
 - Benefits from automated buyback/burn on its own trading fees
-- Contributes a portion of fees to the root token treasury
+- Contributes to both the DAT Root and Protocol Root ($asdfasdfa)
+- **Phase 1**: 55.2% to self, 44.8% to $asdfasdfa
+- **Phase 2**: Configurable split to DAT Root + Protocol fee to $asdfasdfa
 
 ### CCM (Creator Capital Markets)
 The broader pump.fun ecosystem where creators launch tokens. ASDF-DAT provides sustainability infrastructure for CCM tokens.
@@ -41,8 +48,8 @@ One complete execution of the DAT mechanism:
 
 ### Fee Split
 The percentage distribution of collected fees between parties:
-- **Phase 1**: 55.2% secondary / 44.8% root
-- **Phase 2**: Configurable per DAT, with 5.52% protocol fee to root
+- **Phase 1**: 55.2% secondary / 44.8% root (within $asdfasdfa ecosystem, fixed)
+- **Phase 2**: 5.52% to $asdfasdfa (fixed protocol fee) + 94.48% to DAT internal split (configurable between DAT root and secondary)
 
 ### Creator Fee
 Dynamic fee charged by pump.fun on all trades. Percentage varies by market cap:
@@ -58,7 +65,7 @@ Deterministic Solana addresses controlled by the program. Used for:
 - `dat_v3`: Global DAT state
 - `auth_v3`: DAT authority (holds SOL between operations)
 - `token_stats_v1`: Per-token statistics
-- `root_treasury`: Accumulated fees for root token buyback
+- `root_treasury`: Phase 1 accumulator for root token buyback (Phase 2 uses immediate burns)
 
 ### Creator Vault
 Pump.fun account where creator fees accumulate. All tokens from the same creator share a single vault.
@@ -111,13 +118,23 @@ Per-token on-chain account tracking:
 Current phase focused on proving the DAT mechanism works with a single ecosystem ($asdfasdfa + secondary tokens). Uses 55.2%/44.8% split.
 
 ### Phase 2: Universal Infrastructure
-Future phase where DAT becomes permissionless infrastructure for any pump.fun token. Each integrated DAT sends 5.52% to $asdfasdfa as protocol fee.
+Future phase where DAT becomes permissionless infrastructure for any pump.fun community. Key features:
+- Anyone can create their own DAT ecosystem with their own root token + secondary tokens
+- Fixed 5.52% protocol fee to $asdfasdfa (non-negotiable)
+- Configurable internal split between DAT root and secondaries (applied to remaining 94.48%)
+- No treasury accumulation - all fees are immediately converted to buyback/burn
 
 ### Protocol Fee (Phase 2)
-The 5.52% of all collected fees that each integrated DAT sends to the root token ($asdfasdfa). This makes $asdfasdfa an "index fund" of the entire DAT ecosystem.
+The fixed 5.52% of all collected fees that each integrated DAT immediately converts to $asdfasdfa buyback/burn. This is non-negotiable and applies equally to all DATs. Makes $asdfasdfa an "index fund" of the entire DAT ecosystem.
+
+### Internal Split (Phase 2)
+The configurable ratio that determines how the 94.48% (after protocol fee) is distributed within a DAT:
+- `internal_root_ratio`: Percentage to DAT root token buyback/burn
+- `1 - internal_root_ratio`: Percentage to secondary token buyback/burn
+- Example: 40% internal ratio → 37.79% to DAT root, 56.69% to secondary
 
 ### Index Fund Effect
-As more DATs integrate, $asdfasdfa holders gain exposure to the entire ecosystem's trading activity without needing to hold individual tokens.
+As more DATs integrate, $asdfasdfa holders gain exposure to the entire ecosystem's trading activity (5.52% from every DAT) without needing to hold individual tokens or pick winners.
 
 ---
 

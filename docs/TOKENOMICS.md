@@ -124,92 +124,126 @@ Supply constantly decreases while demand can increase.
 
 ### Protocol Fee: 5.52%
 
-In Phase 2, ASDF-DAT becomes infrastructure for ALL pump.fun creators. Each integrated DAT sends **5.52% of all collected fees** to $asdfasdfa.
+In Phase 2, ASDF-DAT becomes infrastructure for ALL pump.fun creators. Anyone can create their own DAT ecosystem with:
+- Their own **root token** (main community token)
+- Multiple **secondary tokens** (ecosystem tokens)
+- **Configurable internal split** between root and secondaries
+
+The protocol takes **5.52% of ALL collected fees** for $asdfasdfa buyback/burn. The remaining **94.48%** is distributed within the DAT according to its configured split.
+
+### Phase 2 Fee Formula
+
+```
+INPUTS:
+  total_fees = 100% of creator fees collected from secondary trading
+  protocol_fee_rate = 5.52% (FIXED, non-configurable)
+  internal_root_ratio = X% (CONFIGURABLE per DAT)
+
+STEP 1: Protocol Fee (taken first from total)
+  protocol_fee = total_fees × 5.52%
+  → Immediate $asdfasdfa buyback/burn
+
+STEP 2: DAT Internal Distribution (remaining 94.48%)
+  remaining = total_fees × 94.48%
+
+  dat_root_share = remaining × internal_root_ratio
+  → Immediate DAT root token buyback/burn
+
+  secondary_share = remaining × (1 - internal_root_ratio)
+  → Immediate secondary token buyback/burn
+
+VERIFICATION:
+  5.52% + 94.48% = 100% ✓
+```
+
+### Fee Flow Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    INTEGRATED DAT FEES                       │
-│                         100%                                │
+│           SECONDARY TOKEN TRADE IN DAT X                     │
+│                    Creator Fee (100%)                        │
 ├─────────────────────────────────────────────────────────────┤
 │                           │                                 │
 │              ┌────────────┴────────────┐                    │
 │              │                         │                    │
 │              ▼                         ▼                    │
-│     ┌─────────────────┐     ┌─────────────────┐            │
-│     │     5.52%       │     │     94.48%      │            │
-│     │   PROTOCOL FEE  │     │   DAT INTERNAL  │            │
-│     │  ($asdfasdfa)   │     │  (configurable) │            │
-│     └─────────────────┘     └─────────────────┘            │
+│     ┌─────────────────┐     ┌─────────────────────────────┐ │
+│     │     5.52%       │     │         94.48%              │ │
+│     │  PROTOCOL FEE   │     │    DAT X INTERNAL SPLIT     │ │
+│     │  $asdfasdfa     │     │      (CONFIGURABLE)         │ │
+│     │  BUYBACK/BURN   │     │                             │ │
+│     │    (FIXED)      │     │  ┌───────────┬───────────┐  │ │
+│     └─────────────────┘     │  │ X% DAT    │(100-X)%   │  │ │
+│                             │  │ Root      │Secondary  │  │ │
+│                             │  │ Buyback   │Buyback    │  │ │
+│                             │  └───────────┴───────────┘  │ │
+│                             └─────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
+**No treasury accumulation** - all fees at all levels are immediately converted to buyback/burn.
+
 ### Why 5.52%?
 
-- **Low enough**: Attractive for integrators (keeps 94.48%)
-- **High enough**: Creates meaningful accumulation at scale
-- **Network effect**: More DATs = more root burns
+- **Low enough**: Attractive for integrators (DAT keeps 94.48% for their ecosystem)
+- **High enough**: Creates meaningful burn volume at scale
+- **Network effect**: More DATs = more $asdfasdfa burns
+- **Aligned incentives**: Protocol success benefits all participants
 
-### Internal Split (Configurable)
+### Phase 2 Example Calculation
 
-Within each DAT, the remaining 94.48% can be distributed according to the creator's preference:
+**MemeDAO creates a DAT:**
+- Root token: $MEME
+- Secondary tokens: $MEME2, $MEME3
+- Internal root ratio: 40%
 
-| Allocation | Purpose |
-|------------|---------|
-| X% | Token buyback/burn (deflationary) |
-| Y% | Community treasury (optional) |
-| Z% | Creator allocation (optional) |
+**When 1 SOL of fees is collected from $MEME2 trading:**
 
-Example configurations:
-
-**Pure Deflationary DAT**
-- 94.48% → Token buyback/burn
-- 0% → Treasury/Creator
-
-**Community DAO DAT**
-- 70% → Token buyback/burn
-- 24.48% → Community treasury
-
-**Creator Revenue DAT**
-- 50% → Token buyback/burn
-- 24.48% → Community treasury
-- 20% → Creator
+| Recipient | Calculation | Amount | Action |
+|-----------|-------------|--------|--------|
+| $asdfasdfa (Protocol) | 1 × 5.52% | 0.0552 SOL | Buyback & burn |
+| $MEME (DAT Root) | 0.9448 × 40% | 0.3779 SOL | Buyback & burn |
+| $MEME2 (Secondary) | 0.9448 × 60% | 0.5669 SOL | Buyback & burn |
+| **Total** | | **1.0000 SOL** | |
 
 ### Scaling Projections
 
-| DATs Integrated | Avg Daily Volume/DAT | Total Volume | Protocol Fee (5.52%) | Root Burns/Month |
-|-----------------|---------------------|--------------|---------------------|------------------|
-| 10 | $100,000 | $1M | $5,520/day | $165,600 |
-| 50 | $50,000 | $2.5M | $13,800/day | $414,000 |
-| 100 | $50,000 | $5M | $27,600/day | $828,000 |
-| 500 | $20,000 | $10M | $55,200/day | $1,656,000 |
-| 1,000 | $10,000 | $10M | $55,200/day | $1,656,000 |
+| DATs Integrated | Avg Volume/DAT | Protocol Fee (5.52%) | $asdfasdfa Burns/Month |
+|-----------------|----------------|---------------------|------------------------|
+| 10 | $100K/day | $5,520/day | $165,600 |
+| 50 | $50K/day | $13,800/day | $414,000 |
+| 100 | $50K/day | $27,600/day | $828,000 |
+| 500 | $20K/day | $55,200/day | $1,656,000 |
 
 ### $asdfasdfa as Index Fund
 
 With Phase 2, $asdfasdfa becomes an "index fund" of the entire DAT ecosystem:
 
-**Benefits for $asdfasdfa holders:**
-- Exposure to ALL DAT ecosystem activity
-- No need to pick individual winners
-- Diversified across all integrated tokens
-- Protocol success = token success
-
 ```
                   ┌───────────────────┐
                   │    $asdfasdfa     │
-                  │   (Index Fund)    │
+                  │   (Protocol Root) │
+                  │   5.52% from ALL  │
                   └─────────┬─────────┘
                             │
            ┌────────────────┼────────────────┐
            │                │                │
            ▼                ▼                ▼
-      ┌─────────┐      ┌─────────┐      ┌─────────┐
-      │  DAT A  │      │  DAT B  │      │  DAT N  │
-      │  5.52%  │      │  5.52%  │      │  5.52%  │
-      └─────────┘      └─────────┘      └─────────┘
-           │                │                │
-    Token volume     Token volume     Token volume
+    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    │   DAT A     │  │   DAT B     │  │   DAT N     │
+    │ Root + Sec  │  │ Root + Sec  │  │ Root + Sec  │
+    │ (40% / 60%) │  │ (50% / 50%) │  │ (30% / 70%) │
+    └─────────────┘  └─────────────┘  └─────────────┘
+         │                │                │
+  Each DAT has own   Configurable     All immediate
+  root + secondaries internal split    buyback/burn
 ```
+
+**Benefits for $asdfasdfa holders:**
+- Exposure to ALL DAT ecosystem activity (5.52% from every DAT)
+- No need to pick individual winners
+- Diversified across all integrated tokens and their ecosystems
+- Protocol success = token success
 
 ---
 
@@ -250,12 +284,13 @@ From `programs/asdf-dat/src/lib.rs`:
 
 | Aspect | Phase 1 | Phase 2 |
 |--------|---------|---------|
-| **Scope** | $asdfasdfa ecosystem | All pump.fun |
-| **Root Fee** | 44.8% | 5.52% |
-| **Secondary Split** | 55.2% fixed | Configurable |
-| **Target Users** | $asdfasdfa holders | All creators/communities |
-| **Integration** | Manual | Permissionless |
-| **Root Token Role** | Ecosystem root | Protocol root (index fund) |
+| **Scope** | Single $asdfasdfa ecosystem | Multi-tenant (any community can create a DAT) |
+| **Protocol Fee** | N/A | 5.52% → $asdfasdfa (FIXED) |
+| **DAT Structure** | Single root + secondaries | Each DAT has own root + secondaries |
+| **Internal Split** | Fixed 55.2%/44.8% | Configurable per DAT |
+| **Treasury** | Root treasury accumulates | No treasury (all immediate burns) |
+| **Integration** | Manual | Permissionless (factory pattern) |
+| **$asdfasdfa Role** | Ecosystem root | Protocol root (index fund of all DATs) |
 
 ---
 
@@ -265,11 +300,14 @@ From `programs/asdf-dat/src/lib.rs`:
 - 55.2%/44.8% split proves buyback/burn works
 - Single ecosystem demonstrates compound effects
 - On-chain track record establishes trust
+- Root treasury accumulates for batch buybacks
 
 **Phase 2 scales the infrastructure:**
 - 5.52% protocol fee funds $asdfasdfa burns
-- Each integrated DAT keeps 94.48% configurable
-- $asdfasdfa becomes the index fund of DAT ecosystem
+- Each DAT has own root + secondary tokens
+- Internal split is configurable per DAT (applied to 94.48%)
+- No treasury at any level - all immediate buyback/burn
+- $asdfasdfa becomes the index fund of entire DAT ecosystem
 - Network effects: more DATs = more value for all
 
 ---
