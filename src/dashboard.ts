@@ -248,7 +248,7 @@ app.get('/', (req, res) => {
                 <div class="space-y-2">
                     <div class="flex justify-between">
                         <span class="text-gray-400">Min Threshold</span>
-                        <span class="font-medium">0.19 SOL</span>
+                        <span class="font-medium">0.019 SOL</span>
                     </div>
                     <div class="flex justify-between">
                         <span class="text-gray-400">Max Per Cycle</span>

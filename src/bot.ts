@@ -40,7 +40,7 @@ const CONFIG = {
     PUMP_SWAP_PROGRAM: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
     
     // Operating parameters
-    MIN_FEES_TO_CLAIM: 0.19, // SOL
+    MIN_FEES_TO_CLAIM: 0.019, // SOL (~0.015 minimum + safety margin)
     MAX_FEES_PER_CYCLE: 10, // SOL
     MIN_CYCLE_INTERVAL: 3600, // 1 hour in seconds
     

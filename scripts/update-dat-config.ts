@@ -46,13 +46,21 @@ async function main() {
   const idl = loadIdl();
   const program: Program<Idl> = new Program(idl, provider);
 
-  console.log("📝 Mise à jour de la configuration DAT...\n");
+  // Configure threshold based on network
+  // Mainnet: 0.019 SOL (minimum ~0.015 SOL + safety margin for root token only)
+  // Devnet: 0.006 SOL (MIN_FEES_FOR_SPLIT + margin for testing)
+  const isMainnet = networkConfig.name === "Mainnet";
+  const newMinFees = isMainnet ? 19_000_000 : 6_000_000; // lamports
+  const newMinFeesSOL = newMinFees / 1_000_000_000;
 
-  // Update config to lower min_fees_threshold to 10,000 lamports (0.00001 SOL)
+  console.log("📝 Updating DAT configuration...\n");
+  console.log(`   Network: ${networkConfig.name}`);
+  console.log(`   New min_fees_threshold: ${newMinFeesSOL} SOL (${newMinFees.toLocaleString()} lamports)\n`);
+
   // Rust signature: update_parameters(new_min_fees, new_max_fees, new_slippage_bps, new_min_interval)
   const tx = await program.methods
     .updateParameters(
-      new BN(10000), // new_min_fees: min_fees_threshold (0.00001 SOL)
+      new BN(newMinFees), // new_min_fees: min_fees_threshold
       null, // new_max_fees: max_fees_per_cycle
       null, // new_slippage_bps: slippage_bps
       null, // new_min_interval: min_cycle_interval
@@ -63,10 +71,10 @@ async function main() {
     })
     .rpc();
 
-  console.log("✅ Configuration mise à jour!");
-  const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+  console.log("✅ Configuration updated!");
+  const cluster = isMainnet ? "" : "?cluster=devnet";
   console.log(`🔗 TX: https://explorer.solana.com/tx/${tx}${cluster}`);
-  console.log("\n📊 Nouveau min_fees_threshold: 0.00001 SOL (10,000 lamports)");
+  console.log(`\n📊 New min_fees_threshold: ${newMinFeesSOL} SOL (${newMinFees.toLocaleString()} lamports)`);
 }
 
 main().catch(console.error);
