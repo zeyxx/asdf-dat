@@ -88,6 +88,10 @@ const MIN_ALLOCATION_SECONDARY = Math.ceil(MIN_AFTER_SPLIT / SECONDARY_KEEP_RATI
 // On devnet with compute budget: ~0.006-0.007 SOL total
 const TX_FEE_RESERVE_PER_TOKEN = 7_000_000; // ~0.007 SOL for TX fees
 
+// MIN_CYCLE_INTERVAL: Must match lib.rs MIN_CYCLE_INTERVAL (60 seconds)
+// The program enforces this cooldown between cycles
+const MIN_CYCLE_INTERVAL_SECONDS = 60;
+
 // Total actual cost per secondary token (allocation + TX fees)
 const TOTAL_COST_PER_SECONDARY = MIN_ALLOCATION_SECONDARY + TX_FEE_RESERVE_PER_TOKEN;
 // = 5,690,000 + 7,000,000 = 12,690,000 lamports (~0.0127 SOL)
@@ -200,6 +204,42 @@ function loadAndValidateWallet(walletPath: string): Keypair {
     return Keypair.fromSecretKey(new Uint8Array(walletData));
   } catch (error) {
     throw new Error(`Invalid keypair: ${(error as Error).message}`);
+  }
+}
+
+/**
+ * Check MIN_CYCLE_INTERVAL and wait if necessary
+ * The program enforces a cooldown between cycles - this function checks it upfront
+ * and waits if needed, rather than letting the TX fail with CycleTooSoon
+ */
+async function waitForCycleCooldown(program: Program<Idl>): Promise<void> {
+  const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
+  const state = await getTypedAccounts(program).datState.fetch(datState);
+
+  const lastCycleTimestamp = state.lastCycleTimestamp.toNumber();
+  const minCycleInterval = state.minCycleInterval.toNumber();
+  const currentTime = Math.floor(Date.now() / 1000);
+
+  const timeSinceLastCycle = currentTime - lastCycleTimestamp;
+  const waitTime = minCycleInterval - timeSinceLastCycle;
+
+  if (waitTime > 0) {
+    log('⏳', `Cycle cooldown active. Last cycle: ${new Date(lastCycleTimestamp * 1000).toISOString()}`, colors.yellow);
+    log('⏳', `Waiting ${waitTime}s for MIN_CYCLE_INTERVAL (${minCycleInterval}s)...`, colors.yellow);
+
+    // Wait with progress updates every 10 seconds
+    let remaining = waitTime;
+    while (remaining > 0) {
+      const waitChunk = Math.min(remaining, 10);
+      await sleep(waitChunk * 1000);
+      remaining -= waitChunk;
+      if (remaining > 0) {
+        log('⏳', `${remaining}s remaining...`, colors.yellow);
+      }
+    }
+    log('✅', 'Cooldown complete. Proceeding with cycle execution.', colors.green);
+  } else {
+    log('✅', `Cycle cooldown OK (${timeSinceLastCycle}s since last cycle, min: ${minCycleInterval}s)`, colors.green);
   }
 }
 
@@ -992,6 +1032,13 @@ async function executeSecondaryTokensDynamic(
 
     // Update allocation with calculated share
     allocation.allocation = allocation.calculatedShare;
+
+    // Wait for cooldown before processing (if not first token)
+    // The program enforces MIN_CYCLE_INTERVAL globally between collect_fees calls
+    if (!isFirstToken) {
+      log('⏳', `Waiting for cooldown before ${allocation.token.symbol}...`, colors.yellow);
+      await waitForCycleCooldown(program);
+    }
 
     log('🔄', `Processing ${allocation.token.symbol}:`, colors.cyan);
     log('  💰', `Allocated share: ${formatSOL(allocation.calculatedShare)} SOL`, colors.cyan);
@@ -1945,6 +1992,11 @@ async function main() {
     // This solves the race condition where daemon detects fees but hasn't flushed yet
     await triggerDaemonFlush();
 
+    // Pre-flight: Check MIN_CYCLE_INTERVAL and wait if necessary
+    // This prevents CycleTooSoon errors by waiting upfront
+    logSection('PRE-FLIGHT: CYCLE COOLDOWN CHECK');
+    await waitForCycleCooldown(program);
+
     // Pre-flight: Wait for daemon synchronization (optional, 30s timeout)
     // This helps ensure all tokens have their pending_fees populated
     const syncResult = await waitForDaemonSync(program, tokens, 30000);
@@ -1977,6 +2029,13 @@ async function main() {
 
     // Step 2b: Finalize deferred tokens (preserve their pending_fees for next cycle)
     await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
+
+    // Step 2c: Wait for cooldown before root cycle (if any secondary was processed)
+    // The program enforces MIN_CYCLE_INTERVAL globally, so we need to wait after secondary cycles
+    if (actualViable.length > 0) {
+      logSection('PRE-ROOT: CYCLE COOLDOWN CHECK');
+      await waitForCycleCooldown(program);
+    }
 
     // Step 3: Execute root cycle (batch TX: collect + buy + burn)
     const rootResult = await executeRootCycle(program, rootToken, adminKeypair);

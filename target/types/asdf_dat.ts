@@ -289,7 +289,8 @@ export type AsdfDat = {
           "name": "creatorVault",
           "docs": [
             "Seeds: [\"creator-vault\", creator_pubkey] where creator=dat_authority.",
-            "HIGH-01 FIX: Add owner validation to ensure vault is owned by PUMP_PROGRAM."
+            "The CPI to collect_creator_fee will fail if this is not a valid vault.",
+            "NOTE: Vault is a native SOL account (System Program owner), NOT owned by PUMP_PROGRAM."
           ],
           "writable": true
         },

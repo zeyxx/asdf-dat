@@ -2021,10 +2021,11 @@ pub struct CollectFees<'info> {
     /// CHECK: DAT authority PDA - receives SOL from creator vault
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    /// CHECK: Creator vault - validated by owner constraint + PumpFun CPI.
+    /// CHECK: Creator vault - validated by PumpFun program during CPI.
     /// Seeds: ["creator-vault", creator_pubkey] where creator=dat_authority.
-    /// HIGH-01 FIX: Add owner validation to ensure vault is owned by PUMP_PROGRAM.
-    #[account(mut, constraint = *creator_vault.owner == PUMP_PROGRAM @ ErrorCode::InvalidParameter)]
+    /// The CPI to collect_creator_fee will fail if this is not a valid vault.
+    /// NOTE: Vault is a native SOL account (System Program owner), NOT owned by PUMP_PROGRAM.
+    #[account(mut)]
     pub creator_vault: AccountInfo<'info>,
     /// CHECK: Event authority for PumpFun program
     pub pump_event_authority: AccountInfo<'info>,
