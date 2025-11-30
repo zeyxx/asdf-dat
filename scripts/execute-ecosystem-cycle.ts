@@ -34,6 +34,8 @@ import {
 import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
 import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep } from '../lib/rpc-utils';
 import { ExecutionLock, LockError } from '../lib/execution-lock';
+import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
+import { validateAlertingEnv } from '../lib/env-validator';
 
 // ============================================================================
 // Constants & Configuration
@@ -277,6 +279,7 @@ interface FlushResult {
 async function triggerDaemonFlush(): Promise<FlushResult | null> {
   const DAEMON_API_PORT = parseInt(process.env.DAEMON_API_PORT || '3030');
   const DAEMON_API_URL = `http://localhost:${DAEMON_API_PORT}/flush`;
+  const DAEMON_API_KEY = process.env.DAEMON_API_KEY || '';
   const MAX_RETRIES = 3;
   const RETRY_DELAY_MS = 2000;
 
@@ -284,9 +287,15 @@ async function triggerDaemonFlush(): Promise<FlushResult | null> {
     try {
       log('🔄', `Triggering daemon flush (attempt ${attempt}/${MAX_RETRIES})...`, colors.cyan);
 
+      // Build headers with optional API key authentication
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (DAEMON_API_KEY) {
+        headers['X-Daemon-Key'] = DAEMON_API_KEY;
+      }
+
       const response = await fetch(DAEMON_API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
       });
 
       // Safe JSON parsing with error handling
@@ -308,8 +317,11 @@ async function triggerDaemonFlush(): Promise<FlushResult | null> {
         });
       }
 
-      // Wait for blockchain confirmation (increased from 2s to 5s)
-      await sleep(5000);
+      // Wait for blockchain confirmation (increased to 15s for reliable sync)
+      // This is CRITICAL to prevent race condition where on-chain state
+      // hasn't been updated yet when cycle reads pending_fees
+      log('⏳', 'Waiting 15s for blockchain confirmation...', colors.cyan);
+      await sleep(15000);
       return result;
 
     } catch (error) {
@@ -1465,11 +1477,42 @@ async function executeSecondaryWithAllocation(
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = adminKeypair.publicKey;
 
-    // Sign and send with retry (45s timeout for mainnet)
+    // Sign for simulation
     tx.sign(adminKeypair);
+
+    // CRITICAL: Simulate transaction BEFORE sending to detect instruction failures
+    // This prevents finalize from running if buy fails (which would lose pending_fees)
+    log('  🔍', 'Simulating transaction...', colors.cyan);
+    const simulation = await withRetryAndTimeout(
+      () => program.provider.connection.simulateTransaction(tx),
+      { maxRetries: 2, baseDelayMs: 500 },
+      30000
+    );
+
+    if (simulation.value.err) {
+      // Parse simulation error to identify which instruction failed
+      const errStr = JSON.stringify(simulation.value.err);
+      const logs = simulation.value.logs || [];
+
+      // Check if it's a buy instruction failure
+      const isBuyFailure = logs.some(log =>
+        log.includes('execute_buy') ||
+        log.includes('slippage') ||
+        log.includes('insufficient')
+      );
+
+      if (isBuyFailure) {
+        throw new Error(`Simulation failed at BUY instruction (finalize skipped to preserve pending_fees): ${errStr}`);
+      }
+
+      throw new Error(`Simulation failed: ${errStr}. Logs: ${logs.slice(-5).join(' | ')}`);
+    }
+    log('  ✅', 'Simulation passed, sending transaction...', colors.green);
+
+    // Send with retry (45s timeout for mainnet) - skipPreflight since already simulated
     const signature = await withRetryAndTimeout(
       () => program.provider.connection.sendRawTransaction(tx.serialize(), {
-        skipPreflight: false,
+        skipPreflight: true,
         preflightCommitment: 'confirmed',
       }),
       { maxRetries: 3, baseDelayMs: 1000 },
@@ -1830,11 +1873,42 @@ async function executeRootCycle(
     tx.lastValidBlockHeight = lastValidBlockHeight;
     tx.feePayer = adminKeypair.publicKey;
 
-    // Sign and send with retry (45s timeout for mainnet)
+    // Sign for simulation
     tx.sign(adminKeypair);
+
+    // CRITICAL: Simulate transaction BEFORE sending to detect instruction failures
+    // This prevents finalize from running if buy fails (which would lose pending_fees)
+    log('  🔍', 'Simulating transaction...', colors.cyan);
+    const simulation = await withRetryAndTimeout(
+      () => program.provider.connection.simulateTransaction(tx),
+      { maxRetries: 2, baseDelayMs: 500 },
+      30000
+    );
+
+    if (simulation.value.err) {
+      // Parse simulation error to identify which instruction failed
+      const errStr = JSON.stringify(simulation.value.err);
+      const logs = simulation.value.logs || [];
+
+      // Check if it's a buy instruction failure
+      const isBuyFailure = logs.some(log =>
+        log.includes('execute_buy') ||
+        log.includes('slippage') ||
+        log.includes('insufficient')
+      );
+
+      if (isBuyFailure) {
+        throw new Error(`Simulation failed at BUY instruction (finalize skipped to preserve pending_fees): ${errStr}`);
+      }
+
+      throw new Error(`Simulation failed: ${errStr}. Logs: ${logs.slice(-5).join(' | ')}`);
+    }
+    log('  ✅', 'Simulation passed, sending transaction...', colors.green);
+
+    // Send with retry (45s timeout for mainnet) - skipPreflight since already simulated
     const signature = await withRetryAndTimeout(
       () => program.provider.connection.sendRawTransaction(tx.serialize(), {
-        skipPreflight: false,
+        skipPreflight: true,
         preflightCommitment: 'confirmed',
       }),
       { maxRetries: 3, baseDelayMs: 1000 },
@@ -2034,6 +2108,22 @@ async function main() {
   log('⚙️', `Commitment: ${commitment} (${onMainnet ? 'MAINNET' : 'DEVNET'})`, colors.cyan);
   console.log('');
 
+  // Initialize alerting (reuse existing singleton if daemon already initialized it)
+  const alertingEnv = validateAlertingEnv();
+  const alerting = initAlerting({
+    webhookUrl: alertingEnv.WEBHOOK_URL || '',
+    webhookType: alertingEnv.WEBHOOK_TYPE,
+    enabled: alertingEnv.ALERT_ENABLED,
+    rateLimitWindowMs: alertingEnv.ALERT_RATE_LIMIT_WINDOW,
+    rateLimitMaxAlerts: alertingEnv.ALERT_RATE_LIMIT_MAX,
+    minAlertIntervalMs: alertingEnv.ALERT_COOLDOWN_MS,
+  }, {
+    errorRatePercent: alertingEnv.ALERT_ERROR_RATE_THRESHOLD,
+    pollLagMultiplier: alertingEnv.ALERT_POLL_LAG_MULTIPLIER,
+    pendingFeesStuckMinutes: alertingEnv.ALERT_PENDING_STUCK_MINUTES,
+    failedCyclesConsecutive: alertingEnv.ALERT_FAILED_CYCLES_MAX,
+  });
+
   try {
     // Load all ecosystem tokens from network config
     const tokens = await loadEcosystemTokens(connection, networkConfig);
@@ -2049,7 +2139,17 @@ async function main() {
 
     // Pre-flight: Trigger daemon flush to ensure fees are synced on-chain
     // This solves the race condition where daemon detects fees but hasn't flushed yet
-    await triggerDaemonFlush();
+    const flushResult = await triggerDaemonFlush();
+
+    // Verify flush succeeded for all tokens (critical for fee consistency)
+    if (flushResult && flushResult.tokensFailed > 0) {
+      log('⚠️', `Flush partially failed: ${flushResult.tokensFailed} tokens did not flush`, colors.yellow);
+      log('⚠️', `Tokens affected may have incorrect pending_fees - proceeding with caution`, colors.yellow);
+      // Note: We don't abort here because:
+      // 1. Some tokens may still work
+      // 2. On-chain state might be stale but still valid
+      // 3. Failed tokens will be skipped naturally if pending_fees = 0
+    }
 
     // Pre-flight: Check MIN_CYCLE_INTERVAL and wait if necessary
     // This prevents CycleTooSoon errors by waiting upfront
@@ -2122,6 +2222,27 @@ async function main() {
 
     // Exit with appropriate code
     const hasFailures = Object.values(results).some(r => !r.success);
+
+    // Calculate total burned for alert
+    const totalBurned = Object.values(results)
+      .filter(r => r.success && r.tokensBurned)
+      .reduce((sum, r) => sum + (r.tokensBurned || 0), 0);
+
+    // Send success/partial success alert
+    const cycleSummary: CycleSummary = {
+      success: !hasFailures,
+      tokensProcessed: actualViable.length + 1, // +1 for root
+      tokensDeferred: actualDeferred.length,
+      totalBurned,
+      totalFeesSOL: totalCollected / LAMPORTS_PER_SOL,
+      durationMs: endTime - startTime,
+      network: networkConfig.name,
+    };
+
+    await alerting.sendCycleSuccess(cycleSummary).catch((err) => {
+      log('⚠️', `Failed to send cycle success alert: ${err.message}`, colors.yellow);
+    });
+
     process.exit(hasFailures ? 1 : 0);
 
   } catch (error) {
@@ -2133,8 +2254,17 @@ async function main() {
       log('⚠️', 'Warning: Could not release execution lock - may need manual cleanup', colors.yellow);
     }
 
+    // Send failure alert
+    const errorMessage = (error as Error).message || String(error);
+    await alerting.sendCycleFailure(errorMessage, {
+      network: networkConfig.name,
+      stack: (error as Error).stack?.slice(0, 500),  // Truncate stack for alert
+    }).catch((alertErr) => {
+      console.error(`Failed to send cycle failure alert: ${alertErr.message}`);
+    });
+
     console.error(colors.red + '\n❌ Fatal error:' + colors.reset);
-    console.error(colors.red + ((error as Error).message || String(error)) + colors.reset);
+    console.error(colors.red + errorMessage + colors.reset);
     console.error((error as Error).stack);
     process.exit(1);
   }

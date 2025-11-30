@@ -1,11 +1,105 @@
 /**
  * RPC Utilities for Production Resilience
  *
- * Provides retry logic, timeouts, and rate limit handling for Solana RPC calls.
- * Designed for mainnet conditions with Helius as primary provider.
+ * Provides retry logic, timeouts, rate limit handling, and global rate limiting
+ * for Solana RPC calls. Designed for mainnet conditions with Helius as primary provider.
  */
 
 import { Connection, ConnectionConfig, Commitment, Transaction, Keypair, SendOptions } from '@solana/web3.js';
+
+// ============================================================================
+// Global Rate Limiter (Token Bucket)
+// ============================================================================
+
+/**
+ * Token bucket rate limiter for RPC calls
+ * Prevents overwhelming the RPC endpoint
+ */
+class TokenBucketRateLimiter {
+  private tokens: number;
+  private lastRefill: number;
+  private readonly maxTokens: number;
+  private readonly refillRate: number; // tokens per second
+
+  constructor(maxTokens: number = 100, refillRate: number = 50) {
+    this.tokens = maxTokens;
+    this.lastRefill = Date.now();
+    this.maxTokens = maxTokens;
+    this.refillRate = refillRate;
+  }
+
+  /**
+   * Try to acquire a token for an RPC call
+   * @returns true if token acquired, false if rate limited
+   */
+  tryAcquire(): boolean {
+    this.refill();
+    if (this.tokens >= 1) {
+      this.tokens -= 1;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Acquire a token, waiting if necessary
+   * @param maxWaitMs - Maximum time to wait
+   * @returns true if token acquired, false if timeout
+   */
+  async acquire(maxWaitMs: number = 5000): Promise<boolean> {
+    const startTime = Date.now();
+    while (Date.now() - startTime < maxWaitMs) {
+      if (this.tryAcquire()) {
+        return true;
+      }
+      // Wait a bit before retrying
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    return false;
+  }
+
+  private refill(): void {
+    const now = Date.now();
+    const elapsed = (now - this.lastRefill) / 1000;
+    const tokensToAdd = elapsed * this.refillRate;
+    this.tokens = Math.min(this.maxTokens, this.tokens + tokensToAdd);
+    this.lastRefill = now;
+  }
+
+  /**
+   * Get current state for monitoring
+   */
+  getState(): { tokens: number; maxTokens: number; refillRate: number } {
+    this.refill();
+    return {
+      tokens: Math.floor(this.tokens),
+      maxTokens: this.maxTokens,
+      refillRate: this.refillRate,
+    };
+  }
+}
+
+// Global rate limiter instance (100 tokens, refill 50/sec)
+const globalRateLimiter = new TokenBucketRateLimiter(100, 50);
+
+/**
+ * Get the global rate limiter state for monitoring
+ */
+export function getRateLimiterState(): { tokens: number; maxTokens: number; refillRate: number } {
+  return globalRateLimiter.getState();
+}
+
+/**
+ * Acquire rate limit token before making RPC call
+ * @param maxWaitMs - Max time to wait for a token
+ * @throws Error if rate limit exceeded
+ */
+export async function acquireRateLimitToken(maxWaitMs: number = 5000): Promise<void> {
+  const acquired = await globalRateLimiter.acquire(maxWaitMs);
+  if (!acquired) {
+    throw new RpcError('Rate limit exceeded: too many RPC requests', 429, true);
+  }
+}
 
 // ============================================================================
 // Configuration

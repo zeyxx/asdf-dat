@@ -3,7 +3,13 @@
  *
  * Provides metrics collection in both Prometheus and JSON formats
  * for production monitoring and alerting.
+ *
+ * Integrates with:
+ * - Alerting system (lib/alerting.ts) for threshold-based notifications
+ * - Metrics persistence (lib/metrics-persistence.ts) for historical data
  */
+
+import { getAlerting, AlertingService } from './alerting';
 
 export interface TokenMetrics {
   symbol: string;
@@ -360,6 +366,69 @@ export class MonitoringService {
     if (metrics) {
       metrics.pendingFees = amount;
     }
+  }
+
+  // ============================================================================
+  // Alert Checking
+  // ============================================================================
+
+  /**
+   * Check all alert conditions based on current metrics.
+   * Should be called periodically (e.g., every 30 seconds).
+   * @param expectedPollIntervalMs The expected poll interval for lag detection
+   */
+  checkAlertConditions(expectedPollIntervalMs: number = 5000): void {
+    const alerting = getAlerting();
+    const now = Date.now();
+
+    // Check error rate
+    if (this.daemonMetrics.pollCount > 10) {  // Only check after sufficient data
+      const errorRate = this.daemonMetrics.errorCount / this.daemonMetrics.pollCount;
+      alerting.checkErrorRate(errorRate);
+    }
+
+    // Check poll lag
+    if (this.daemonMetrics.lastPollTimestamp > 0) {
+      const timeSinceLastPoll = now - this.daemonMetrics.lastPollTimestamp;
+      if (timeSinceLastPoll > expectedPollIntervalMs * 2) {
+        alerting.checkPollLag(timeSinceLastPoll, expectedPollIntervalMs);
+      }
+    }
+
+    // Check pending fees stuck
+    if (this.daemonMetrics.lastFlushTimestamp > 0) {
+      const timeSinceFlush = now - this.daemonMetrics.lastFlushTimestamp;
+      const totalPending = Array.from(this.tokenMetrics.values())
+        .reduce((sum, m) => sum + m.pendingFees, 0);
+      const pendingSOL = totalPending / 1e9;
+
+      alerting.checkPendingFees(timeSinceFlush, pendingSOL);
+    }
+
+    // Check memory usage
+    alerting.checkMemory();
+  }
+
+  // ============================================================================
+  // System Metrics
+  // ============================================================================
+
+  /**
+   * Get current system metrics for persistence snapshots
+   */
+  getSystemMetrics(): {
+    heapUsedMB: number;
+    heapTotalMB: number;
+    externalMB: number;
+    uptimeSeconds: number;
+  } {
+    const mem = process.memoryUsage();
+    return {
+      heapUsedMB: mem.heapUsed / 1024 / 1024,
+      heapTotalMB: mem.heapTotal / 1024 / 1024,
+      externalMB: mem.external / 1024 / 1024,
+      uptimeSeconds: process.uptime(),
+    };
   }
 }
 

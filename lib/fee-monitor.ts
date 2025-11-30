@@ -23,6 +23,7 @@ import { BN } from "bn.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import * as fs from "fs";
 import * as path from "path";
+import * as crypto from "crypto";
 import { withRetryAndTimeout, sleep } from "./rpc-utils";
 
 export type PoolType = 'bonding_curve' | 'pumpswap_amm';
@@ -65,6 +66,18 @@ interface DaemonState {
   lastSignatures: Record<string, string>;
   lastUpdated: string;
   version: number;
+  checksum?: string; // SHA-256 of lastSignatures for integrity verification
+}
+
+// Maximum age for state file (24 hours)
+const MAX_STATE_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Calculate checksum of state data for integrity verification
+ */
+function calculateChecksum(lastSignatures: Record<string, string>): string {
+  const data = JSON.stringify(lastSignatures, Object.keys(lastSignatures).sort());
+  return crypto.createHash('sha256').update(data).digest('hex').slice(0, 16);
 }
 
 /**
@@ -161,6 +174,7 @@ export class PumpFunFeeMonitor {
 
   /**
    * Load persisted state from disk with backup fallback
+   * Includes checksum validation and staleness check
    */
   private loadState(): void {
     const backupFile = this.stateFile.replace('.json', '.backup.json');
@@ -173,28 +187,45 @@ export class PumpFunFeeMonitor {
         const data = fs.readFileSync(file, 'utf8');
         const state: DaemonState = JSON.parse(data);
 
-        if (state.version === STATE_VERSION) {
-          // Restore last signatures for known tokens only
-          let restoredCount = 0;
-          for (const [mintKey, signature] of Object.entries(state.lastSignatures)) {
-            if (this.tokens.has(mintKey)) {
-              this.lastSignatures.set(mintKey, signature);
-              restoredCount++;
-            }
-          }
-
-          const source = file === backupFile ? 'backup' : 'state';
-          this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures)`);
-
-          // If loaded from backup, immediately save to restore main file
-          if (file === backupFile) {
-            this.log(`🔧 Restoring main state file from backup...`);
-            this.saveState();
-          }
-          return; // Successfully loaded
-        } else {
+        if (state.version !== STATE_VERSION) {
           this.log(`⚠️ ${file}: version mismatch (v${state.version} vs v${STATE_VERSION})`);
+          continue;
         }
+
+        // Validate checksum if present
+        if (state.checksum) {
+          const expectedChecksum = calculateChecksum(state.lastSignatures);
+          if (state.checksum !== expectedChecksum) {
+            this.log(`⚠️ ${file}: checksum mismatch (corrupted state)`);
+            continue;
+          }
+        }
+
+        // Check if state is too old (>24 hours)
+        const stateAge = Date.now() - new Date(state.lastUpdated).getTime();
+        if (stateAge > MAX_STATE_AGE_MS) {
+          this.log(`⚠️ ${file}: state too old (${Math.round(stateAge / 3600000)}h), starting fresh`);
+          continue;
+        }
+
+        // Restore last signatures for known tokens only
+        let restoredCount = 0;
+        for (const [mintKey, signature] of Object.entries(state.lastSignatures)) {
+          if (this.tokens.has(mintKey)) {
+            this.lastSignatures.set(mintKey, signature);
+            restoredCount++;
+          }
+        }
+
+        const source = file === backupFile ? 'backup' : 'state';
+        this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures)`);
+
+        // If loaded from backup, immediately save to restore main file
+        if (file === backupFile) {
+          this.log(`🔧 Restoring main state file from backup...`);
+          this.saveState();
+        }
+        return; // Successfully loaded
       } catch (error: any) {
         this.log(`⚠️ Failed to load ${file}: ${error.message}`);
       }
@@ -206,13 +237,16 @@ export class PumpFunFeeMonitor {
   /**
    * Save current state to disk with atomic write and backup
    * Uses temp file + fsync + rename pattern for crash safety
+   * Includes checksum for integrity verification
    */
   private saveState(): void {
     try {
+      const signaturesObj = Object.fromEntries(this.lastSignatures);
       const state: DaemonState = {
-        lastSignatures: Object.fromEntries(this.lastSignatures),
+        lastSignatures: signaturesObj,
         lastUpdated: new Date().toISOString(),
         version: STATE_VERSION,
+        checksum: calculateChecksum(signaturesObj),
       };
 
       const stateJson = JSON.stringify(state, null, 2);
@@ -503,13 +537,12 @@ export class PumpFunFeeMonitor {
       }
     }
 
-    // CRITICAL: Save state BEFORE updating lastSignatures to prevent duplication on crash
-    // If we crash after this save but before lastSignatures update, we'll re-process
-    // but the processedSignatures Set will filter duplicates
-    this.saveState();
-
-    // Update last signature to most recent
+    // CRITICAL: Update in-memory state FIRST, then persist to disk
+    // This ensures state consistency:
+    // - If crash before save: We'll re-process, but processedSignatures catches duplicates
+    // - If crash after save: State is consistent, no re-processing needed
     this.lastSignatures.set(mintKey, sigs[0].signature);
+    this.saveState();
 
     if (this.verbose && feesInBatch > 0) {
       this.log(`   📈 ${token.symbol}: Processed ${sigs.length} txs, ${feesInBatch} with fees`);

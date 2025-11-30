@@ -27,6 +27,9 @@ import { getNetworkConfig, printNetworkBanner, NetworkConfig } from "../lib/netw
 import { monitoring, MonitoringService } from "../lib/monitoring";
 import { createLogger, Logger } from "../lib/logger";
 import { ExecutionLock } from "../lib/execution-lock";
+import { initAlerting, getAlerting, AlertingService } from "../lib/alerting";
+import { initMetricsPersistence, getMetricsPersistence, MetricsPersistence } from "../lib/metrics-persistence";
+import { validateAlertingEnv, validateMetricsPersistenceEnv } from "../lib/env-validator";
 
 // Program ID
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
@@ -35,6 +38,9 @@ const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui")
 const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "30000"); // 30 seconds
 const VERBOSE = process.env.VERBOSE === "true";
 const API_PORT = parseInt(process.env.API_PORT || "3030");
+const API_KEY = process.env.DAEMON_API_KEY || ""; // Optional API key for auth
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window for rate limiting
+const RATE_LIMIT_MAX_REQUESTS = 2; // Max 2 flush requests per minute
 
 interface EcosystemConfig {
   root?: TokenConfig;
@@ -114,14 +120,52 @@ function displayStats(monitor: PumpFunFeeMonitor, tokens: TokenConfig[]): void {
   console.log("\n" + "═".repeat(70) + "\n");
 }
 
+// Rate limiting state
+const rateLimitState = {
+  requests: [] as number[], // Timestamps of recent requests
+};
+
+/**
+ * Check if request should be rate limited
+ * @returns true if request should be allowed, false if rate limited
+ */
+function checkRateLimit(): boolean {
+  const now = Date.now();
+  // Remove old requests outside the window
+  rateLimitState.requests = rateLimitState.requests.filter(
+    (ts) => now - ts < RATE_LIMIT_WINDOW_MS
+  );
+  // Check if under limit
+  if (rateLimitState.requests.length >= RATE_LIMIT_MAX_REQUESTS) {
+    return false;
+  }
+  // Add this request
+  rateLimitState.requests.push(now);
+  return true;
+}
+
+/**
+ * Validate API key if authentication is enabled
+ * @returns true if valid (or auth disabled), false if invalid
+ */
+function validateApiKey(req: http.IncomingMessage): boolean {
+  // If no API key configured, allow all requests
+  if (!API_KEY) return true;
+
+  // Check X-Daemon-Key header
+  const providedKey = req.headers["x-daemon-key"];
+  return providedKey === API_KEY;
+}
+
 /**
  * Start HTTP API server for external flush triggers and monitoring
  */
 function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server {
   const server = http.createServer(async (req, res) => {
-    // CORS headers
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    // CORS headers (restrict to localhost if API key is set)
+    res.setHeader("Access-Control-Allow-Origin", API_KEY ? "http://localhost" : "*");
     res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Daemon-Key");
 
     if (req.method === "OPTIONS") {
       res.writeHead(200);
@@ -131,6 +175,33 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
 
     // POST /flush - Force flush pending fees with detailed response
     if (req.method === "POST" && req.url === "/flush") {
+      // Authentication check
+      if (!validateApiKey(req)) {
+        logger.warn("Unauthorized flush attempt", { ip: req.socket.remoteAddress });
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(401);
+        res.end(JSON.stringify({
+          success: false,
+          error: "Unauthorized: Invalid or missing X-Daemon-Key header",
+          timestamp: Date.now(),
+        }));
+        return;
+      }
+
+      // Rate limiting check
+      if (!checkRateLimit()) {
+        logger.warn("Rate limited flush attempt", { ip: req.socket.remoteAddress });
+        res.setHeader("Content-Type", "application/json");
+        res.setHeader("Retry-After", "60");
+        res.writeHead(429);
+        res.end(JSON.stringify({
+          success: false,
+          error: `Rate limited: Max ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW_MS / 1000}s`,
+          timestamp: Date.now(),
+        }));
+        return;
+      }
+
       try {
         logger.info("Force flush triggered via API");
         const result = await monitor.forceFlush();
@@ -199,6 +270,141 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
       return;
     }
 
+    // GET /ready - Kubernetes readiness probe
+    // Returns 200 if daemon is fully operational and can accept work
+    if (req.method === "GET" && req.url === "/ready") {
+      const metrics = monitor.getHealthMetrics();
+      const isReady = metrics.isRunning &&
+                      metrics.tokensMonitored > 0 &&
+                      metrics.errorRate < 0.3 &&
+                      metrics.timeSinceLastPoll < metrics.currentPollInterval * 3;
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(isReady ? 200 : 503);
+      res.end(JSON.stringify({
+        ready: isReady,
+        checks: {
+          running: metrics.isRunning,
+          tokensMonitored: metrics.tokensMonitored,
+          errorRate: metrics.errorRate.toFixed(3),
+          lastPollAgoMs: metrics.timeSinceLastPoll,
+        },
+        timestamp: Date.now(),
+      }));
+      return;
+    }
+
+    // GET /live - Kubernetes liveness probe
+    // Returns 200 if daemon process is alive (minimal check)
+    if (req.method === "GET" && req.url === "/live") {
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        alive: true,
+        uptime: process.uptime(),
+        timestamp: Date.now(),
+      }));
+      return;
+    }
+
+    // GET /metrics/history/latest - Get most recent persisted snapshot
+    if (req.method === "GET" && req.url === "/metrics/history/latest") {
+      const persistence = getMetricsPersistence();
+      if (!persistence) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: "Metrics persistence not enabled" }));
+        return;
+      }
+
+      try {
+        const latest = await persistence.getLatest();
+        if (!latest) {
+          res.setHeader("Content-Type", "application/json");
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: "No snapshots available" }));
+          return;
+        }
+
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(200);
+        res.end(JSON.stringify(latest, null, 2));
+      } catch (error: any) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+
+    // GET /metrics/history/summary?days=7 - Get aggregated summary
+    if (req.method === "GET" && req.url?.startsWith("/metrics/history/summary")) {
+      const persistence = getMetricsPersistence();
+      if (!persistence) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: "Metrics persistence not enabled" }));
+        return;
+      }
+
+      try {
+        const urlParams = new URL(req.url, `http://${req.headers.host}`);
+        const days = parseInt(urlParams.searchParams.get("days") || "7", 10);
+        const summary = await persistence.getSummary(days);
+
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(200);
+        res.end(JSON.stringify(summary, null, 2));
+      } catch (error: any) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: error.message }));
+      }
+      return;
+    }
+
+    // GET /metrics/history/manifest - Get snapshot manifest
+    if (req.method === "GET" && req.url === "/metrics/history/manifest") {
+      const persistence = getMetricsPersistence();
+      if (!persistence) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: "Metrics persistence not enabled" }));
+        return;
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(persistence.getManifest(), null, 2));
+      return;
+    }
+
+    // GET /alerting/status - Get alerting service status
+    if (req.method === "GET" && req.url === "/alerting/status") {
+      const alerting = getAlerting();
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify(alerting.getStatus(), null, 2));
+      return;
+    }
+
+    // POST /alerting/test - Send test alert
+    if (req.method === "POST" && req.url === "/alerting/test") {
+      if (!validateApiKey(req)) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(401);
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+
+      const alerting = getAlerting();
+      const result = await alerting.testConnection();
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(result.success ? 200 : 500);
+      res.end(JSON.stringify(result));
+      return;
+    }
+
     res.setHeader("Content-Type", "application/json");
     res.writeHead(404);
     res.end(JSON.stringify({ error: "Not found" }));
@@ -207,11 +413,18 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
   server.listen(API_PORT, () => {
     logger.info(`API server listening on port ${API_PORT}`);
     console.log(`🌐 API server listening on port ${API_PORT}`);
-    console.log(`   POST /flush   - Force flush pending fees`);
-    console.log(`   GET /status   - Basic daemon status`);
-    console.log(`   GET /metrics  - Prometheus format metrics`);
-    console.log(`   GET /stats    - JSON detailed statistics`);
-    console.log(`   GET /health   - Health check endpoint`);
+    console.log(`   POST /flush           - Force flush pending fees${API_KEY ? ' (requires X-Daemon-Key)' : ''}`);
+    console.log(`   GET /status           - Basic daemon status`);
+    console.log(`   GET /metrics          - Prometheus format metrics`);
+    console.log(`   GET /stats            - JSON detailed statistics`);
+    console.log(`   GET /health           - Health check endpoint`);
+    console.log(`   GET /ready            - Kubernetes readiness probe`);
+    console.log(`   GET /live             - Kubernetes liveness probe`);
+    console.log(`   GET /metrics/history/latest   - Latest persisted snapshot`);
+    console.log(`   GET /metrics/history/summary  - Historical summary`);
+    console.log(`   GET /metrics/history/manifest - Snapshot manifest`);
+    console.log(`   GET /alerting/status  - Alerting service status`);
+    console.log(`   POST /alerting/test   - Send test alert${API_KEY ? ' (requires X-Daemon-Key)' : ''}`);
   });
 
   return server;
@@ -299,6 +512,54 @@ async function main() {
   const idl = loadIdl();
   const program = new Program(idl, provider);
 
+  // Initialize alerting service
+  console.log("\n📢 Initializing alerting service...");
+  const alertingEnv = validateAlertingEnv();
+  const alerting = initAlerting({
+    webhookUrl: alertingEnv.WEBHOOK_URL || '',
+    webhookType: alertingEnv.WEBHOOK_TYPE,
+    enabled: alertingEnv.ALERT_ENABLED,
+    rateLimitWindowMs: alertingEnv.ALERT_RATE_LIMIT_WINDOW,
+    rateLimitMaxAlerts: alertingEnv.ALERT_RATE_LIMIT_MAX,
+    minAlertIntervalMs: alertingEnv.ALERT_COOLDOWN_MS,
+  }, {
+    errorRatePercent: alertingEnv.ALERT_ERROR_RATE_THRESHOLD,
+    pollLagMultiplier: alertingEnv.ALERT_POLL_LAG_MULTIPLIER,
+    pendingFeesStuckMinutes: alertingEnv.ALERT_PENDING_STUCK_MINUTES,
+    failedCyclesConsecutive: alertingEnv.ALERT_FAILED_CYCLES_MAX,
+  });
+
+  if (alertingEnv.WEBHOOK_URL) {
+    console.log(`   ✅ Webhook configured (${alertingEnv.WEBHOOK_TYPE})`);
+    logger.info("Alerting initialized", { webhookType: alertingEnv.WEBHOOK_TYPE });
+  } else {
+    console.log(`   ⚠️  No webhook configured - alerts disabled`);
+    logger.warn("No webhook URL configured, alerts disabled");
+  }
+
+  // Initialize metrics persistence
+  console.log("\n💾 Initializing metrics persistence...");
+  const persistenceEnv = validateMetricsPersistenceEnv();
+  let persistence: MetricsPersistence | null = null;
+
+  if (persistenceEnv.METRICS_ENABLED) {
+    persistence = initMetricsPersistence(monitoring, {
+      dataDir: persistenceEnv.METRICS_DATA_DIR,
+      snapshotIntervalMs: persistenceEnv.METRICS_SNAPSHOT_INTERVAL,
+      retentionDays: persistenceEnv.METRICS_RETENTION_DAYS,
+      enabled: true,
+    });
+    persistence.start();
+    console.log(`   ✅ Persistence enabled (dir: ${persistenceEnv.METRICS_DATA_DIR})`);
+    logger.info("Metrics persistence initialized", {
+      dataDir: persistenceEnv.METRICS_DATA_DIR,
+      interval: persistenceEnv.METRICS_SNAPSHOT_INTERVAL,
+    });
+  } else {
+    console.log(`   ⚠️  Persistence disabled`);
+    logger.info("Metrics persistence disabled");
+  }
+
   // Initialize monitor
   console.log("\n🚀 Initializing fee monitor...");
   const monitor = new PumpFunFeeMonitor({
@@ -313,6 +574,11 @@ async function main() {
   await monitor.start();
   logger.success("Monitor started successfully");
 
+  // Send daemon restart alert
+  alerting.sendDaemonRestart().catch((err) => {
+    logger.debug("Failed to send restart alert", { error: err.message });
+  });
+
   // Start API server for external flush triggers and monitoring
   const apiServer = startApiServer(monitor, logger);
 
@@ -320,6 +586,11 @@ async function main() {
   const statsInterval = setInterval(() => {
     displayStats(monitor, allTokens);
   }, 60000); // Every 60 seconds
+
+  // Periodic alert checking (every 30 seconds)
+  const alertCheckInterval = setInterval(() => {
+    monitoring.checkAlertConditions(5000);  // Expected poll interval: 5s
+  }, 30000);
 
   // Display initial stats
   setTimeout(() => displayStats(monitor, allTokens), 5000);
@@ -344,6 +615,17 @@ async function main() {
     }, SHUTDOWN_TIMEOUT_MS);
 
     clearInterval(statsInterval);
+    clearInterval(alertCheckInterval);
+
+    // Stop metrics persistence
+    if (persistence) {
+      try {
+        await persistence.stop();
+        logger.info("Metrics persistence stopped");
+      } catch (err: any) {
+        logger.warn("Error stopping persistence", { error: err.message });
+      }
+    }
 
     // Properly close HTTP server with promise wrapper
     await new Promise<void>((resolve) => {

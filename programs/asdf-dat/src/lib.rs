@@ -1640,7 +1640,8 @@ pub mod asdf_dat {
             ErrorCode::CycleTooSoon // Reusing existing error for timelock
         );
 
-        let new_fee_split = state.pending_fee_split.unwrap();
+        let new_fee_split = state.pending_fee_split
+            .ok_or(ErrorCode::InvalidParameter)?;
         let old_fee_split = state.fee_split_bps;
 
         state.fee_split_bps = new_fee_split;
