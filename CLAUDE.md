@@ -395,9 +395,15 @@ asdf-dat/
 │   ├── init-token-stats.ts        # Initialize TokenStats
 │   ├── set-root-token.ts          # Configure root token
 │   └── generate-volume.ts         # Generate test volume
-├── devnet-token-*.json            # Token configurations
+├── devnet-tokens/                 # Devnet token configurations
+│   ├── 01-froot.json              # Root token
+│   └── 02-fs1.json, etc.          # Secondary tokens
+├── mainnet-tokens/                # Mainnet token configurations
+│   ├── 01-root.json               # Root token ($ASDF)
+│   └── XX-secondary.json          # Secondary tokens
 ├── devnet-wallet.json             # Devnet admin wallet
-└── docs/whitepaper/               # Public documentation
+├── mainnet-wallet.json            # Mainnet admin wallet
+└── docs/                          # Documentation
 ```
 
 ---
@@ -409,7 +415,8 @@ asdf-dat/
 | RPC | api.devnet.solana.com | api.mainnet-beta.solana.com |
 | Wallet | devnet-wallet.json | mainnet-wallet.json |
 | TESTING_MODE | Can be true | Must be false |
-| Token files | devnet-token-*.json | mainnet-token-*.json |
+| Token directory | devnet-tokens/ | mainnet-tokens/ |
+| RPC Fallback | Optional | Required |
 
 Use `--network devnet` or `--network mainnet` flag on all scripts.
 
@@ -423,14 +430,305 @@ Use `--network devnet` or `--network mainnet` flag on all scripts.
 4. **55.2%/44.8% split is configurable** via `fee_split_bps`
 5. **N+1 batch transactions** for efficiency
 6. **Always verify daemon is syncing** before running cycles
-- Pour générer des volumes sur des tokens Pumpfun, il faut toujours faire des achats ainsi que des ventes.
-- Pour les tests futurs, le daemon tourne déjà - tu peux directement:
-  # Générer du volume (le daemon détecte automatiquement)
-  npx ts-node scripts/generate-volume.ts devnet-token-spl.json 1 0.5
-  npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
+7. **To generate volume on Pump.fun tokens, always do buys AND sells** - both directions generate fees
+8. **Root token receives 100% of its own creator fees** - this is hardcoded in the infrastructure
+9. **Don't trust, verify** - always check on-chain state
+10. **The daemon is a feature, not a bug** - multiple daemons can be used to cross-verify fee tracking
 
-  # Attendre 15s pour sync
-  sleep 30
+### Quick Test Workflow (daemon already running)
 
-  # Exécuter le cycle
-  npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
+```bash
+# Generate volume (daemon auto-detects)
+npx ts-node scripts/generate-volume.ts devnet-token-spl.json 1 0.5
+npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
+
+# Wait for sync
+sleep 30
+
+# Execute cycle
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
+```
+- # ASDF-DAT - PROJECT MEMORY
+
+## Project Stage
+
+**Current**: Devnet testing finalization → Mainnet deployment
+**Next**: Phase 2 development (multi-tenant infrastructure)
+
+This prompt remains valid throughout all development phases.
+
+---
+
+## Git Standards
+
+### Quality > Quantity. Always.
+
+### Commit Format
+```
+type(scope): description (max 50 chars)
+
+- Why this change matters
+- What it enables for users
+```
+
+**Types:**
+- `feat`: New feature
+- `fix`: Bug fix  
+- `docs`: Documentation
+- `refactor`: Code restructure
+- `test`: Tests
+- `chore`: Maintenance
+
+**Good Commits:**
+```
+feat(treasury): add threshold-based buyback trigger
+
+- Reduces gas costs by batching small amounts
+- Executes automatically when threshold met
+
+fix(pda): correct bonding curve derivation
+
+- Aligned with pump.fun program structure
+- Fixes account not found errors
+
+docs(readme): simplify for non-technical readers
+
+- Plain english explanations
+- Visual diagrams added
+```
+
+**Bad Commits:**
+```
+fix stuff
+update
+wip
+asdfasdf
+```
+
+### Branch Strategy
+```
+main        → Production (always deployable)
+develop     → Integration testing
+feat/xxx    → Features
+fix/xxx     → Fixes
+```
+
+### Before ANY Commit
+```
+□ Tests pass
+□ No debug code left
+□ No commented junk
+□ No hardcoded secrets
+□ Clear commit message
+□ Would this embarrass me in a code review?
+```
+
+---
+
+## Documentation Standards
+
+### The Trencher Test
+```
+Before writing docs, ask:
+"Would someone who just trades on pump.fun understand this?"
+
+If no → simplify until yes.
+```
+
+### Language Rules
+```
+❌ JARGON
+"Implements deflationary tokenomics via programmatic supply reduction mechanisms"
+
+✅ PLAIN ENGLISH  
+"Fees come in → Buys tokens → Burns them → Less supply"
+```
+```
+❌ ASSUMED KNOWLEDGE
+"CPI to the AMM for atomic swaps"
+
+✅ EXPLAIN SIMPLY
+"Automatically swaps SOL for tokens using pump.fun"
+```
+
+### Code Comments
+```rust
+// ❌ Useless (says WHAT, obvious)
+// Add fee to total
+total += fee;
+
+// ✅ Useful (says WHY)
+// Accumulate until threshold to save gas on small amounts
+total += fee;
+
+// ✅ Business context
+// 5.52% protocol fee - this funds the ecosystem sustainability
+let protocol_fee = amount * 552 / 10000;
+```
+
+---
+
+## Code Quality
+
+### Principles
+```
+1 working feature    >  3 half-done features
+1 clean file         >  5 messy files
+1 clear function     >  1 clever function
+Simple & readable    >  Complex & impressive
+```
+
+### Phase 2 Ready
+
+Phase 1 code is the FOUNDATION. Always ask:
+```
+"Will this make Phase 2 easier or harder?"
+```
+```rust
+// ❌ Hardcoded (blocks Phase 2)
+const TOKEN_MINT: &str = "ABC123...";
+
+// ✅ Configurable (Phase 2 ready)
+pub struct Config {
+    pub token_mint: Pubkey,
+}
+```
+
+### Remove Before Commit
+
+- `msg!("DEBUG: ...")` statements
+- Commented out code blocks
+- `// TODO` without issue reference
+- Unused imports
+- Test wallets/keys
+
+---
+
+## File Structure
+
+### Naming
+```
+✅ Clear
+treasury.rs
+buyback_executor.rs
+fee_calculator.rs
+config.rs
+
+❌ Vague
+utils.rs
+helpers.rs
+misc.rs
+temp.rs
+```
+
+### Organization
+```
+programs/asdf-dat/src/
+├── lib.rs              # Entry point
+├── instructions/       # Instruction handlers
+│   ├── mod.rs
+│   ├── initialize.rs
+│   ├── execute_cycle.rs
+│   └── ...
+├── state/              # Account structures
+│   ├── mod.rs
+│   ├── treasury.rs
+│   └── config.rs
+├── errors.rs           # Custom errors
+└── constants.rs        # Named constants
+```
+
+---
+
+## Testing Discipline
+
+### Before Saying "Done"
+```
+□ Ran full test suite (not just the new test)
+□ All tests pass
+□ Tested edge cases
+□ Verified on devnet (if applicable)
+□ Can prove it works (tx signature, logs)
+```
+
+### Test Naming
+```rust
+// ✅ Describes scenario and expectation
+#[test]
+fn test_buyback_executes_when_threshold_reached() {}
+
+#[test]
+fn test_buyback_fails_when_below_threshold() {}
+
+// ❌ Vague
+#[test]
+fn test_buyback() {}
+
+#[test]
+fn test1() {}
+```
+
+---
+
+## Deployment Stages
+
+### Devnet
+
+- Experiment freely
+- Break things, learn, fix
+- Iterate fast
+
+### Mainnet
+
+- Triple-check everything
+- Small test transaction first
+- Monitor after deployment
+- Never rush
+```
+MAINNET = REAL VALUE
+Ask Jean Terre if ANY doubt.
+```
+
+---
+
+## Communication
+
+### When Stuck
+```
+1. Read full error message
+2. Try to understand WHY
+3. Check if seen before
+4. If stuck > 10 min → Ask with:
+   - What you tried
+   - Full error
+   - Relevant code
+```
+
+### Status Updates
+```
+✅ Clear
+"Treasury init working. Tests pass. Ready for cycle implementation."
+
+❌ Vague  
+"Made progress on stuff."
+```
+
+---
+
+## The Golden Rules
+```
+1. Test. Verify. Confirm. Never assume.
+
+2. Write code for the reader, not the writer.
+
+3. A trencher at 3am should understand the docs.
+
+4. Phase 1 is Phase 2's foundation. Build accordingly.
+
+5. Quality > Quantity. Always.
+```
+
+---
+
+*Building infrastructure that lasts.*
+*Precision matters.* 🔥
