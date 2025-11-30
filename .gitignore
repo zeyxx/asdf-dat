@@ -337,6 +337,8 @@ scripts/testing/output/logs/
 
 # Daemon state (runtime)
 .daemon-state.json
+.daemon-state.backup.json
+.daemon-lock.json
 
 # Temporary files at root
 Program
