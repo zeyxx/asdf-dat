@@ -1059,7 +1059,10 @@ pub mod asdf_dat {
         // The orchestrator handles 1/day per token scheduling with randomized timing
 
         // Enforce minimum fees threshold (disabled in testing mode)
-        if !TESTING_MODE {
+        // NOTE: Skip threshold check when for_ecosystem=true (N+1 pattern)
+        // In N+1, the first token drains the vault and subsequent tokens use datAuthority balance
+        // The threshold check only applies to standalone/first-token collections
+        if !TESTING_MODE && !for_ecosystem {
             let vault_balance = ctx.accounts.creator_vault.lamports();
             require!(vault_balance >= state.min_fees_threshold, ErrorCode::InsufficientFees);
         }

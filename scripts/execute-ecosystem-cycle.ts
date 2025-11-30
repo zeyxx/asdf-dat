@@ -218,10 +218,17 @@ async function waitForCycleCooldown(program: Program<Idl>): Promise<void> {
 
   const lastCycleTimestamp = state.lastCycleTimestamp.toNumber();
   const minCycleInterval = state.minCycleInterval.toNumber();
-  const currentTime = Math.floor(Date.now() / 1000);
+
+  // CRITICAL FIX: Use Solana clock instead of local time
+  // The program uses Clock::get()?.unix_timestamp, so we must match it
+  const connection = program.provider.connection;
+  const slot = await connection.getSlot();
+  const blockTime = await connection.getBlockTime(slot);
+  const currentTime = blockTime || Math.floor(Date.now() / 1000);
 
   const timeSinceLastCycle = currentTime - lastCycleTimestamp;
-  const waitTime = minCycleInterval - timeSinceLastCycle;
+  // Add 2s buffer to account for clock drift between check and TX execution
+  const waitTime = minCycleInterval - timeSinceLastCycle + 2;
 
   if (waitTime > 0) {
     log('⏳', `Cycle cooldown active. Last cycle: ${new Date(lastCycleTimestamp * 1000).toISOString()}`, colors.yellow);
@@ -1695,7 +1702,7 @@ async function executeRootCycle(
       // Bonding Curve: Collect fees + execute buy
       log('  📦', 'Building collect fees instruction...', colors.cyan);
       const collectIx = await program.methods
-        .collectFees(true, false) // is_root_token=true, for_ecosystem=false
+        .collectFees(true, true) // is_root_token=true, for_ecosystem=true (skip vault threshold check)
         .accounts({
           datState,
           tokenStats,
