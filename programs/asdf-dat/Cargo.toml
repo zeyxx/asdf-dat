@@ -14,6 +14,14 @@ no-idl = []
 cpi = ["no-entrypoint"]
 default = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# SECURITY: Testing mode - ONLY enable for devnet builds
+# Disables cycle interval and fee threshold checks
+# Build with: anchor build -- --features testing
+testing = []
+# Verbose logging - enables debug msg!() calls
+# Each msg!() costs ~200 CU, disable in production for efficiency
+# Build with: anchor build -- --features verbose
+verbose = []
 
 [dependencies]
 anchor-lang = "0.31.1"

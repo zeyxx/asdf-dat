@@ -251,47 +251,86 @@ async function waitForCycleCooldown(program: Program<Idl>): Promise<void> {
 }
 
 /**
+ * Flush result interface from daemon API
+ */
+interface FlushResult {
+  success: boolean;
+  tokensUpdated: number;
+  tokensFailed: number;
+  totalFlushed: number;
+  remainingPending: number;
+  timestamp?: number;
+  details?: Array<{
+    symbol: string;
+    mint: string;
+    amount: number;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
+/**
  * Trigger daemon flush to ensure all pending fees are written on-chain
  * This solves the race condition between daemon detection and cycle execution
+ * @returns FlushResult with detailed status, or null if daemon not available
  */
-async function triggerDaemonFlush(): Promise<boolean> {
+async function triggerDaemonFlush(): Promise<FlushResult | null> {
   const DAEMON_API_PORT = parseInt(process.env.DAEMON_API_PORT || '3030');
   const DAEMON_API_URL = `http://localhost:${DAEMON_API_PORT}/flush`;
+  const MAX_RETRIES = 3;
+  const RETRY_DELAY_MS = 2000;
 
-  try {
-    log('🔄', 'Triggering daemon flush to sync fees on-chain...', colors.cyan);
-
-    const response = await fetch(DAEMON_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    // Safe JSON parsing with error handling
-    let result: { timestamp?: string };
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
-      result = await response.json();
-    } catch (parseError) {
-      throw new Error(`Invalid JSON response from daemon: ${(parseError as Error).message}`);
-    }
-    log('✅', `Daemon flush completed (timestamp: ${result.timestamp || 'unknown'})`, colors.green);
+      log('🔄', `Triggering daemon flush (attempt ${attempt}/${MAX_RETRIES})...`, colors.cyan);
 
-    // Wait for blockchain confirmation
-    await sleep(2000);
-    return true;
+      const response = await fetch(DAEMON_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
 
-  } catch (error) {
-    const errorMsg = (error as Error).message || String(error);
-    if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch failed')) {
-      log('⚠️', 'Daemon not running - proceeding with on-chain pending_fees', colors.yellow);
-    } else {
-      log('⚠️', `Could not trigger daemon flush: ${errorMsg}`, colors.yellow);
+      // Safe JSON parsing with error handling
+      let result: FlushResult;
+      try {
+        result = await response.json() as FlushResult;
+      } catch (parseError) {
+        throw new Error(`Invalid JSON response from daemon: ${(parseError as Error).message}`);
+      }
+
+      // Check if all tokens were flushed successfully
+      if (result.success) {
+        log('✅', `Daemon flush completed: ${result.tokensUpdated} tokens updated, ${(result.totalFlushed / 1e9).toFixed(6)} SOL flushed`, colors.green);
+      } else if (result.tokensFailed > 0) {
+        log('⚠️', `Partial flush: ${result.tokensUpdated} succeeded, ${result.tokensFailed} failed. Remaining: ${(result.remainingPending / 1e9).toFixed(6)} SOL`, colors.yellow);
+        // Log failed tokens
+        result.details?.filter(d => !d.success).forEach(d => {
+          log('  ❌', `${d.symbol}: ${d.error}`, colors.red);
+        });
+      }
+
+      // Wait for blockchain confirmation (increased from 2s to 5s)
+      await sleep(5000);
+      return result;
+
+    } catch (error) {
+      const errorMsg = (error as Error).message || String(error);
+
+      if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch failed')) {
+        log('⚠️', 'Daemon not running - proceeding with on-chain pending_fees', colors.yellow);
+        return null;
+      }
+
+      if (attempt < MAX_RETRIES) {
+        log('⚠️', `Flush attempt ${attempt} failed: ${errorMsg}. Retrying in ${RETRY_DELAY_MS}ms...`, colors.yellow);
+        await sleep(RETRY_DELAY_MS);
+      } else {
+        log('⚠️', `All ${MAX_RETRIES} flush attempts failed: ${errorMsg}`, colors.yellow);
+        return null;
+      }
     }
-    return false;
   }
+
+  return null;
 }
 
 // ============================================================================

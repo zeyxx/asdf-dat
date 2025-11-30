@@ -67,6 +67,24 @@ interface DaemonState {
   version: number;
 }
 
+/**
+ * Result of a flush operation - exported for use by orchestrator
+ */
+export interface FlushResult {
+  success: boolean;
+  tokensUpdated: number;
+  tokensFailed: number;
+  totalFlushed: number;
+  remainingPending: number;
+  details: Array<{
+    symbol: string;
+    mint: string;
+    amount: number;
+    success: boolean;
+    error?: string;
+  }>;
+}
+
 const STATE_VERSION = 1;
 const DEFAULT_STATE_FILE = ".daemon-state.json";
 const DEFAULT_TX_LIMIT = 50;  // Increased from 10 for scalability
@@ -87,6 +105,8 @@ export class PumpFunFeeMonitor {
   private pendingFees: Map<string, bigint>;  // keyed by mint
   private lastSignatures: Map<string, string>;  // keyed by mint -> last processed signature
   private processedSignatures: Set<string>;  // Deduplication: track all processed signatures
+  private signatureQueue: string[];  // FIFO queue for memory-bounded cleanup
+  private readonly MAX_SIGNATURES = 10000;  // Maximum signatures to keep in memory
   private pollInterval: number;
   private updateInterval: number;
   private verbose: boolean;
@@ -115,6 +135,7 @@ export class PumpFunFeeMonitor {
     this.pendingFees = new Map();
     this.lastSignatures = new Map();
     this.processedSignatures = new Set();
+    this.signatureQueue = [];
     this.pollInterval = config.pollInterval || 5000;  // 5 seconds
     this.updateInterval = config.updateInterval || 30000;  // 30 seconds
     this.verbose = config.verbose || false;
@@ -139,34 +160,52 @@ export class PumpFunFeeMonitor {
   }
 
   /**
-   * Load persisted state from disk
+   * Load persisted state from disk with backup fallback
    */
   private loadState(): void {
-    try {
-      if (fs.existsSync(this.stateFile)) {
-        const data = fs.readFileSync(this.stateFile, 'utf8');
+    const backupFile = this.stateFile.replace('.json', '.backup.json');
+
+    // Try main file first, then backup
+    for (const file of [this.stateFile, backupFile]) {
+      try {
+        if (!fs.existsSync(file)) continue;
+
+        const data = fs.readFileSync(file, 'utf8');
         const state: DaemonState = JSON.parse(data);
 
         if (state.version === STATE_VERSION) {
           // Restore last signatures for known tokens only
+          let restoredCount = 0;
           for (const [mintKey, signature] of Object.entries(state.lastSignatures)) {
             if (this.tokens.has(mintKey)) {
               this.lastSignatures.set(mintKey, signature);
+              restoredCount++;
             }
           }
-          this.log(`📂 Loaded state from ${this.stateFile} (${Object.keys(state.lastSignatures).length} signatures)`);
+
+          const source = file === backupFile ? 'backup' : 'state';
+          this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures)`);
+
+          // If loaded from backup, immediately save to restore main file
+          if (file === backupFile) {
+            this.log(`🔧 Restoring main state file from backup...`);
+            this.saveState();
+          }
+          return; // Successfully loaded
         } else {
-          this.log(`⚠️ State file version mismatch, starting fresh`);
+          this.log(`⚠️ ${file}: version mismatch (v${state.version} vs v${STATE_VERSION})`);
         }
+      } catch (error: any) {
+        this.log(`⚠️ Failed to load ${file}: ${error.message}`);
       }
-    } catch (error: any) {
-      this.log(`⚠️ Could not load state: ${error.message}`);
     }
+
+    this.log(`📝 No valid state found, starting fresh`);
   }
 
   /**
-   * Save current state to disk with backup
-   * Creates a backup before writing to prevent corruption loss
+   * Save current state to disk with atomic write and backup
+   * Uses temp file + fsync + rename pattern for crash safety
    */
   private saveState(): void {
     try {
@@ -188,9 +227,15 @@ export class PumpFunFeeMonitor {
         }
       }
 
-      // Write new state atomically using temp file + rename
+      // Atomic write: temp file → fsync → rename
       const tempFile = `${this.stateFile}.tmp.${process.pid}`;
-      fs.writeFileSync(tempFile, stateJson);
+      const fd = fs.openSync(tempFile, 'w');
+      try {
+        fs.writeSync(fd, stateJson);
+        fs.fsyncSync(fd); // Flush to disk before rename
+      } finally {
+        fs.closeSync(fd);
+      }
       fs.renameSync(tempFile, this.stateFile);
     } catch (error: any) {
       if (this.verbose) {
@@ -446,14 +491,15 @@ export class PumpFunFeeMonitor {
       // Track processed signatures for deduplication
       processedInBatch.push(sig.signature);
       this.processedSignatures.add(sig.signature);
+      this.signatureQueue.push(sig.signature);
+    }
 
-      // Limit memory usage: keep only recent signatures (last 10000)
-      if (this.processedSignatures.size > 10000) {
-        const iterator = this.processedSignatures.values();
-        const oldest = iterator.next().value;
-        if (oldest) {
-          this.processedSignatures.delete(oldest);
-        }
+    // Memory cleanup: remove oldest signatures when exceeding limit
+    // Done outside loop for efficiency (batch cleanup)
+    while (this.signatureQueue.length > this.MAX_SIGNATURES) {
+      const oldest = this.signatureQueue.shift();
+      if (oldest) {
+        this.processedSignatures.delete(oldest);
       }
     }
 
@@ -591,8 +637,18 @@ export class PumpFunFeeMonitor {
    * Flush pending fees to on-chain TokenStats
    * CRITICAL: Only reset pending AFTER successful on-chain update
    * If flush fails, fees remain in pending for retry on next flush cycle
+   * @returns FlushResult with detailed status of what was flushed
    */
-  private async flushPendingFees(): Promise<void> {
+  private async flushPendingFees(): Promise<FlushResult> {
+    const result: FlushResult = {
+      success: true,
+      tokensUpdated: 0,
+      tokensFailed: 0,
+      totalFlushed: 0,
+      remainingPending: 0,
+      details: [],
+    };
+
     for (const [mintKey, pendingAmount] of this.pendingFees.entries()) {
       if (pendingAmount === 0n) continue;
 
@@ -607,17 +663,39 @@ export class PumpFunFeeMonitor {
         // This prevents fee loss if flush fails
         this.pendingFees.set(mintKey, 0n);
 
+        result.tokensUpdated++;
+        result.totalFlushed += Number(pendingAmount);
+        result.details.push({
+          symbol: token.symbol,
+          mint: mintKey,
+          amount: Number(pendingAmount),
+          success: true,
+        });
+
         this.log(
           `✅ ${token.symbol}: Flushed ${(Number(pendingAmount) / 1e9).toFixed(6)} SOL to on-chain`
         );
       } catch (error: any) {
         // DO NOT reset pendingFees on error - fees will be retried on next flush
+        result.success = false;
+        result.tokensFailed++;
+        result.remainingPending += Number(pendingAmount);
+        result.details.push({
+          symbol: token.symbol,
+          mint: mintKey,
+          amount: Number(pendingAmount),
+          success: false,
+          error: error.message,
+        });
+
         console.error(
           `❌ ${token.symbol}: Failed to flush ${(Number(pendingAmount) / 1e9).toFixed(6)} SOL: ${error.message}. ` +
           `Will retry on next flush cycle.`
         );
       }
     }
+
+    return result;
   }
 
   /**
@@ -696,10 +774,11 @@ export class PumpFunFeeMonitor {
   /**
    * Force immediate flush of all pending fees to on-chain
    * Called by cycle orchestrator before execution to ensure synchronization
+   * @returns FlushResult with detailed status of what was flushed
    */
-  public async forceFlush(): Promise<void> {
+  public async forceFlush(): Promise<FlushResult> {
     this.log("🔄 Force flush triggered by cycle orchestrator");
-    await this.flushPendingFees();
+    return await this.flushPendingFees();
   }
 
   /**

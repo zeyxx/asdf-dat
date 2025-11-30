@@ -11,6 +11,11 @@
  * - JITO_TIP_LAMPORTS: Override default Jito tip amount
  */
 
+// Load environment variables from .env and .env.local
+import * as dotenv from 'dotenv';
+dotenv.config(); // Load .env
+dotenv.config({ path: '.env.local', override: true }); // Load .env.local (overrides .env)
+
 import * as fs from 'fs';
 import * as path from 'path';
 import { PublicKey } from '@solana/web3.js';
@@ -68,11 +73,7 @@ export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
     rpcUrl: process.env.DEVNET_RPC_URL || 'https://api.devnet.solana.com',
     rpcFallbackUrl: undefined,
     wallet: 'devnet-wallet.json',
-    tokens: [
-      'devnet-token-spl.json',
-      'devnet-token-secondary.json',
-      'devnet-token-mayhem.json',
-    ],
+    tokens: loadDevnetTokens(),
     name: 'Devnet',
     programId: PROGRAM_ID,
     jito: {
@@ -140,6 +141,44 @@ function getHeliusRpcUrl(): string {
   // Fallback to public endpoint (not recommended for production)
   console.warn('[WARN] No HELIUS_API_KEY set. Using public RPC (rate limited).');
   return 'https://api.mainnet-beta.solana.com';
+}
+
+/**
+ * Load devnet token configurations dynamically
+ * Scans devnet-tokens/ directory for token JSON files
+ */
+function loadDevnetTokens(): string[] {
+  const tokensDir = path.join(process.cwd(), 'devnet-tokens');
+
+  // Check if directory exists
+  if (!fs.existsSync(tokensDir)) {
+    // Fallback to legacy files in root
+    const legacyFiles = [
+      'devnet-token-spl.json',
+      'devnet-token-secondary.json',
+      'devnet-token-mayhem.json',
+    ];
+    return legacyFiles.filter((f) => fs.existsSync(f));
+  }
+
+  // Scan directory for .json files
+  const files = fs.readdirSync(tokensDir);
+  const tokenFiles = files
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => path.join('devnet-tokens', f))
+    .sort(); // Alphabetical order for deterministic processing
+
+  // Fallback to legacy files if directory is empty
+  if (tokenFiles.length === 0) {
+    const legacyFiles = [
+      'devnet-token-spl.json',
+      'devnet-token-secondary.json',
+      'devnet-token-mayhem.json',
+    ];
+    return legacyFiles.filter((f) => fs.existsSync(f));
+  }
+
+  return tokenFiles;
 }
 
 /**

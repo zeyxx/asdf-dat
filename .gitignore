@@ -69,6 +69,9 @@ ASD[a-z]*.json
 # Mainnet keypairs and configs (SECURITY - NEVER COMMIT)
 mainnet-program-keypair.json
 mainnet-token-*.json
+mainnet-tokens/*.json
+!mainnet-tokens/*.example
+!mainnet-tokens/README.md
 
 # Build artifacts
 bonding-curve.bin

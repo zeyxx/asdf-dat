@@ -108,6 +108,7 @@ fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
         data[8..16].try_into().map_err(|_| ErrorCode::InvalidPool)?
     );
 
+    #[cfg(feature = "verbose")]
     msg!("Bonding curve: virtual_token={}, virtual_sol={}", virtual_token_reserves, virtual_sol_reserves);
 
     Ok((virtual_token_reserves, virtual_sol_reserves))
@@ -295,6 +296,7 @@ fn calculate_buy_amount_and_slippage(
     let slippage_multiplier = 10000u128.saturating_sub(slippage_bps as u128);
     let target_tokens = ((expected_tokens as u128) * slippage_multiplier / 10000) as u64;
 
+    #[cfg(feature = "verbose")]
     msg!("Expected tokens: {}, Target tokens ({}% slippage): {}",
          expected_tokens, slippage_bps as f64 / 100.0, target_tokens);
 
@@ -377,6 +379,7 @@ fn execute_buy_inner(ctx: Context<ExecuteBuy>, buy_amount: u64) -> Result<()> {
     let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
     let slippage = ctx.accounts.dat_state.slippage_bps;
 
+    // NOTE: reload() required before reading pool state - Anchor doesn't auto-reload for manual invoke_signed CPI
     ctx.accounts.pool_asdf_account.reload()?;
     let pool_data = ctx.accounts.pool.try_borrow_data()?.to_vec();
     let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(buy_amount, &pool_data, max_fees, slippage)?;
@@ -399,6 +402,7 @@ fn execute_buy_inner(ctx: Context<ExecuteBuy>, buy_amount: u64) -> Result<()> {
         seeds,
     )?;
 
+    // NOTE: reload() required after CPI to get updated token balance - Anchor doesn't auto-reload for invoke_signed
     ctx.accounts.dat_asdf_account.reload()?;
     ctx.accounts.dat_state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
     ctx.accounts.dat_state.last_cycle_sol = max_sol_cost;
@@ -434,6 +438,7 @@ fn execute_buy_secondary_cpi(ctx: &mut Context<ExecuteBuySecondary>, buy_amount:
     let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
     let slippage = ctx.accounts.dat_state.slippage_bps;
 
+    // NOTE: reload() required before reading pool state - Anchor doesn't auto-reload for manual invoke_signed CPI
     ctx.accounts.pool_asdf_account.reload()?;
     let pool_data = ctx.accounts.pool.try_borrow_data()?.to_vec();
     let (max_sol_cost, desired_tokens) = calculate_buy_amount_and_slippage(buy_amount, &pool_data, max_fees, slippage)?;
@@ -457,6 +462,7 @@ fn execute_buy_secondary_cpi(ctx: &mut Context<ExecuteBuySecondary>, buy_amount:
         seeds,
     )?;
 
+    // NOTE: reload() required after CPI to get updated token balance - Anchor doesn't auto-reload for invoke_signed
     ctx.accounts.dat_asdf_account.reload()?;
     ctx.accounts.dat_state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
     ctx.accounts.dat_state.last_cycle_sol = max_sol_cost;
@@ -793,6 +799,7 @@ pub mod asdf_dat {
             timestamp: clock.unix_timestamp,
         });
 
+        #[cfg(feature = "verbose")]
         msg!("Pending fees updated for mint {}: +{} lamports (total: {})",
             ctx.accounts.mint.key(),
             amount_lamports,
@@ -824,6 +831,7 @@ pub mod asdf_dat {
             timestamp: clock.unix_timestamp,
         });
 
+        #[cfg(feature = "verbose")]
         msg!("Validator initialized for mint {} with bonding curve {}",
             state.mint, state.bonding_curve);
 
@@ -847,6 +855,7 @@ pub mod asdf_dat {
             timestamp: clock.unix_timestamp,
         });
 
+        #[cfg(feature = "verbose")]
         msg!("Validator slot reset from {} to {} for mint {}",
             old_slot, clock.slot, state.mint);
 
@@ -911,6 +920,7 @@ pub mod asdf_dat {
             timestamp: clock.unix_timestamp,
         });
 
+        #[cfg(feature = "verbose")]
         msg!("Registered {} lamports for {} (slot {}, {} TXs)",
             fee_amount, validator.mint, end_slot, tx_count);
 
@@ -934,9 +944,11 @@ pub mod asdf_dat {
         let slot_delta = current_slot.saturating_sub(validator.last_validated_slot);
         require!(slot_delta > 1000, ErrorCode::ValidatorNotStale);
 
+        #[cfg(feature = "verbose")]
         let old_slot = validator.last_validated_slot;
         validator.last_validated_slot = current_slot;
 
+        #[cfg(feature = "verbose")]
         msg!("Synced validator slot for {} from {} to {} (delta: {})",
             validator.mint, old_slot, current_slot, slot_delta);
 
@@ -1174,7 +1186,7 @@ pub mod asdf_dat {
             seeds,
         )?;
 
-        // Reload account to get new balance
+        // NOTE: reload() required after CPI to get updated WSOL balance - Anchor doesn't auto-reload for invoke_signed
         ctx.accounts.dat_wsol_account.reload()?;
         let wsol_after = ctx.accounts.dat_wsol_account.amount;
         let wsol_collected = wsol_after.saturating_sub(wsol_before);
@@ -1367,7 +1379,7 @@ pub mod asdf_dat {
         // Execute the PumpSwap AMM CPI (borrows ctx immutably)
         execute_pumpswap_amm_cpi_inner(&ctx.accounts, desired_tokens, max_sol_cost, bump)?;
 
-        // Reload and calculate actual tokens received
+        // NOTE: reload() required after CPI to get updated token balance - Anchor doesn't auto-reload for invoke_signed
         ctx.accounts.dat_token_account.reload()?;
         let tokens_after = ctx.accounts.dat_token_account.amount;
         let tokens_received = tokens_after.saturating_sub(tokens_before);
@@ -1457,7 +1469,7 @@ pub mod asdf_dat {
         state.last_sol_sent_to_root = 0;  // Reset for next cycle
 
         let (whole, frac) = format_tokens(tokens_to_burn);
-        msg!("Cycle #{} complete: {}.{:06} tokens burned ({} units)",
+        msg!("Epoch #{} complete: {}.{:06} tokens burned ({} units)",
             token_stats.total_buybacks, whole, frac, tokens_to_burn);
 
         emit!(CycleCompleted {
@@ -1855,6 +1867,7 @@ pub fn calculate_tokens_out_pumpfun(
     let vsol = virtual_sol_reserves as u128;
     let vtoken = virtual_token_reserves as u128;
 
+    #[cfg(feature = "verbose")]
     msg!("PumpFun calc: sol_in={}, virtual_sol={}, virtual_token={}", sol_in, virtual_sol_reserves, virtual_token_reserves);
 
     // PumpFun formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
@@ -1866,6 +1879,7 @@ pub fn calculate_tokens_out_pumpfun(
     let tokens_out = numerator / denominator;
     let result = tokens_out.min(u64::MAX as u128) as u64;
 
+    #[cfg(feature = "verbose")]
     msg!("PumpFun calc result: {} tokens", result);
 
     Ok(result)
@@ -1882,6 +1896,7 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
     let base = base_res as u128;
     let sup = supply as u128;
 
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: sol_in={}, quote_res={}, base_res={}, supply={}", sol_in, quote_res, base_res, supply);
 
     // Safe mcap calculation with overflow protection
@@ -1891,6 +1906,7 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
         quote.saturating_mul(sup).saturating_div(base)
     };
 
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: mcap={}", mcap);
 
     let fee_bps = match mcap {
@@ -1922,18 +1938,23 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
         _ => 30,
     };
 
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: fee_bps={}", fee_bps);
 
     let with_fee = sol.checked_mul(10000 - fee_bps as u128).ok_or(ErrorCode::MathOverflow)?;
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: with_fee={}", with_fee);
 
     let num = with_fee.checked_mul(base).ok_or(ErrorCode::MathOverflow)?;
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: num={}", num);
 
     let quote_10k = quote.checked_mul(10000).ok_or(ErrorCode::MathOverflow)?;
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: quote_10k={}", quote_10k);
 
     let denom = quote_10k.checked_add(with_fee).ok_or(ErrorCode::MathOverflow)?;
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: denom={}", denom);
 
     // Prevent division by zero

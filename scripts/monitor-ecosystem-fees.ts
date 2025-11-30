@@ -129,21 +129,33 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
       return;
     }
 
-    // POST /flush - Force flush pending fees
+    // POST /flush - Force flush pending fees with detailed response
     if (req.method === "POST" && req.url === "/flush") {
       try {
         logger.info("Force flush triggered via API");
-        await monitor.forceFlush();
+        const result = await monitor.forceFlush();
         monitoring.daemonMetrics.flushCount++;
         res.setHeader("Content-Type", "application/json");
-        res.writeHead(200);
-        res.end(JSON.stringify({ success: true, timestamp: Date.now() }));
+        res.writeHead(result.success ? 200 : 207); // 207 = Multi-Status (partial success)
+        res.end(JSON.stringify({
+          ...result,
+          timestamp: Date.now(),
+        }));
       } catch (error: any) {
         logger.error("Flush failed", { error: error.message });
         monitoring.recordError();
         res.setHeader("Content-Type", "application/json");
         res.writeHead(500);
-        res.end(JSON.stringify({ success: false, error: error.message }));
+        res.end(JSON.stringify({
+          success: false,
+          error: error.message,
+          tokensUpdated: 0,
+          tokensFailed: 0,
+          totalFlushed: 0,
+          remainingPending: 0,
+          details: [],
+          timestamp: Date.now(),
+        }));
       }
       return;
     }
