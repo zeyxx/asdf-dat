@@ -8,6 +8,51 @@
   },
   "instructions": [
     {
+      "name": "accept_admin_transfer",
+      "docs": [
+        "Accept admin transfer (must be called by the proposed admin)"
+      ],
+      "discriminator": [
+        89,
+        211,
+        96,
+        212,
+        233,
+        0,
+        251,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_admin",
+          "docs": [
+            "The proposed admin who is accepting the transfer"
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "burn_and_update",
       "discriminator": [
         56,
@@ -104,6 +149,51 @@
       "args": []
     },
     {
+      "name": "cancel_admin_transfer",
+      "docs": [
+        "Cancel a pending admin transfer (called by current admin)"
+      ],
+      "discriminator": [
+        38,
+        131,
+        157,
+        31,
+        240,
+        137,
+        44,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "collect_fees",
       "discriminator": [
         164,
@@ -191,6 +281,10 @@
         },
         {
           "name": "creator_vault",
+          "docs": [
+            "Seeds: [\"creator-vault\", creator_pubkey] where creator=dat_authority.",
+            "HIGH-01 FIX: Add owner validation to ensure vault is owned by PUMP_PROGRAM."
+          ],
           "writable": true
         },
         {
@@ -201,6 +295,9 @@
         },
         {
           "name": "root_treasury",
+          "docs": [
+            "via PDA derivation: [\"root_treasury\", root_token_mint]"
+          ],
           "writable": true,
           "optional": true
         },
@@ -1036,6 +1133,51 @@
       ]
     },
     {
+      "name": "execute_fee_split",
+      "docs": [
+        "Execute a pending fee split change (after cooldown period)"
+      ],
+      "discriminator": [
+        205,
+        104,
+        254,
+        72,
+        93,
+        230,
+        0,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "finalize_allocated_cycle",
       "discriminator": [
         153,
@@ -1349,6 +1491,101 @@
       "args": []
     },
     {
+      "name": "propose_admin_transfer",
+      "docs": [
+        "Propose a new admin (two-step transfer for security)"
+      ],
+      "discriminator": [
+        218,
+        178,
+        115,
+        190,
+        80,
+        107,
+        95,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "propose_fee_split",
+      "docs": [
+        "Propose a fee split change (subject to timelock)"
+      ],
+      "discriminator": [
+        232,
+        194,
+        55,
+        204,
+        149,
+        144,
+        177,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_fee_split_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "record_failure",
       "discriminator": [
         86,
@@ -1414,6 +1651,31 @@
         101
       ],
       "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer - only admin can register fees (CRITICAL security fix)"
+          ],
+          "signer": true
+        },
         {
           "name": "validator_state",
           "writable": true,
@@ -1738,6 +2000,10 @@
     },
     {
       "name": "transfer_admin",
+      "docs": [
+        "DEPRECATED: Use propose_admin_transfer + accept_admin_transfer instead",
+        "Kept for backwards compatibility - now just proposes the transfer"
+      ],
       "discriminator": [
         42,
         242,
@@ -2161,6 +2427,19 @@
   ],
   "events": [
     {
+      "name": "AdminTransferProposed",
+      "discriminator": [
+        203,
+        168,
+        175,
+        51,
+        239,
+        104,
+        20,
+        85
+      ]
+    },
+    {
       "name": "AdminTransferred",
       "discriminator": [
         255,
@@ -2483,51 +2762,76 @@
     },
     {
       "code": 6017,
+      "name": "FeeSplitDeltaTooLarge",
+      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+    },
+    {
+      "code": 6018,
       "name": "InsufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "StaleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "SlotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "ValidatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "FeeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "TooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "InvalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "MintMismatch",
       "msg": "Mint mismatch between accounts"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "PendingFeesOverflow",
       "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [
+    {
+      "name": "AdminTransferProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposed_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "AdminTransferred",
       "type": {
@@ -2788,13 +3092,24 @@
             "type": "u64"
           },
           {
-            "name": "_reserved",
+            "name": "pending_admin",
             "type": {
-              "array": [
-                "u8",
-                22
-              ]
+              "option": "pubkey"
             }
+          },
+          {
+            "name": "pending_fee_split",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pending_fee_split_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "admin_operation_cooldown",
+            "type": "i64"
           }
         ]
       }
@@ -2825,7 +3140,11 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "new_fee_split_bps",
+            "name": "old_bps",
+            "type": "u16"
+          },
+          {
+            "name": "new_bps",
             "type": "u16"
           },
           {

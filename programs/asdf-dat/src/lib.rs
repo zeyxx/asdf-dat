@@ -149,6 +149,12 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 // NOTE: Random cycle timing (1/day per token) is controlled by TypeScript daemon
 //       The program no longer enforces AM/PM limits - only min interval
 // ══════════════════════════════════════════════════════════════════════════════
+// SECURITY: Use feature flag instead of runtime constant
+// Build with: anchor build -- --features testing (for devnet)
+// Build with: anchor build (for mainnet - testing disabled by default)
+#[cfg(feature = "testing")]
+pub const TESTING_MODE: bool = true;
+#[cfg(not(feature = "testing"))]
 pub const TESTING_MODE: bool = false;
 
 // Execute buy constants (module level to reduce stack usage)
@@ -244,7 +250,7 @@ fn calculate_buy_amount_and_slippage(
     buy_amount: u64,
     bonding_curve_data: &[u8],
     max_fees_per_cycle: u64,
-    _slippage_bps: u16, // Reserved for future use
+    slippage_bps: u16, // Now actually used - max 500 bps (5%)
 ) -> Result<(u64, u64)> {
     // buy_amount already has rent subtracted, just cap it
     let capped = buy_amount.min(max_fees_per_cycle);
@@ -284,17 +290,20 @@ fn calculate_buy_amount_and_slippage(
         virtual_token_reserves,
     )?;
 
-    // Apply a safety margin (use 97% of expected to account for slippage/price movement)
-    // PumpFun will calculate the exact SOL cost and fail if it exceeds max_sol_cost
-    let target_tokens = (expected_tokens as u128 * 97 / 100) as u64;
+    // Apply configurable slippage tolerance (default 500 bps = 5%)
+    // slippage_bps is capped at 500 in update_parameters
+    let slippage_multiplier = 10000u128.saturating_sub(slippage_bps as u128);
+    let target_tokens = ((expected_tokens as u128) * slippage_multiplier / 10000) as u64;
 
-    msg!("Expected tokens: {}, Target tokens (97%): {}", expected_tokens, target_tokens);
+    msg!("Expected tokens: {}, Target tokens ({}% slippage): {}",
+         expected_tokens, slippage_bps as f64 / 100.0, target_tokens);
 
     // Return (max_sol_cost, desired_token_amount)
     Ok((final_amount, target_tokens))
 }
 
 /// Helper function to split fees for secondary tokens (extracted to reduce stack usage)
+/// HIGH-03 FIX: Added balance verification after transfer to ensure root_treasury received funds
 #[inline(never)]
 fn split_fees_to_root<'info>(
     dat_authority: &AccountInfo<'info>,
@@ -307,6 +316,9 @@ fn split_fees_to_root<'info>(
     let sol_for_root = total_lamports.saturating_sub((total_lamports * fee_split_bps as u64) / 10000);
 
     if sol_for_root > 0 {
+        // HIGH-03 FIX: Record balance before transfer for verification
+        let treasury_balance_before = root_treasury.lamports();
+
         invoke_signed(
             &anchor_lang::solana_program::system_instruction::transfer(
                 dat_authority.key,
@@ -320,6 +332,13 @@ fn split_fees_to_root<'info>(
             ],
             &[seeds]
         )?;
+
+        // HIGH-03 FIX: Verify transfer succeeded by checking balance increased
+        let treasury_balance_after = root_treasury.lamports();
+        require!(
+            treasury_balance_after >= treasury_balance_before.saturating_add(sol_for_root),
+            ErrorCode::InvalidParameter
+        );
     }
 
     Ok(sol_for_root)
@@ -638,6 +657,11 @@ pub mod asdf_dat {
         state.root_token_mint = None;        // No root token by default
         state.fee_split_bps = 5520;          // 55.2% keep, 44.8% to root
         state.last_sol_sent_to_root = 0;
+        // Security audit additions (v2)
+        state.pending_admin = None;           // No pending admin transfer
+        state.pending_fee_split = None;       // No pending fee split change
+        state.pending_fee_split_timestamp = 0;
+        state.admin_operation_cooldown = 3600; // Default 1 hour cooldown
 
         emit!(DATInitialized {
             admin: state.admin,
@@ -717,6 +741,8 @@ pub mod asdf_dat {
 
     // Update the fee split ratio (admin only)
     // Bounded between 1000 (10%) and 9000 (90%) to prevent extreme configurations
+    // HIGH-02 FIX: Maximum 5% (500 bps) change per call to prevent instant rug
+    // NOTE: For larger changes, use propose_fee_split + execute_fee_split (timelocked)
     pub fn update_fee_split(ctx: Context<AdminControl>, new_fee_split_bps: u16) -> Result<()> {
         require!(
             new_fee_split_bps >= 1000 && new_fee_split_bps <= 9000,
@@ -724,11 +750,18 @@ pub mod asdf_dat {
         );
 
         let state = &mut ctx.accounts.dat_state;
+        let old_fee_split_bps = state.fee_split_bps;
+
+        // HIGH-02 FIX: Limit instant changes to max 5% (500 bps) per call
+        let delta = (new_fee_split_bps as i32 - old_fee_split_bps as i32).unsigned_abs() as u16;
+        require!(delta <= 500, ErrorCode::FeeSplitDeltaTooLarge);
+
         state.fee_split_bps = new_fee_split_bps;
         let clock = Clock::get()?;
 
         emit!(FeeSplitUpdated {
-            new_fee_split_bps,
+            old_bps: old_fee_split_bps,
+            new_bps: new_fee_split_bps,
             timestamp: clock.unix_timestamp,
         });
 
@@ -1274,8 +1307,16 @@ pub mod asdf_dat {
         );
         require!(available >= MIN_FEES_FOR_SPLIT, ErrorCode::InsufficientFees);
 
-        // Execute split
+        // Execute split - SECURITY: Validate root_treasury PDA before transfer
         if let Some(treasury) = &ctx.accounts.root_treasury {
+            // CRITICAL-01 FIX: Validate root_treasury is the correct PDA
+            let root_mint = state.root_token_mint.ok_or(ErrorCode::InvalidRootToken)?;
+            let (expected_treasury, _bump) = Pubkey::find_program_address(
+                &[ROOT_TREASURY_SEED, root_mint.as_ref()],
+                ctx.program_id
+            );
+            require!(expected_treasury == *treasury.key, ErrorCode::InvalidRootTreasury);
+
             let sol_for_root = split_fees_to_root(
                 &ctx.accounts.dat_authority,
                 treasury,
@@ -1503,13 +1544,98 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// DEPRECATED: Use propose_admin_transfer + accept_admin_transfer instead
+    /// Kept for backwards compatibility - now just proposes the transfer
     pub fn transfer_admin(ctx: Context<TransferAdmin>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
-        state.admin = ctx.accounts.new_admin.key();
-        emit!(AdminTransferred {
-            old_admin: ctx.accounts.admin.key(),
-            new_admin: ctx.accounts.new_admin.key(),
+        state.pending_admin = Some(ctx.accounts.new_admin.key());
+        emit!(AdminTransferProposed {
+            current_admin: ctx.accounts.admin.key(),
+            proposed_admin: ctx.accounts.new_admin.key(),
             timestamp: Clock::get()?.unix_timestamp,
+        });
+        Ok(())
+    }
+
+    /// Propose a new admin (two-step transfer for security)
+    pub fn propose_admin_transfer(ctx: Context<ProposeAdminTransfer>) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        state.pending_admin = Some(ctx.accounts.new_admin.key());
+        emit!(AdminTransferProposed {
+            current_admin: ctx.accounts.admin.key(),
+            proposed_admin: ctx.accounts.new_admin.key(),
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        Ok(())
+    }
+
+    /// Accept admin transfer (must be called by the proposed admin)
+    pub fn accept_admin_transfer(ctx: Context<AcceptAdminTransfer>) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        let old_admin = state.admin;
+        let new_admin = ctx.accounts.new_admin.key();
+
+        state.admin = new_admin;
+        state.pending_admin = None;
+
+        emit!(AdminTransferred {
+            old_admin,
+            new_admin,
+            timestamp: Clock::get()?.unix_timestamp,
+        });
+        Ok(())
+    }
+
+    /// Cancel a pending admin transfer (called by current admin)
+    pub fn cancel_admin_transfer(ctx: Context<ProposeAdminTransfer>) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        require!(state.pending_admin.is_some(), ErrorCode::InvalidParameter);
+        state.pending_admin = None;
+        Ok(())
+    }
+
+    /// Propose a fee split change (subject to timelock)
+    pub fn propose_fee_split(ctx: Context<ProposeAdminTransfer>, new_fee_split_bps: u16) -> Result<()> {
+        require!(
+            new_fee_split_bps > 0 && new_fee_split_bps < 10000,
+            ErrorCode::InvalidParameter
+        );
+
+        let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        state.pending_fee_split = Some(new_fee_split_bps);
+        state.pending_fee_split_timestamp = clock.unix_timestamp;
+
+        msg!("Fee split change proposed: {} bps, can execute after {} seconds",
+             new_fee_split_bps, state.admin_operation_cooldown);
+        Ok(())
+    }
+
+    /// Execute a pending fee split change (after cooldown period)
+    pub fn execute_fee_split(ctx: Context<ProposeAdminTransfer>) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        require!(state.pending_fee_split.is_some(), ErrorCode::InvalidParameter);
+
+        let elapsed = clock.unix_timestamp.saturating_sub(state.pending_fee_split_timestamp);
+        require!(
+            elapsed >= state.admin_operation_cooldown,
+            ErrorCode::CycleTooSoon // Reusing existing error for timelock
+        );
+
+        let new_fee_split = state.pending_fee_split.unwrap();
+        let old_fee_split = state.fee_split_bps;
+
+        state.fee_split_bps = new_fee_split;
+        state.pending_fee_split = None;
+        state.pending_fee_split_timestamp = 0;
+
+        emit!(FeeSplitUpdated {
+            old_bps: old_fee_split,
+            new_bps: new_fee_split,
+            timestamp: clock.unix_timestamp,
         });
         Ok(())
     }
@@ -1816,20 +1942,7 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
     Ok(out as u64)
 }
 
-pub fn apply_slippage(amount: u64, bps: u16) -> u64 {
-    msg!("apply_slippage: amount={}, bps={}", amount, bps);
-    let amt = amount as u128;
-    msg!("apply_slippage: amt={}", amt);
-    let multiplier = 10000 - bps as u128;
-    msg!("apply_slippage: multiplier={}", multiplier);
-    let product = amt.saturating_mul(multiplier);
-    msg!("apply_slippage: product={}", product);
-    let result = product / 10000;
-    msg!("apply_slippage: result={}", result);
-    let final_val = result.min(u64::MAX as u128) as u64;
-    msg!("apply_slippage: final_val={}", final_val);
-    final_val
-}
+// REMOVED: apply_slippage function - slippage now integrated in calculate_buy_amount_and_slippage
 
 /// Format token amount with decimals for readable logs
 /// Most tokens have 6 decimals, so we divide by 1_000_000
@@ -1885,6 +1998,15 @@ pub struct SetRootToken<'info> {
     pub admin: Signer<'info>,
 }
 
+/// CollectFees - Collect creator fees from PumpFun bonding curve vault
+///
+/// SECURITY NOTES (HIGH-01, HIGH-02):
+/// - creator_vault: Validated by PumpFun program during CPI - the CPI will fail if
+///   the vault is not a valid creator vault PDA for the dat_authority. Seeds are
+///   ["creator-vault", dat_authority] verified by PUMP_PROGRAM.
+/// - root_treasury: Validated at runtime in collect_fees() via PDA derivation check.
+///   The function verifies the provided account matches the expected PDA derived from
+///   ["root_treasury", root_token_mint].
 #[derive(Accounts)]
 pub struct CollectFees<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump)]
@@ -1896,17 +2018,20 @@ pub struct CollectFees<'info> {
     )]
     pub token_stats: Account<'info, TokenStats>,
     pub token_mint: InterfaceAccount<'info, Mint>,
-    /// CHECK: PDA - creator (receives SOL from creator vault)
+    /// CHECK: DAT authority PDA - receives SOL from creator vault
     #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
     pub dat_authority: AccountInfo<'info>,
-    /// CHECK: Creator vault (PDA that holds SOL fees)
-    #[account(mut)]
+    /// CHECK: Creator vault - validated by owner constraint + PumpFun CPI.
+    /// Seeds: ["creator-vault", creator_pubkey] where creator=dat_authority.
+    /// HIGH-01 FIX: Add owner validation to ensure vault is owned by PUMP_PROGRAM.
+    #[account(mut, constraint = *creator_vault.owner == PUMP_PROGRAM @ ErrorCode::InvalidParameter)]
     pub creator_vault: AccountInfo<'info>,
-    /// CHECK: Event auth
+    /// CHECK: Event authority for PumpFun program
     pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
+    /// CHECK: PumpFun program (hardcoded address verified in CPI)
     pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Root treasury PDA (optional - only for root token)
+    /// CHECK: Root treasury PDA (optional) - validated at runtime in collect_fees()
+    /// via PDA derivation: ["root_treasury", root_token_mint]
     #[account(mut)]
     pub root_treasury: Option<AccountInfo<'info>>,
     pub system_program: Program<'info, System>,
@@ -2264,6 +2389,13 @@ pub struct InitializeValidator<'info> {
 
 #[derive(Accounts)]
 pub struct RegisterValidatedFees<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// Admin signer - only admin can register fees (CRITICAL security fix)
+    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
+
     #[account(
         mut,
         seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
@@ -2278,9 +2410,6 @@ pub struct RegisterValidatedFees<'info> {
         constraint = token_stats.mint == validator_state.mint @ ErrorCode::MintMismatch
     )]
     pub token_stats: Account<'info, TokenStats>,
-
-    // NOTE: NO SIGNER REQUIRED - This is PERMISSIONLESS!
-    // Anyone can call this instruction to register validated fees
 }
 
 /// Accounts for sync_validator_slot instruction (permissionless)
@@ -2327,6 +2456,32 @@ pub struct MigrateTokenStats<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// ProposeAdminTransfer - Current admin proposes a new admin (two-step transfer)
+#[derive(Accounts)]
+pub struct ProposeAdminTransfer<'info> {
+    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub dat_state: Account<'info, DATState>,
+    pub admin: Signer<'info>,
+    /// CHECK: Proposed new admin (will need to accept)
+    pub new_admin: AccountInfo<'info>,
+}
+
+/// AcceptAdminTransfer - Proposed admin accepts the transfer (two-step transfer)
+#[derive(Accounts)]
+pub struct AcceptAdminTransfer<'info> {
+    #[account(
+        mut,
+        seeds = [DAT_STATE_SEED],
+        bump,
+        constraint = dat_state.pending_admin == Some(new_admin.key()) @ ErrorCode::UnauthorizedAccess
+    )]
+    pub dat_state: Account<'info, DATState>,
+    /// The proposed admin who is accepting the transfer
+    pub new_admin: Signer<'info>,
+}
+
+/// DEPRECATED: Use ProposeAdminTransfer + AcceptAdminTransfer instead
+/// Kept for backwards compatibility but now just calls propose_admin_transfer
 #[derive(Accounts)]
 pub struct TransferAdmin<'info> {
     #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
@@ -2470,11 +2625,26 @@ pub struct DATState {
     pub root_token_mint: Option<Pubkey>,  // Token principal qui reçoit 44.8% des autres
     pub fee_split_bps: u16,                // Basis points: 5520 = 55.2% keep, 44.8% to root
     pub last_sol_sent_to_root: u64,        // Track SOL sent to root in last cycle (for stats update)
-    pub _reserved: [u8; 22],               // Reduced from 30 to accommodate last_sol_sent_to_root
+    // Security audit additions (v2)
+    pub pending_admin: Option<Pubkey>,     // Two-step admin transfer: proposed new admin
+    pub pending_fee_split: Option<u16>,    // Timelock: proposed fee split change
+    pub pending_fee_split_timestamp: i64,  // Timelock: when fee split was proposed
+    pub admin_operation_cooldown: i64,     // Timelock: cooldown period in seconds (default 3600 = 1hr)
 }
 
 impl DATState {
-    pub const LEN: usize = 32 * 5 + 8 * 14 + 4 * 2 + 1 * 5 + 2 + 33 + 2 + 22; // Added u64(8), reduced reserved to 22
+    // Size calculation:
+    // - 5 Pubkeys: 32 * 5 = 160 bytes
+    // - 14 u64/i64: 8 * 14 = 112 bytes (includes last_sol_sent_to_root)
+    // - 2 u32: 4 * 2 = 8 bytes
+    // - 5 u8/bool: 1 * 5 = 5 bytes
+    // - 2 u16: 2 * 2 = 4 bytes (slippage_bps, fee_split_bps)
+    // - 1 Option<Pubkey>: 33 bytes (root_token_mint)
+    // - NEW: 1 Option<Pubkey>: 33 bytes (pending_admin)
+    // - NEW: 1 Option<u16>: 3 bytes (pending_fee_split)
+    // - NEW: 2 i64: 8 * 2 = 16 bytes (pending_fee_split_timestamp, admin_operation_cooldown)
+    // Total: 160 + 112 + 8 + 5 + 4 + 33 + 33 + 3 + 16 = 374 bytes
+    pub const LEN: usize = 32 * 5 + 8 * 16 + 4 * 2 + 1 * 5 + 2 * 2 + 33 + 33 + 3;
 }
 
 // Per-token statistics tracking
@@ -2568,6 +2738,13 @@ pub struct EmergencyAction {
 }
 
 #[event]
+pub struct AdminTransferProposed {
+    pub current_admin: Pubkey,
+    pub proposed_admin: Pubkey,
+    pub timestamp: i64,
+}
+
+#[event]
 pub struct AdminTransferred {
     pub old_admin: Pubkey,
     pub new_admin: Pubkey,
@@ -2593,7 +2770,8 @@ pub struct RootTokenSet {
 
 #[event]
 pub struct FeeSplitUpdated {
-    pub new_fee_split_bps: u16,
+    pub old_bps: u16,
+    pub new_bps: u16,
     pub timestamp: i64,
 }
 
@@ -2698,6 +2876,8 @@ pub enum ErrorCode {
     InvalidRootTreasury,
     #[msg("Invalid fee split basis points")]
     InvalidFeeSplit,
+    #[msg("Fee split change exceeds maximum delta (500 bps per call)")]
+    FeeSplitDeltaTooLarge,
     #[msg("Insufficient pool liquidity")]
     InsufficientPoolLiquidity,
     #[msg("Stale validation - slot already processed")]

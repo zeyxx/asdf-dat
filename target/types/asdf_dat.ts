@@ -14,6 +14,51 @@ export type AsdfDat = {
   },
   "instructions": [
     {
+      "name": "acceptAdminTransfer",
+      "docs": [
+        "Accept admin transfer (must be called by the proposed admin)"
+      ],
+      "discriminator": [
+        89,
+        211,
+        96,
+        212,
+        233,
+        0,
+        251,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "newAdmin",
+          "docs": [
+            "The proposed admin who is accepting the transfer"
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "burnAndUpdate",
       "discriminator": [
         56,
@@ -110,6 +155,51 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "cancelAdminTransfer",
+      "docs": [
+        "Cancel a pending admin transfer (called by current admin)"
+      ],
+      "discriminator": [
+        38,
+        131,
+        157,
+        31,
+        240,
+        137,
+        44,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "collectFees",
       "discriminator": [
         164,
@@ -197,6 +287,10 @@ export type AsdfDat = {
         },
         {
           "name": "creatorVault",
+          "docs": [
+            "Seeds: [\"creator-vault\", creator_pubkey] where creator=dat_authority.",
+            "HIGH-01 FIX: Add owner validation to ensure vault is owned by PUMP_PROGRAM."
+          ],
           "writable": true
         },
         {
@@ -207,6 +301,9 @@ export type AsdfDat = {
         },
         {
           "name": "rootTreasury",
+          "docs": [
+            "via PDA derivation: [\"root_treasury\", root_token_mint]"
+          ],
           "writable": true,
           "optional": true
         },
@@ -1042,6 +1139,51 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "executeFeeSplit",
+      "docs": [
+        "Execute a pending fee split change (after cooldown period)"
+      ],
+      "discriminator": [
+        205,
+        104,
+        254,
+        72,
+        93,
+        230,
+        0,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "finalizeAllocatedCycle",
       "discriminator": [
         153,
@@ -1355,6 +1497,101 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "proposeAdminTransfer",
+      "docs": [
+        "Propose a new admin (two-step transfer for security)"
+      ],
+      "discriminator": [
+        218,
+        178,
+        115,
+        190,
+        80,
+        107,
+        95,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "proposeFeeSplit",
+      "docs": [
+        "Propose a fee split change (subject to timelock)"
+      ],
+      "discriminator": [
+        232,
+        194,
+        55,
+        204,
+        149,
+        144,
+        177,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": [
+        {
+          "name": "newFeeSplitBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "recordFailure",
       "discriminator": [
         86,
@@ -1420,6 +1657,31 @@ export type AsdfDat = {
         101
       ],
       "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer - only admin can register fees (CRITICAL security fix)"
+          ],
+          "signer": true
+        },
         {
           "name": "validatorState",
           "writable": true,
@@ -1744,6 +2006,10 @@ export type AsdfDat = {
     },
     {
       "name": "transferAdmin",
+      "docs": [
+        "DEPRECATED: Use propose_admin_transfer + accept_admin_transfer instead",
+        "Kept for backwards compatibility - now just proposes the transfer"
+      ],
       "discriminator": [
         42,
         242,
@@ -2167,6 +2433,19 @@ export type AsdfDat = {
   ],
   "events": [
     {
+      "name": "adminTransferProposed",
+      "discriminator": [
+        203,
+        168,
+        175,
+        51,
+        239,
+        104,
+        20,
+        85
+      ]
+    },
+    {
       "name": "adminTransferred",
       "discriminator": [
         255,
@@ -2489,51 +2768,76 @@ export type AsdfDat = {
     },
     {
       "code": 6017,
+      "name": "feeSplitDeltaTooLarge",
+      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+    },
+    {
+      "code": 6018,
       "name": "insufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "staleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "slotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "validatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "feeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "tooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "invalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "mintMismatch",
       "msg": "Mint mismatch between accounts"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "pendingFeesOverflow",
       "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [
+    {
+      "name": "adminTransferProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "currentAdmin",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposedAdmin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "adminTransferred",
       "type": {
@@ -2794,13 +3098,24 @@ export type AsdfDat = {
             "type": "u64"
           },
           {
-            "name": "reserved",
+            "name": "pendingAdmin",
             "type": {
-              "array": [
-                "u8",
-                22
-              ]
+              "option": "pubkey"
             }
+          },
+          {
+            "name": "pendingFeeSplit",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pendingFeeSplitTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "adminOperationCooldown",
+            "type": "i64"
           }
         ]
       }
@@ -2831,7 +3146,11 @@ export type AsdfDat = {
         "kind": "struct",
         "fields": [
           {
-            "name": "newFeeSplitBps",
+            "name": "oldBps",
+            "type": "u16"
+          },
+          {
+            "name": "newBps",
             "type": "u16"
           },
           {
