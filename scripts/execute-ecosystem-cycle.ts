@@ -1746,6 +1746,19 @@ async function executeRootCycle(
       instructions.push(buyIx);
     }
 
+    // Finalize instruction for root token (reset pending_fees)
+    // This was missing - root token pending_fees accumulated indefinitely
+    log('  📦', 'Building finalize instruction...', colors.cyan);
+    const finalizeIx = await program.methods
+      .finalizeAllocatedCycle(true) // Token participated - reset pending_fees
+      .accounts({
+        datState,
+        tokenStats,
+        admin: adminKeypair.publicKey,
+      })
+      .instruction();
+    instructions.push(finalizeIx);
+
     // Burn instruction (same for both BC and AMM)
     log('  📦', 'Building burn instruction...', colors.cyan);
     const burnIx = await program.methods
@@ -1763,7 +1776,7 @@ async function executeRootCycle(
     instructions.push(burnIx);
 
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + burn)...`, colors.cyan);
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
