@@ -1,0 +1,15 @@
+{
+  "mint": "CerdPJtgtx5ns6UZRhTg7DJrBzHMDD3e9A7vV55Ma86D",
+  "bondingCurve": "3cKJJUUb6sDuXcPAWdC7wMQvYrGuDjpvnVrtMziNabcd",
+  "creator": "84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68",
+  "name": "Fresh Secondary 2",
+  "symbol": "FS2",
+  "uri": "https://pump.fun/fs2",
+  "isRoot": false,
+  "mayhemMode": false,
+  "tokenProgram": "SPL",
+  "poolType": "bonding_curve",
+  "network": "devnet",
+  "timestamp": "2025-11-30T13:55:13.968Z",
+  "transaction": "2hYrA17PF1oLRta8AmXc8Eb4KRCZ72jvvKcR3PZpWwbjd7d1vAMqYofvFXqqLh1EyNtm4mqbpckfcKBi2wzxmADc"
+}
