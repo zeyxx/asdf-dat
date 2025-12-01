@@ -2821,6 +2821,9 @@ export type AsdfDat = {
   "types": [
     {
       "name": "adminTransferProposed",
+      "docs": [
+        "Emitted when admin transfer is proposed (two-step transfer)"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2841,6 +2844,9 @@ export type AsdfDat = {
     },
     {
       "name": "adminTransferred",
+      "docs": [
+        "Emitted when admin transfer is completed"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2861,6 +2867,9 @@ export type AsdfDat = {
     },
     {
       "name": "ammFeesCollected",
+      "docs": [
+        "Emitted when AMM fees are collected (post-migration tokens)"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2881,6 +2890,9 @@ export type AsdfDat = {
     },
     {
       "name": "buyExecuted",
+      "docs": [
+        "Emitted when a buy is executed"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2901,6 +2913,9 @@ export type AsdfDat = {
     },
     {
       "name": "cycleCompleted",
+      "docs": [
+        "Emitted when a buyback cycle completes successfully"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2933,6 +2948,9 @@ export type AsdfDat = {
     },
     {
       "name": "cycleFailed",
+      "docs": [
+        "Emitted when a cycle fails"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2957,6 +2975,9 @@ export type AsdfDat = {
     },
     {
       "name": "datInitialized",
+      "docs": [
+        "Emitted when DAT state is initialized"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -2977,145 +2998,250 @@ export type AsdfDat = {
     },
     {
       "name": "datState",
+      "docs": [
+        "Global DAT configuration and statistics",
+        "",
+        "Stores system-wide settings, admin controls, and cumulative metrics.",
+        "Only one DATState account exists per program instance."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "admin",
+            "docs": [
+              "Current admin authority"
+            ],
             "type": "pubkey"
           },
           {
             "name": "asdfMint",
+            "docs": [
+              "ASDF token mint address"
+            ],
             "type": "pubkey"
           },
           {
             "name": "wsolMint",
+            "docs": [
+              "Wrapped SOL mint address"
+            ],
             "type": "pubkey"
           },
           {
             "name": "poolAddress",
+            "docs": [
+              "PumpSwap pool address for ASDF"
+            ],
             "type": "pubkey"
           },
           {
             "name": "pumpSwapProgram",
+            "docs": [
+              "PumpSwap program ID"
+            ],
             "type": "pubkey"
           },
           {
             "name": "totalBurned",
+            "docs": [
+              "Total tokens burned across all cycles"
+            ],
             "type": "u64"
           },
           {
             "name": "totalSolCollected",
+            "docs": [
+              "Total SOL collected across all cycles"
+            ],
             "type": "u64"
           },
           {
             "name": "totalBuybacks",
+            "docs": [
+              "Total number of successful buyback cycles"
+            ],
             "type": "u32"
           },
           {
             "name": "failedCycles",
+            "docs": [
+              "Total number of failed cycles"
+            ],
             "type": "u32"
           },
           {
             "name": "consecutiveFailures",
+            "docs": [
+              "Consecutive failure count (resets on success)"
+            ],
             "type": "u8"
           },
           {
             "name": "isActive",
+            "docs": [
+              "Whether DAT is active"
+            ],
             "type": "bool"
           },
           {
             "name": "emergencyPause",
+            "docs": [
+              "Emergency pause flag"
+            ],
             "type": "bool"
           },
           {
             "name": "lastCycleTimestamp",
+            "docs": [
+              "Timestamp of last cycle execution"
+            ],
             "type": "i64"
           },
           {
             "name": "initializedAt",
+            "docs": [
+              "Timestamp when DAT was initialized"
+            ],
             "type": "i64"
           },
           {
             "name": "lastAmExecution",
+            "docs": [
+              "Last AM execution timestamp (legacy, maintained for compatibility)"
+            ],
             "type": "i64"
           },
           {
             "name": "lastPmExecution",
+            "docs": [
+              "Last PM execution timestamp (legacy, maintained for compatibility)"
+            ],
             "type": "i64"
           },
           {
             "name": "lastCycleSol",
+            "docs": [
+              "SOL collected in last cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "lastCycleBurned",
+            "docs": [
+              "Tokens burned in last cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "minFeesThreshold",
+            "docs": [
+              "Minimum fees required to trigger cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "maxFeesPerCycle",
+            "docs": [
+              "Maximum fees allowed per cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "slippageBps",
+            "docs": [
+              "Slippage tolerance in basis points"
+            ],
             "type": "u16"
           },
           {
             "name": "minCycleInterval",
+            "docs": [
+              "Minimum interval between cycles (seconds)"
+            ],
             "type": "i64"
           },
           {
             "name": "datAuthorityBump",
+            "docs": [
+              "PDA bump for DAT authority"
+            ],
             "type": "u8"
           },
           {
             "name": "currentFeeRecipientIndex",
+            "docs": [
+              "Current fee recipient index (for rotation)"
+            ],
             "type": "u8"
           },
           {
             "name": "lastKnownPrice",
+            "docs": [
+              "Last known token price"
+            ],
             "type": "u64"
           },
           {
             "name": "pendingBurnAmount",
+            "docs": [
+              "Pending burn amount (tokens waiting to be burned)"
+            ],
             "type": "u64"
           },
           {
             "name": "rootTokenMint",
+            "docs": [
+              "Root token mint that receives 44.8% from secondaries"
+            ],
             "type": {
               "option": "pubkey"
             }
           },
           {
             "name": "feeSplitBps",
+            "docs": [
+              "Fee split in basis points: 5520 = 55.2% keep, 44.8% to root"
+            ],
             "type": "u16"
           },
           {
             "name": "lastSolSentToRoot",
+            "docs": [
+              "SOL sent to root in last cycle (for stats tracking)"
+            ],
             "type": "u64"
           },
           {
             "name": "pendingAdmin",
+            "docs": [
+              "Two-step admin transfer: proposed new admin"
+            ],
             "type": {
               "option": "pubkey"
             }
           },
           {
             "name": "pendingFeeSplit",
+            "docs": [
+              "Timelock: proposed fee split change"
+            ],
             "type": {
               "option": "u16"
             }
           },
           {
             "name": "pendingFeeSplitTimestamp",
+            "docs": [
+              "Timelock: when fee split was proposed"
+            ],
             "type": "i64"
           },
           {
             "name": "adminOperationCooldown",
+            "docs": [
+              "Timelock: cooldown period in seconds (default 3600 = 1hr)"
+            ],
             "type": "i64"
           }
         ]
@@ -3123,6 +3249,9 @@ export type AsdfDat = {
     },
     {
       "name": "emergencyAction",
+      "docs": [
+        "Emitted for emergency actions (pause/resume)"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3143,6 +3272,9 @@ export type AsdfDat = {
     },
     {
       "name": "feeSplitUpdated",
+      "docs": [
+        "Emitted when fee split ratio is updated"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3163,6 +3295,9 @@ export type AsdfDat = {
     },
     {
       "name": "feesRedirectedToRoot",
+      "docs": [
+        "Emitted when fees are redirected from secondary to root token"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3187,6 +3322,9 @@ export type AsdfDat = {
     },
     {
       "name": "pendingFeesUpdated",
+      "docs": [
+        "Emitted when pending fees are updated by daemon"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3211,6 +3349,9 @@ export type AsdfDat = {
     },
     {
       "name": "rootTokenSet",
+      "docs": [
+        "Emitted when root token is set/changed"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3231,6 +3372,9 @@ export type AsdfDat = {
     },
     {
       "name": "rootTreasuryCollected",
+      "docs": [
+        "Emitted when root treasury collects accumulated fees"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3251,6 +3395,9 @@ export type AsdfDat = {
     },
     {
       "name": "statusChanged",
+      "docs": [
+        "Emitted when DAT status changes (active/paused)"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3271,6 +3418,9 @@ export type AsdfDat = {
     },
     {
       "name": "tokenCreated",
+      "docs": [
+        "Emitted when a new token is created via PumpFun"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3303,67 +3453,118 @@ export type AsdfDat = {
     },
     {
       "name": "tokenStats",
+      "docs": [
+        "Per-token statistics tracking",
+        "",
+        "Each token in the ecosystem has its own TokenStats account",
+        "to track individual metrics like burns, fees, and cycles."
+      ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "mint",
+            "docs": [
+              "The token mint this stats account tracks"
+            ],
             "type": "pubkey"
           },
           {
             "name": "totalBurned",
+            "docs": [
+              "Total tokens burned for this specific token"
+            ],
             "type": "u64"
           },
           {
             "name": "totalSolCollected",
+            "docs": [
+              "Total SOL collected/generated by this token"
+            ],
             "type": "u64"
           },
           {
             "name": "totalSolUsed",
+            "docs": [
+              "Total SOL actually used for buybacks"
+            ],
             "type": "u64"
           },
           {
             "name": "totalSolSentToRoot",
+            "docs": [
+              "SOL sent to root token (if secondary)"
+            ],
             "type": "u64"
           },
           {
             "name": "totalSolReceivedFromOthers",
+            "docs": [
+              "SOL received from other tokens (if root)"
+            ],
             "type": "u64"
           },
           {
             "name": "totalBuybacks",
+            "docs": [
+              "Number of buyback cycles for this token"
+            ],
             "type": "u64"
           },
           {
             "name": "lastCycleTimestamp",
+            "docs": [
+              "Last cycle execution timestamp"
+            ],
             "type": "i64"
           },
           {
             "name": "lastCycleSol",
+            "docs": [
+              "SOL collected in last cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "lastCycleBurned",
+            "docs": [
+              "Tokens burned in last cycle"
+            ],
             "type": "u64"
           },
           {
             "name": "isRootToken",
+            "docs": [
+              "Whether this is the root token (receives 44.8% from all secondaries)"
+            ],
             "type": "bool"
           },
           {
             "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
             "type": "u8"
           },
           {
             "name": "pendingFeesLamports",
+            "docs": [
+              "Accumulated fees not yet collected (daemon tracks attribution)"
+            ],
             "type": "u64"
           },
           {
             "name": "lastFeeUpdateTimestamp",
+            "docs": [
+              "Timestamp of last fee update"
+            ],
             "type": "i64"
           },
           {
             "name": "cyclesParticipated",
+            "docs": [
+              "Number of ecosystem cycles this token participated in"
+            ],
             "type": "u64"
           }
         ]
@@ -3371,6 +3572,9 @@ export type AsdfDat = {
     },
     {
       "name": "tokenStatsInitialized",
+      "docs": [
+        "Emitted when per-token statistics are initialized"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3387,6 +3591,9 @@ export type AsdfDat = {
     },
     {
       "name": "validatedFeesRegistered",
+      "docs": [
+        "Emitted when validated fees are registered"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3419,6 +3626,9 @@ export type AsdfDat = {
     },
     {
       "name": "validatorInitialized",
+      "docs": [
+        "Emitted when a validator is initialized for trustless fee tracking"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3443,6 +3653,9 @@ export type AsdfDat = {
     },
     {
       "name": "validatorSlotReset",
+      "docs": [
+        "Emitted when validator slot is reset"
+      ],
       "type": {
         "kind": "struct",
         "fields": [
@@ -3469,41 +3682,68 @@ export type AsdfDat = {
       "name": "validatorState",
       "docs": [
         "Validator state for trustless per-token fee attribution",
-        "Tracks fees validated from PumpFun transaction logs"
+        "",
+        "Tracks fees validated from PumpFun transaction logs.",
+        "Used for cryptographic proof that fees were actually generated",
+        "by specific token trades."
       ],
       "type": {
         "kind": "struct",
         "fields": [
           {
             "name": "mint",
+            "docs": [
+              "Token mint being tracked"
+            ],
             "type": "pubkey"
           },
           {
             "name": "bondingCurve",
+            "docs": [
+              "Associated PumpFun bonding curve"
+            ],
             "type": "pubkey"
           },
           {
             "name": "lastValidatedSlot",
+            "docs": [
+              "Last slot that was validated"
+            ],
             "type": "u64"
           },
           {
             "name": "totalValidatedLamports",
+            "docs": [
+              "Cumulative fees validated historically"
+            ],
             "type": "u64"
           },
           {
             "name": "totalValidatedCount",
+            "docs": [
+              "Number of validation batches"
+            ],
             "type": "u64"
           },
           {
             "name": "feeRateBps",
+            "docs": [
+              "Expected fee rate in basis points (50 = 0.5%)"
+            ],
             "type": "u16"
           },
           {
             "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
             "type": "u8"
           },
           {
             "name": "reserved",
+            "docs": [
+              "Reserved for future use"
+            ],
             "type": {
               "array": [
                 "u8",
