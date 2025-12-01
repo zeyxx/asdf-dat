@@ -1,332 +1,276 @@
 # ASDF-DAT Architecture
 
-Technical architecture documentation for the Decentralized Autonomous Treasury protocol.
+Technical system design for the Decentralized Autonomous Treasury.
 
 ---
 
-## Overview
+## System Overview
 
-ASDF-DAT is a Solana-based protocol that automates buyback and burn mechanisms for pump.fun tokens. The architecture evolves through two phases:
-
-- **Phase 1**: Single ecosystem validation with $asdfasdfa
-- **Phase 2**: Universal infrastructure for all pump.fun creators
-
----
-
-## Phase 1: Single Ecosystem Architecture
-
-### System Diagram
+ASDF-DAT is a two-layer system combining on-chain smart contracts with off-chain automation:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         ASDF-DAT ECOSYSTEM                               │
-│                                                                          │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │                     ROOT TOKEN ($asdfasdfa)                      │   │
-│   │                         Receives 44.8%                           │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                  ▲                                       │
-│                                  │                                       │
-│                    ┌─────────────┴─────────────┐                        │
-│                    │      Root Treasury        │                        │
-│                    │   (accumulates 44.8%)     │                        │
-│                    └─────────────┬─────────────┘                        │
-│                                  │                                       │
-│         ┌────────────────────────┼────────────────────────┐             │
-│         │                        │                        │             │
-│         ▼                        ▼                        ▼             │
-│   ┌───────────┐            ┌───────────┐            ┌───────────┐       │
-│   │ Secondary │            │ Secondary │            │ Secondary │       │
-│   │  Token 1  │            │  Token 2  │            │  Token N  │       │
-│   │  (55.2%)  │            │  (55.2%)  │            │  (55.2%)  │       │
-│   └─────┬─────┘            └─────┬─────┘            └─────┬─────┘       │
-│         │                        │                        │             │
-│         └────────────────────────┼────────────────────────┘             │
-│                                  │                                       │
-│                                  ▼                                       │
-│                    ┌─────────────────────────┐                          │
-│                    │    Shared Creator Vault  │                          │
-│                    │   (fees accumulate here) │                          │
-│                    └─────────────────────────┘                          │
-│                                  ▲                                       │
-│                                  │                                       │
-│                         Trading Activity                                 │
-│                    (pump.fun bonding curve / AMM)                        │
-│                                                                          │
+│                              ASDF-DAT                                   │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                         OFF-CHAIN LAYER                           │  │
+│  │                                                                   │  │
+│  │   ┌─────────────────┐              ┌─────────────────────────┐   │  │
+│  │   │   FEE DAEMON    │              │   CYCLE ORCHESTRATOR    │   │  │
+│  │   │                 │              │                         │   │  │
+│  │   │  Runs 24/7      │   triggers   │  Executes on-demand     │   │  │
+│  │   │  Polls trades   │ ──────────►  │  or scheduled           │   │  │
+│  │   │  Tracks fees    │              │  Batch transactions     │   │  │
+│  │   │  Updates chain  │              │  Buy & burn cycles      │   │  │
+│  │   └─────────────────┘              └─────────────────────────┘   │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                    │                                    │
+│                                    ▼                                    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                          ON-CHAIN LAYER                           │  │
+│  │                                                                   │  │
+│  │   ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │  │
+│  │   │  DAT STATE   │  │ TOKEN STATS  │  │   ROOT TREASURY      │   │  │
+│  │   │              │  │   (per token)│  │                      │   │  │
+│  │   │  • admin     │  │  • mint      │  │  PDA that collects   │   │  │
+│  │   │  • fee_split │  │  • burned    │  │  44.8% from all      │   │  │
+│  │   │  • is_active │  │  • pending   │  │  secondary tokens    │   │  │
+│  │   │  • root_mint │  │  • is_root   │  │                      │   │  │
+│  │   └──────────────┘  └──────────────┘  └──────────────────────┘   │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                    │                                    │
+│                                    ▼                                    │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                       PUMP.FUN LAYER                              │  │
+│  │                                                                   │  │
+│  │   ┌─────────────────────────┐    ┌─────────────────────────┐     │  │
+│  │   │    BONDING CURVE        │    │     PUMPSWAP AMM        │     │  │
+│  │   │    (pre-migration)      │    │    (post-migration)     │     │  │
+│  │   │                         │    │                         │     │  │
+│  │   │  • Native SOL vault     │    │  • WSOL token vault     │     │  │
+│  │   │  • Creator fee: 0.3-1%  │    │  • Creator fee: 0.05%+  │     │  │
+│  │   │  • Constant product AMM │    │  • Full liquidity pool  │     │  │
+│  │   └─────────────────────────┘    └─────────────────────────┘     │  │
+│  │                                                                   │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Components
-
-#### 1. On-Chain Program (Anchor/Rust)
-
-**Program ID**: `ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui`
-
-Core instructions:
-- `initialize`: Set up DAT state and authority PDAs
-- `initialize_token_stats`: Create per-token tracking
-- `set_root_token`: Configure root token for fee distribution
-- `collect_fees`: Drain creator vault to DAT authority
-- `execute_buy_secondary`: Buy tokens with fee split
-- `split_fees_to_root`: Transfer 44.8% to root treasury
-- `burn_and_update`: Burn tokens and update statistics
-- `finalize_allocated_cycle`: Complete cycle and reset pending fees
-
-#### 2. Fee Monitor Daemon
-
-**File**: `scripts/monitor-ecosystem-fees.ts`
-
-Purpose: Solves the "shared vault problem" by attributing fees to specific tokens.
-
-```
-Shared Creator Vault ◄─── All secondary fees go here
-        │
-        │  Daemon Process:
-        │  ├── Poll Token A's bonding curve transactions
-        │  │   └── Extract vault balance delta → attribute to Token A
-        │  ├── Poll Token B's bonding curve transactions
-        │  │   └── Extract vault balance delta → attribute to Token B
-        │  └── Call update_pending_fees on-chain
-        │
-        ▼
-TokenStats.pending_fees (per token, on-chain)
-```
-
-State persistence via `.daemon-state.json`:
-- Stores last processed signature per token
-- Enables crash recovery without fee loss
-
-#### 3. Ecosystem Orchestrator
-
-**File**: `scripts/execute-ecosystem-cycle.ts`
-
-Executes buyback/burn cycles using the N+1 pattern:
-
-```
-For each token with sufficient pending_fees:
-┌─────────────────────────────────────────────────────────────┐
-│ Single Transaction:                                          │
-│   [Compute Budget] → [Collect] → [Buy] → [Finalize] → [Burn] │
-└─────────────────────────────────────────────────────────────┘
-
-Token 1: Collect drains vault → Buy with proportional share
-Token 2: Collect (no-op) → Buy from datAuthority balance
-Token N: Collect (no-op) → Buy from remaining balance
-Root:    Uses root_treasury balance for buyback
-```
-
-### PDA Structure
-
-| Account | Seeds | Purpose |
-|---------|-------|---------|
-| DAT State | `["dat_v3"]` | Global configuration |
-| DAT Authority | `["auth_v3"]` | Holds SOL between operations |
-| Token Stats | `["token_stats_v1", mint]` | Per-token statistics |
-| Root Treasury | `["root_treasury", root_mint]` | Accumulated 44.8% for root |
-| Validator State | `["validator_v1", mint, bonding_curve]` | Fee validation |
-
-### Fee Flow (Phase 1)
-
-```
-Trading Activity (pump.fun)
-        │
-        ▼
-Creator Fee (0.05% - 0.95% of volume)
-        │
-        ▼
-Shared Creator Vault
-        │
-        ├── Daemon detects via balance polling
-        │   └── Updates TokenStats.pending_fees
-        │
-        ▼
-Cycle Execution (Orchestrator)
-        │
-        ├── collect_fees (drains vault → datAuthority)
-        │
-        ├── For each secondary (proportional to pending_fees):
-        │   │
-        │   ├── execute_buy_secondary (with allocated_lamports)
-        │   │   │
-        │   │   ├── 55.2% → Buy secondary tokens
-        │   │   └── 44.8% → root_treasury
-        │   │
-        │   ├── finalize_allocated_cycle (reset pending_fees)
-        │   └── burn_and_update (burn purchased tokens)
-        │
-        └── Root token cycle
-            │
-            ├── Collect root_treasury balance
-            ├── Buy root tokens
-            └── Burn root tokens
 ```
 
 ---
 
-## Phase 2: Universal Infrastructure Architecture
+## On-Chain Components
 
-### System Diagram
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      ASDF-DAT UNIVERSAL PROTOCOL                         │
-│                                                                          │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │              $asdfasdfa (PROTOCOL ROOT)                          │   │
-│   │         Receives 5.52% from ALL DATs ecosystem-wide              │   │
-│   │                  Immediate buyback/burn                          │   │
-│   └─────────────────────────────────────────────────────────────────┘   │
-│                                  ▲                                       │
-│                    5.52% protocol fee (FIXED)                           │
-│     ┌────────────────────────────┼────────────────────────────┐         │
-│     │                            │                            │         │
-│     │                            │                            │         │
-│ ┌───┴─────────────────┐   ┌──────┴──────────────┐   ┌─────────┴───────┐ │
-│ │       DAT A         │   │       DAT B         │   │       DAT N     │ │
-│ │  (own ecosystem)    │   │  (own ecosystem)    │   │  (own ecosystem)│ │
-│ │                     │   │                     │   │                 │ │
-│ │  ┌───────────────┐  │   │  ┌───────────────┐  │   │  ┌───────────┐  │ │
-│ │  │ DAT A Root    │  │   │  │ DAT B Root    │  │   │  │ DAT N Root│  │ │
-│ │  │ (40% config)  │  │   │  │ (50% config)  │  │   │  │ (30%)     │  │ │
-│ │  └───────┬───────┘  │   │  └───────┬───────┘  │   │  └─────┬─────┘  │ │
-│ │          │          │   │          │          │   │        │        │ │
-│ │  ┌───────┴───────┐  │   │  ┌───────┴───────┐  │   │  ┌─────┴─────┐  │ │
-│ │  │ Secondaries   │  │   │  │ Secondaries   │  │   │  │Secondaries│  │ │
-│ │  │ (60% config)  │  │   │  │ (50% config)  │  │   │  │ (70%)     │  │ │
-│ │  └───────────────┘  │   │  └───────────────┘  │   │  └───────────┘  │ │
-│ └─────────────────────┘   └─────────────────────┘   └─────────────────┘ │
-│                                                                          │
-│    Each DAT = own root + secondaries with CONFIGURABLE internal split    │
-│         No treasury - ALL fees immediately converted to burns            │
-│                                                                          │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Key Architectural Changes
-
-| Aspect | Phase 1 | Phase 2 |
-|--------|---------|---------|
-| **Scope** | Single ecosystem | Multi-tenant (anyone can create a DAT) |
-| **Protocol Fee** | N/A | 5.52% → $asdfasdfa (FIXED) |
-| **DAT Structure** | Single root + secondaries | Each DAT has own root + secondaries |
-| **Internal Split** | Fixed 55.2%/44.8% | Configurable per DAT |
-| **DAT Creation** | Manual setup | Factory pattern (permissionless) |
-| **Daemon** | Single ecosystem | Supports N DATs |
-| **Treasury** | Root treasury accumulates | No treasury (all immediate burns) |
-
-### Phase 2 Fee Formula
+### Program ID
 
 ```
-INPUTS:
-  total_fees = 100% of creator fees collected
-  protocol_fee_rate = 5.52% (FIXED, non-configurable)
-  internal_root_ratio = X% (CONFIGURABLE per DAT)
-
-STEP 1: Protocol Fee (taken first from total)
-  protocol_fee = total_fees × 5.52%
-  → Immediate $asdfasdfa buyback/burn
-
-STEP 2: DAT Internal Distribution (remaining 94.48%)
-  remaining = total_fees × 94.48%
-
-  dat_root_share = remaining × internal_root_ratio
-  → Immediate DAT root token buyback/burn
-
-  secondary_share = remaining × (1 - internal_root_ratio)
-  → Immediate secondary token buyback/burn
+ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui
 ```
 
-### Component Evolution
+### Account Types
 
-#### 1. DAT Factory (Phase 2)
+#### 1. DATState (Global Configuration)
 
-New instruction for permissionless DAT creation:
+Single instance per deployment. Controls all ecosystem behavior.
 
-```
-create_dat(
-    creator: Pubkey,
-    root_token_mint: Pubkey,
-    internal_root_ratio_bps: u16,  // e.g., 4000 = 40%
-) → DATInstance
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| `admin` | Pubkey | Current administrator |
+| `root_token_mint` | Option<Pubkey> | Designated root token |
+| `fee_split_bps` | u16 | Secondary keep ratio (5520 = 55.2%) |
+| `is_active` | bool | Execution enabled |
+| `emergency_pause` | bool | Emergency stop flag |
+| `total_burned` | u64 | Cumulative tokens burned |
+| `total_sol_collected` | u64 | Cumulative SOL collected |
+| `consecutive_failures` | u8 | Auto-pause trigger (5+) |
 
-Each DAT instance has:
-- Own state account (DATInstance PDA)
-- Own root token + ability to add secondary tokens
-- Configurable internal root/secondary split
-- Fixed 5.52% protocol fee to $asdfasdfa (automatic)
-
-#### 2. Universal Daemon
-
-```
-Universal Daemon
-        │
-        ├── Registry of all DATs (on-chain)
-        │
-        ├── For each DAT:
-        │   ├── Monitor creator vault
-        │   ├── Attribute fees per token (root + secondaries)
-        │   └── Update pending_fees on-chain
-        │
-        └── Batch updates for efficiency
+**PDA Derivation:**
+```rust
+seeds = ["dat_v3"]
 ```
 
-#### 3. Immediate Buyback/Burn
+#### 2. TokenStats (Per-Token Tracking)
 
-No treasury accumulation at any level - all fees immediately converted to burns:
+One instance per ecosystem token. Tracks individual performance.
 
-```
-Example: DAT A with 40% internal root ratio
+| Field | Type | Description |
+|-------|------|-------------|
+| `mint` | Pubkey | Token mint address |
+| `pending_fees_lamports` | u64 | Fees awaiting distribution |
+| `total_burned` | u64 | Tokens burned for this token |
+| `total_sol_collected` | u64 | SOL collected from this token |
+| `total_sol_sent_to_root` | u64 | SOL sent to root (secondary only) |
+| `is_root_token` | bool | Root token flag |
+| `cycles_participated` | u64 | Number of cycles executed |
 
-Secondary Token Trade generates 1 SOL fees:
-├── 0.0552 SOL (5.52%) ──► $asdfasdfa buyback/burn
-└── 0.9448 SOL (94.48%) ──► DAT A internal
-    ├── 0.3779 SOL (40%) ──► DAT A Root buyback/burn
-    └── 0.5669 SOL (60%) ──► Secondary buyback/burn
-```
-
-### Fee Flow (Phase 2)
-
-```
-Trading on Secondary Token in DAT X
-              │
-              ▼
-       Creator Fee (100%)
-              │
-              ▼
-┌─────────────┴─────────────┐
-│                           │
-▼                           ▼
-5.52% (FIXED)          94.48% (remaining)
-$asdfasdfa             DAT X Internal
-buyback/burn           (CONFIGURABLE)
-                            │
-                   ┌────────┴────────┐
-                   │                 │
-                   ▼                 ▼
-           (94.48% × X%)      (94.48% × (1-X)%)
-           DAT X Root          Secondary Token
-           buyback/burn        buyback/burn
+**PDA Derivation:**
+```rust
+seeds = ["token_stats_v1", mint.as_ref()]
 ```
 
-### Phase 2 Use Case Example
+#### 3. Root Treasury
 
-**Community "MemeDAO" creates their DAT:**
-- Root token: $MEME (their main community token)
-- Secondary tokens: $MEME2, $MEME3 (ecosystem tokens)
-- Internal root ratio: 40%
-- Protocol fee: 5.52% to $asdfasdfa (automatic)
+Native SOL account accumulating 44.8% from all secondary tokens.
 
-**When 1 SOL of fees is collected from $MEME2 trading:**
+**PDA Derivation:**
+```rust
+seeds = ["root_treasury", root_token_mint.as_ref()]
+```
 
-| Recipient | Calculation | Amount |
-|-----------|-------------|--------|
-| $asdfasdfa (Protocol) | 1 × 5.52% | 0.0552 SOL |
-| $MEME (DAT Root) | 0.9448 × 40% | 0.3779 SOL |
-| $MEME2 (Secondary) | 0.9448 × 60% | 0.5669 SOL |
-| **Total** | | **1.0000 SOL** |
+#### 4. DAT Authority
 
-**Core Principle**: No treasury accumulation at any level. Every SOL collected is immediately used for buyback and the purchased tokens are permanently burned.
+Program-owned signer for all CPI operations.
+
+**PDA Derivation:**
+```rust
+seeds = ["auth_v3"]
+```
+
+---
+
+## Off-Chain Components
+
+### Fee Daemon (`monitor-ecosystem-fees.ts`)
+
+**Problem Solved**: All tokens from the same creator share ONE vault. Cannot determine per-token fees from vault balance alone.
+
+**Solution**: Balance polling with transaction attribution.
+
+```
+Token A Trade ──► Token A's BC (unique) ──┐
+                                          ├──► Creator Vault (shared)
+Token B Trade ──► Token B's BC (unique) ──┘
+
+Daemon polls Token A's BC → detects vault change → attribute to A
+Daemon polls Token B's BC → detects vault change → attribute to B
+```
+
+**How it works:**
+
+1. Every 5 seconds, poll each token's bonding curve/AMM for new transactions
+2. For each transaction, extract the vault's balance change
+3. Call `update_pending_fees` on-chain to attribute the fee
+4. Persist state to `.daemon-state.json` for crash recovery
+
+**State Persistence:**
+```json
+{
+  "lastSignatures": {
+    "9Gs59vJFFZWfZ72j7BNiTyzUPovH5oMVtTjGnrATECMG": "5xK3...",
+    "ABC123...": "4yJ2..."
+  },
+  "lastUpdated": "2025-12-01T00:00:00.000Z",
+  "version": 1
+}
+```
+
+### Cycle Orchestrator (`execute-ecosystem-cycle.ts`)
+
+Executes the buy & burn cycle for all tokens.
+
+**N+1 Batch Pattern:**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     ECOSYSTEM CYCLE                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  SECONDARY 1 (Single Batch TX)                                  │
+│  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
+│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │           │
+│  │ Budget  │  Fees   │  Tokens  │ Cycle  │ Tokens  │           │
+│  └─────────┴─────────┴──────────┴────────┴─────────┘           │
+│                         │                                       │
+│                         ▼                                       │
+│  SECONDARY 2 (Single Batch TX)                                  │
+│  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
+│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │           │
+│  │ Budget  │ (no-op) │  Tokens  │ Cycle  │ Tokens  │           │
+│  └─────────┴─────────┴──────────┴────────┴─────────┘           │
+│                         │                                       │
+│                         ▼                                       │
+│  ...more secondaries...                                         │
+│                         │                                       │
+│                         ▼                                       │
+│  ROOT TOKEN (Single Batch TX)                                   │
+│  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
+│  │ Compute │ Collect │   Buy    │Finalize│  Burn   │           │
+│  │ Budget  │  All    │  Tokens  │ Cycle  │ Tokens  │           │
+│  └─────────┴─────────┴──────────┴────────┴─────────┘           │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Why N+1?**
+- First secondary: Drains shared vault to datAuthority
+- Other secondaries: Use proportional share from datAuthority balance
+- Root token: Uses root_treasury (44.8% accumulated) + vault
+
+---
+
+## Fee Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        FEE FLOW                                 │
+└─────────────────────────────────────────────────────────────────┘
+
+  TRADING
+     │
+     ▼
+┌─────────────────┐
+│  Someone trades │
+│  Secondary #1   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐     ┌─────────────────┐
+│  Creator Fee    │     │  Daemon detects │
+│  (0.3-0.95%)    │────►│  & attributes   │
+│  → Shared Vault │     │  to token #1    │
+└─────────────────┘     └────────┬────────┘
+                                 │
+                                 ▼
+                        ┌─────────────────┐
+                        │ TokenStats #1   │
+                        │ pending_fees++  │
+                        └────────┬────────┘
+                                 │
+                                 │ (Cycle Execution)
+                                 ▼
+         ┌───────────────────────┴───────────────────────┐
+         │                                               │
+         ▼                                               ▼
+┌─────────────────┐                            ┌─────────────────┐
+│     55.2%       │                            │     44.8%       │
+│                 │                            │                 │
+│  Buy Secondary  │                            │  Root Treasury  │
+│     Tokens      │                            │   (accumulates) │
+└────────┬────────┘                            └────────┬────────┘
+         │                                              │
+         ▼                                              │
+┌─────────────────┐                                     │
+│  Burn Tokens    │                                     │
+│  Supply: -N     │                                     │
+└─────────────────┘                                     │
+                                                        │
+                              (On Root Cycle)           │
+                                       ┌────────────────┘
+                                       ▼
+                              ┌─────────────────┐
+                              │  Buy Root Token │
+                              │  with treasury  │
+                              └────────┬────────┘
+                                       │
+                                       ▼
+                              ┌─────────────────┐
+                              │  Burn Root      │
+                              │  Supply: -M     │
+                              └─────────────────┘
+```
 
 ---
 
@@ -334,90 +278,146 @@ buyback/burn           (CONFIGURABLE)
 
 ### Two Pool Types
 
-#### Bonding Curve (Pre-migration)
-- **Program**: `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`
-- **Creator Vault**: Native SOL
-- **Vault Seeds**: `["creator-vault", creator_pubkey]` (with HYPHEN)
-
-#### PumpSwap AMM (Post-migration)
-- **Program**: `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`
-- **Creator Vault**: WSOL Token Account
-- **Vault Seeds**: `["creator_vault", creator_pubkey]` (with UNDERSCORE)
+| Aspect | Bonding Curve | PumpSwap AMM |
+|--------|---------------|--------------|
+| Program | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
+| Vault Type | Native SOL | WSOL Token Account |
+| Vault Derivation | `["creator-vault", creator]` | `["creator_vault", creator]` |
+| Creator Fee | 0.3% - 0.95% (market cap based) | 0.05%+ (Project Ascend) |
+| Migration | Pre-migration | Post-migration |
 
 ### Shared Vault Architecture
 
-All tokens from the same creator share a single vault. This creates the "fee attribution problem" solved by the daemon.
+**Critical**: All tokens from the same creator share ONE vault.
 
 ```
-Creator Wallet
-       │
-       ▼
-Single Creator Vault ◄── All tokens' fees merge here
-       │
-   Cannot know per-token fees from vault balance alone
-       │
-       ▼
-Daemon Solution: Poll each token's unique bonding curve,
-                 extract vault delta from those TX
+Creator Wallet (DAT Authority)
+           │
+           ▼
+    Shared Creator Vault  ◄── All secondary fees go here
+           │
+    ┌──────┼──────┬──────┐
+    │      │      │      │
+    ▼      ▼      ▼      ▼
+  Token1 Token2 Token3 Token4
 ```
+
+This is why the daemon is necessary - we can't determine per-token fees from vault balance alone.
 
 ---
 
 ## Security Architecture
 
-### On-Chain Safety
+### Access Control
 
-- Admin-only functions protected by signer verification
-- Emergency pause capability
-- MIN_CYCLE_INTERVAL prevents rapid-fire attacks
-- Slippage protection on buybacks
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      ACCESS CONTROL                             │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ADMIN ONLY                      PERMISSIONLESS                 │
+│  ────────────                    ──────────────                 │
+│  • initialize                    • collect_fees                 │
+│  • set_root_token                • execute_buy                  │
+│  • update_parameters             • burn_and_update              │
+│  • emergency_pause               • update_pending_fees          │
+│  • resume                        • register_validated_fees      │
+│  • propose_admin_transfer        • sync_validator_slot          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### Daemon Safety
+### Safety Mechanisms
 
-- State persistence for crash recovery
-- No private key storage (uses wallet file)
-- Read-only RPC operations (except update_pending_fees)
+| Mechanism | Description |
+|-----------|-------------|
+| **Emergency Pause** | Admin can halt all operations instantly |
+| **Auto-Pause** | System pauses after 5 consecutive failures |
+| **Two-Step Admin Transfer** | Propose → Accept prevents accidental loss |
+| **Fee Split Limits** | Max 5% change per TX, timelocked for larger |
+| **Slippage Cap** | Maximum 5% slippage on buybacks |
+| **Min Cycle Interval** | 60 seconds between cycles |
 
-### Mainnet Configuration
+### Key Constants
 
-| Parameter | Devnet | Mainnet |
-|-----------|--------|---------|
-| TESTING_MODE | true | false |
-| MIN_CYCLE_INTERVAL | bypassed | 60 seconds |
-| MIN_FEES_TO_CLAIM | bypassed | 0.01 SOL |
+```rust
+// Thresholds
+MIN_FEES_TO_CLAIM: u64 = 10_000_000;      // 0.01 SOL
+MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;  // 1 SOL
+MIN_FEES_FOR_SPLIT: u64 = 5_500_000;      // 0.0055 SOL
+
+// Safety
+RENT_EXEMPT_MINIMUM: u64 = 890_880;       // ~0.00089 SOL
+SAFETY_BUFFER: u64 = 50_000;              // ~0.00005 SOL
+ATA_RENT_RESERVE: u64 = 2_100_000;        // ~0.0021 SOL
+
+// Timing
+MIN_CYCLE_INTERVAL: i64 = 60;             // 60 seconds
+INITIAL_SLIPPAGE_BPS: u16 = 500;          // 5%
+```
 
 ---
 
-## File Structure
+## Data Flow Sequence
 
 ```
-asdf-dat/
-├── programs/asdf-dat/
-│   └── src/lib.rs              # Solana program (Anchor)
-│
-├── scripts/
-│   ├── execute-ecosystem-cycle.ts   # Orchestrator
-│   ├── monitor-ecosystem-fees.ts    # Fee daemon
-│   ├── init-dat-state.ts            # DAT initialization
-│   ├── init-token-stats.ts          # Token stats setup
-│   └── set-root-token.ts            # Root token config
-│
-├── lib/
-│   ├── fee-monitor.ts          # Daemon library
-│   ├── amm-utils.ts            # PumpSwap utilities
-│   └── network-config.ts       # Network configuration
-│
-└── docs/
-    ├── ARCHITECTURE.md         # This document
-    ├── TOKENOMICS.md           # Economic model
-    ├── INTEGRATION.md          # Phase 2 integration
-    └── GLOSSARY.md             # Terminology
+┌────────┐    ┌────────┐    ┌──────────┐    ┌────────────┐
+│ Trader │    │ Daemon │    │ On-Chain │    │Orchestrator│
+└───┬────┘    └───┬────┘    └────┬─────┘    └─────┬──────┘
+    │             │              │                │
+    │ buy/sell    │              │                │
+    ├────────────►│              │                │
+    │             │              │                │
+    │             │ poll BC      │                │
+    │             ├─────────────►│                │
+    │             │              │                │
+    │             │ balance Δ    │                │
+    │             │◄─────────────┤                │
+    │             │              │                │
+    │             │update_pending│                │
+    │             ├─────────────►│                │
+    │             │              │                │
+    │             │              │   execute      │
+    │             │              │◄───────────────┤
+    │             │              │                │
+    │             │              │ collect_fees   │
+    │             │              │◄───────────────┤
+    │             │              │                │
+    │             │              │ execute_buy    │
+    │             │              │◄───────────────┤
+    │             │              │                │
+    │             │              │ burn_tokens    │
+    │             │              │◄───────────────┤
+    │             │              │                │
 ```
 
 ---
 
-## Related Documentation
+## Scalability
 
-- [Tokenomics](TOKENOMICS.md) - Economic model and fee mathematics
-- [Integration Guide](INTEGRATION.md) - How to integrate with DAT (Phase 2)
-- [Glossary](GLOSSARY.md) - Technical terminology
+The system is designed to handle unlimited tokens:
+
+| Feature | Implementation |
+|---------|---------------|
+| **Token Addition** | Create config file, run init-token-stats, restart daemon |
+| **Daemon Recovery** | State persisted to `.daemon-state.json` |
+| **Batch Efficiency** | Each token = 1 transaction (N+1 pattern) |
+| **Rate Limiting** | Adaptive polling (3-30 second intervals) |
+| **Memory Bounds** | 10,000 signature cache with FIFO eviction |
+
+---
+
+## Network Configuration
+
+| Aspect | Devnet | Mainnet |
+|--------|--------|---------|
+| RPC | Helius devnet | Helius mainnet + fallback |
+| Token Dir | `devnet-tokens/` | `mainnet-tokens/` |
+| Wallet | `devnet-wallet.json` | `mainnet-wallet.json` |
+| Jito | Disabled | Optional |
+| Commitment | confirmed | finalized |
+
+---
+
+*For implementation details, see [Developer Guide](DEVELOPER_GUIDE.md).*
+*For instruction reference, see [API Reference](API_REFERENCE.md).*
