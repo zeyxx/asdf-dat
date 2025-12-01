@@ -6,37 +6,47 @@
  * daemon can register fees.
  *
  * Usage:
- *   npx ts-node scripts/initialize-validators.ts
+ *   npx ts-node scripts/initialize-validators.ts [options]
+ *
+ * Options:
+ *   --network    Network to use: mainnet or devnet (default: devnet)
  */
 
 import { Connection, Keypair, PublicKey, SystemProgram } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import fs from 'fs';
 import path from 'path';
+import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
+import { PoolType, PUMP_PROGRAM, PUMPSWAP_PROGRAM } from '../lib/amm-utils';
 
-const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
-const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
 const VALIDATOR_STATE_SEED = Buffer.from('validator_v1');
 
 interface TokenInfo {
   mint: string;
-  bondingCurve: string;
+  bondingCurve?: string;  // For bonding curve tokens
+  pool?: string;          // For AMM tokens
+  poolType: PoolType;
   symbol: string;
   name: string;
 }
 
 async function main() {
-  console.log('\n' + '='.repeat(70));
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
   console.log('🔧 INITIALIZE VALIDATOR STATES');
   console.log('='.repeat(70) + '\n');
 
   // Load connection
-  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
+  console.log(`🌐 RPC: ${networkConfig.rpcUrl}`);
 
   // Load wallet
-  const walletPath = path.join(process.cwd(), 'devnet-wallet.json');
+  const walletPath = path.join(process.cwd(), networkConfig.wallet);
   if (!fs.existsSync(walletPath)) {
-    console.error('❌ Wallet not found at devnet-wallet.json');
+    console.error(`❌ Wallet not found at ${networkConfig.wallet}`);
     process.exit(1);
   }
 
@@ -69,12 +79,8 @@ async function main() {
   );
   const program = new Program(idl, provider);
 
-  // Load token configs
-  const tokenFiles = [
-    'devnet-token-spl.json',
-    'devnet-token-secondary.json',
-    'devnet-token-mayhem.json',
-  ];
+  // Load token configs from network config
+  const tokenFiles = networkConfig.tokens;
 
   const tokens: TokenInfo[] = [];
 
@@ -83,13 +89,17 @@ async function main() {
     if (fs.existsSync(filePath)) {
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        const poolType: PoolType = data.poolType || 'bonding_curve';
+
         tokens.push({
           mint: data.mint,
           bondingCurve: data.bondingCurve,
+          pool: data.pool,
+          poolType,
           symbol: data.symbol || data.name || 'UNKNOWN',
           name: data.name,
         });
-        console.log(`✅ Loaded ${data.symbol}: ${data.mint}`);
+        console.log(`✅ Loaded ${data.symbol} (${poolType}): ${data.mint}`);
       } catch (error) {
         console.error(`❌ Failed to load ${file}:`, error);
       }
@@ -111,10 +121,20 @@ async function main() {
   let failCount = 0;
 
   for (const token of tokens) {
-    console.log(`\n🔄 Processing ${token.symbol}...`);
+    console.log(`\n🔄 Processing ${token.symbol} (${token.poolType})...`);
 
     const mint = new PublicKey(token.mint);
-    const bondingCurve = new PublicKey(token.bondingCurve);
+
+    // Get pool address based on pool type
+    const poolAddress = token.poolType === 'bonding_curve'
+      ? (token.bondingCurve ? new PublicKey(token.bondingCurve) : null)
+      : (token.pool ? new PublicKey(token.pool) : null);
+
+    if (!poolAddress) {
+      console.log(`   ❌ Missing pool address for ${token.poolType}`);
+      failCount++;
+      continue;
+    }
 
     // Derive ValidatorState PDA
     const [validatorState, bump] = PublicKey.findProgramAddressSync(
@@ -123,7 +143,7 @@ async function main() {
     );
 
     console.log(`   Mint: ${mint.toBase58()}`);
-    console.log(`   Bonding Curve: ${bondingCurve.toBase58()}`);
+    console.log(`   Pool (${token.poolType}): ${poolAddress.toBase58()}`);
     console.log(`   Validator PDA: ${validatorState.toBase58()}`);
 
     // Check if already initialized
@@ -138,37 +158,41 @@ async function main() {
       // Account doesn't exist, proceed with initialization
     }
 
-    // Verify bonding curve is owned by PumpFun
+    // Verify pool is owned by the correct program
+    const expectedOwner = token.poolType === 'bonding_curve' ? PUMP_PROGRAM : PUMPSWAP_PROGRAM;
+    const ownerName = token.poolType === 'bonding_curve' ? 'PumpFun' : 'PumpSwap';
+
     try {
-      const bcAccount = await connection.getAccountInfo(bondingCurve);
-      if (!bcAccount) {
-        console.log(`   ❌ Bonding curve account not found`);
+      const poolAccount = await connection.getAccountInfo(poolAddress);
+      if (!poolAccount) {
+        console.log(`   ❌ Pool account not found`);
         failCount++;
         continue;
       }
 
-      if (!bcAccount.owner.equals(PUMP_PROGRAM)) {
-        console.log(`   ❌ Bonding curve not owned by PumpFun`);
-        console.log(`      Expected: ${PUMP_PROGRAM.toBase58()}`);
-        console.log(`      Actual: ${bcAccount.owner.toBase58()}`);
+      if (!poolAccount.owner.equals(expectedOwner)) {
+        console.log(`   ❌ Pool not owned by ${ownerName}`);
+        console.log(`      Expected: ${expectedOwner.toBase58()}`);
+        console.log(`      Actual: ${poolAccount.owner.toBase58()}`);
         failCount++;
         continue;
       }
 
-      console.log(`   ✅ Bonding curve verified (owner: PumpFun)`);
+      console.log(`   ✅ Pool verified (owner: ${ownerName})`);
     } catch (error) {
-      console.log(`   ❌ Failed to verify bonding curve:`, error);
+      console.log(`   ❌ Failed to verify pool:`, error);
       failCount++;
       continue;
     }
 
     // Initialize validator
+    // Note: initializeValidator uses bondingCurve account but works for any pool
     try {
       const tx = await program.methods
         .initializeValidator()
         .accounts({
           validatorState,
-          bondingCurve,
+          bondingCurve: poolAddress,  // Works for both BC and AMM pools
           mint,
           payer: wallet.publicKey,
           systemProgram: SystemProgram.programId,

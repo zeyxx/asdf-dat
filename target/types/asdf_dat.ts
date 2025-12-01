@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/asdf_dat.json`.
  */
 export type AsdfDat = {
-  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
+  "address": "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui",
   "metadata": {
     "name": "asdfDat",
     "version": "0.1.0",
@@ -13,6 +13,51 @@ export type AsdfDat = {
     "description": "ASDF DAT"
   },
   "instructions": [
+    {
+      "name": "acceptAdminTransfer",
+      "docs": [
+        "Accept admin transfer (must be called by the proposed admin)"
+      ],
+      "discriminator": [
+        89,
+        211,
+        96,
+        212,
+        233,
+        0,
+        251,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "newAdmin",
+          "docs": [
+            "The proposed admin who is accepting the transfer"
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
+    },
     {
       "name": "burnAndUpdate",
       "discriminator": [
@@ -110,6 +155,51 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "cancelAdminTransfer",
+      "docs": [
+        "Cancel a pending admin transfer (called by current admin)"
+      ],
+      "discriminator": [
+        38,
+        131,
+        157,
+        31,
+        240,
+        137,
+        44,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "collectFees",
       "discriminator": [
         164,
@@ -197,6 +287,11 @@ export type AsdfDat = {
         },
         {
           "name": "creatorVault",
+          "docs": [
+            "Seeds: [\"creator-vault\", creator_pubkey] where creator=dat_authority.",
+            "The CPI to collect_creator_fee will fail if this is not a valid vault.",
+            "NOTE: Vault is a native SOL account (System Program owner), NOT owned by PUMP_PROGRAM."
+          ],
           "writable": true
         },
         {
@@ -207,6 +302,9 @@ export type AsdfDat = {
         },
         {
           "name": "rootTreasury",
+          "docs": [
+            "via PDA derivation: [\"root_treasury\", root_token_mint]"
+          ],
           "writable": true,
           "optional": true
         },
@@ -225,6 +323,126 @@ export type AsdfDat = {
           "type": "bool"
         }
       ]
+    },
+    {
+      "name": "collectFeesAmm",
+      "docs": [
+        "Collect fees from PumpSwap AMM creator vault",
+        "Used for tokens that have migrated from bonding curve to AMM",
+        "Requires: DAT authority PDA must be set as coin_creator in PumpSwap",
+        "IMPORTANT: This collects WSOL (SPL Token), not native SOL"
+      ],
+      "discriminator": [
+        89,
+        152,
+        80,
+        30,
+        130,
+        141,
+        42,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenStats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "tokenMint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "tokenMint"
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wsolMint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "datWsolAccount",
+          "docs": [
+            "DAT's WSOL token account (destination for collected fees)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creatorVaultAuthority"
+        },
+        {
+          "name": "creatorVaultAta",
+          "writable": true
+        },
+        {
+          "name": "pumpSwapProgram"
+        },
+        {
+          "name": "tokenProgram"
+        }
+      ],
+      "args": []
     },
     {
       "name": "createPumpfunToken",
@@ -519,6 +737,10 @@ export type AsdfDat = {
     },
     {
       "name": "executeBuy",
+      "docs": [
+        "Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)",
+        "For secondary tokens, use execute_buy_secondary instead"
+      ],
       "discriminator": [
         14,
         137,
@@ -571,6 +793,9 @@ export type AsdfDat = {
         },
         {
           "name": "datAsdfAccount",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -586,10 +811,6 @@ export type AsdfDat = {
           "writable": true
         },
         {
-          "name": "poolWsolAccount",
-          "writable": true
-        },
-        {
           "name": "pumpGlobalConfig"
         },
         {
@@ -597,7 +818,280 @@ export type AsdfDat = {
           "writable": true
         },
         {
+          "name": "creatorVault",
+          "writable": true
+        },
+        {
+          "name": "pumpEventAuthority"
+        },
+        {
+          "name": "pumpSwapProgram"
+        },
+        {
+          "name": "globalVolumeAccumulator"
+        },
+        {
+          "name": "userVolumeAccumulator",
+          "writable": true
+        },
+        {
+          "name": "feeConfig"
+        },
+        {
+          "name": "feeProgram"
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "allocatedLamports",
+          "type": {
+            "option": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "executeBuyAmm",
+      "docs": [
+        "Execute buy on PumpSwap AMM pool (for migrated tokens)",
+        "This instruction handles tokens that have graduated from bonding curve to AMM",
+        "Requires WSOL in dat_wsol_account for the buy operation"
+      ],
+      "discriminator": [
+        239,
+        72,
+        220,
+        75,
+        250,
+        12,
+        58,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datTokenAccount",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "globalConfig"
+        },
+        {
+          "name": "baseMint",
+          "docs": [
+            "Base token mint (the token being bought)"
+          ]
+        },
+        {
+          "name": "quoteMint"
+        },
+        {
+          "name": "datWsolAccount",
+          "writable": true
+        },
+        {
+          "name": "poolBaseTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "poolQuoteTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "protocolFeeRecipient"
+        },
+        {
           "name": "protocolFeeRecipientAta",
+          "writable": true
+        },
+        {
+          "name": "baseTokenProgram",
+          "docs": [
+            "Base token program (SPL Token or Token2022)"
+          ]
+        },
+        {
+          "name": "quoteTokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "associatedTokenProgram"
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "pumpSwapProgram"
+        },
+        {
+          "name": "coinCreatorVaultAta",
+          "writable": true
+        },
+        {
+          "name": "coinCreatorVaultAuthority"
+        },
+        {
+          "name": "globalVolumeAccumulator"
+        },
+        {
+          "name": "userVolumeAccumulator",
+          "writable": true
+        },
+        {
+          "name": "feeConfig"
+        },
+        {
+          "name": "feeProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "desiredTokens",
+          "type": "u64"
+        },
+        {
+          "name": "maxSolCost",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "executeBuySecondary",
+      "docs": [
+        "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
+      ],
+      "discriminator": [
+        4,
+        51,
+        212,
+        248,
+        213,
+        148,
+        13,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAsdfAccount",
+          "docs": [
+            "DAT's token account - validated mint and authority"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdfMint",
+          "writable": true
+        },
+        {
+          "name": "poolAsdfAccount",
+          "docs": [
+            "Pool's token account - validated mint matches"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pumpGlobalConfig"
+        },
+        {
+          "name": "protocolFeeRecipient",
           "writable": true
         },
         {
@@ -634,17 +1128,9 @@ export type AsdfDat = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
-        {
-          "name": "isSecondaryToken",
-          "type": "bool"
-        },
         {
           "name": "allocatedLamports",
           "type": {
@@ -652,6 +1138,51 @@ export type AsdfDat = {
           }
         }
       ]
+    },
+    {
+      "name": "executeFeeSplit",
+      "docs": [
+        "Execute a pending fee split change (after cooldown period)"
+      ],
+      "discriminator": [
+        205,
+        104,
+        254,
+        72,
+        93,
+        230,
+        0,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
     },
     {
       "name": "finalizeAllocatedCycle",
@@ -967,6 +1498,101 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "proposeAdminTransfer",
+      "docs": [
+        "Propose a new admin (two-step transfer for security)"
+      ],
+      "discriminator": [
+        218,
+        178,
+        115,
+        190,
+        80,
+        107,
+        95,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "proposeFeeSplit",
+      "docs": [
+        "Propose a fee split change (subject to timelock)"
+      ],
+      "discriminator": [
+        232,
+        194,
+        55,
+        204,
+        149,
+        144,
+        177,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "newAdmin"
+        }
+      ],
+      "args": [
+        {
+          "name": "newFeeSplitBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "recordFailure",
       "discriminator": [
         86,
@@ -1032,6 +1658,31 @@ export type AsdfDat = {
         101
       ],
       "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer - only admin can register fees (CRITICAL security fix)"
+          ],
+          "signer": true
+        },
         {
           "name": "validatorState",
           "writable": true,
@@ -1356,6 +2007,10 @@ export type AsdfDat = {
     },
     {
       "name": "transferAdmin",
+      "docs": [
+        "DEPRECATED: Use propose_admin_transfer + accept_admin_transfer instead",
+        "Kept for backwards compatibility - now just proposes the transfer"
+      ],
       "discriminator": [
         42,
         242,
@@ -1392,6 +2047,74 @@ export type AsdfDat = {
         },
         {
           "name": "newAdmin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unwrapWsol",
+      "docs": [
+        "Unwrap WSOL to native SOL in DAT authority account",
+        "Call this after collect_fees_amm to convert WSOL to SOL for buyback"
+      ],
+      "discriminator": [
+        4,
+        6,
+        123,
+        139,
+        46,
+        174,
+        17,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datWsolAccount",
+          "docs": [
+            "DAT's WSOL token account (will be closed)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "tokenProgram"
         }
       ],
       "args": []
@@ -1580,6 +2303,92 @@ export type AsdfDat = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "wrapWsol",
+      "docs": [
+        "Wrap native SOL to WSOL for AMM buyback",
+        "Call this before execute_buy_amm when root token is on PumpSwap AMM",
+        "The dat_wsol_account must already exist (created by caller)"
+      ],
+      "discriminator": [
+        24,
+        173,
+        95,
+        186,
+        149,
+        56,
+        111,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datWsolAccount",
+          "docs": [
+            "DAT's WSOL token account (destination for wrapped SOL)",
+            "Must be owned by dat_authority and have WSOL mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "wsolMint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1625,6 +2434,19 @@ export type AsdfDat = {
   ],
   "events": [
     {
+      "name": "adminTransferProposed",
+      "discriminator": [
+        203,
+        168,
+        175,
+        51,
+        239,
+        104,
+        20,
+        85
+      ]
+    },
+    {
       "name": "adminTransferred",
       "discriminator": [
         255,
@@ -1635,6 +2457,32 @@ export type AsdfDat = {
         217,
         38,
         179
+      ]
+    },
+    {
+      "name": "ammFeesCollected",
+      "discriminator": [
+        52,
+        168,
+        200,
+        204,
+        254,
+        238,
+        245,
+        191
+      ]
+    },
+    {
+      "name": "buyExecuted",
+      "discriminator": [
+        183,
+        7,
+        73,
+        208,
+        153,
+        81,
+        148,
+        198
       ]
     },
     {
@@ -1921,46 +2769,76 @@ export type AsdfDat = {
     },
     {
       "code": 6017,
+      "name": "feeSplitDeltaTooLarge",
+      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+    },
+    {
+      "code": 6018,
       "name": "insufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "staleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "slotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "validatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "feeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "tooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "invalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "mintMismatch",
       "msg": "Mint mismatch between accounts"
+    },
+    {
+      "code": 6026,
+      "name": "pendingFeesOverflow",
+      "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [
+    {
+      "name": "adminTransferProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "currentAdmin",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposedAdmin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "adminTransferred",
       "type": {
@@ -1973,6 +2851,46 @@ export type AsdfDat = {
           {
             "name": "newAdmin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ammFeesCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wsolAmount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "buyExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokensBought",
+            "type": "u64"
+          },
+          {
+            "name": "solSpent",
+            "type": "u64"
           },
           {
             "name": "timestamp",
@@ -2181,13 +3099,24 @@ export type AsdfDat = {
             "type": "u64"
           },
           {
-            "name": "reserved",
+            "name": "pendingAdmin",
             "type": {
-              "array": [
-                "u8",
-                22
-              ]
+              "option": "pubkey"
             }
+          },
+          {
+            "name": "pendingFeeSplit",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pendingFeeSplitTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "adminOperationCooldown",
+            "type": "i64"
           }
         ]
       }
@@ -2218,7 +3147,11 @@ export type AsdfDat = {
         "kind": "struct",
         "fields": [
           {
-            "name": "newFeeSplitBps",
+            "name": "oldBps",
+            "type": "u16"
+          },
+          {
+            "name": "newBps",
             "type": "u16"
           },
           {

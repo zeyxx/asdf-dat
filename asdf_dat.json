@@ -1,5 +1,5 @@
 {
-  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
+  "address": "ASDFwdvE6Uc72DGEQVT6c5UwCoL1JdBAayjZmFR6NWM5",
   "metadata": {
     "name": "asdf_dat",
     "version": "0.1.0",
@@ -513,6 +513,10 @@
     },
     {
       "name": "execute_buy",
+      "docs": [
+        "Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)",
+        "For secondary tokens, use execute_buy_secondary instead"
+      ],
       "discriminator": [
         14,
         137,
@@ -580,10 +584,6 @@
           "writable": true
         },
         {
-          "name": "pool_wsol_account",
-          "writable": true
-        },
-        {
           "name": "pump_global_config"
         },
         {
@@ -591,7 +591,121 @@
           "writable": true
         },
         {
-          "name": "protocol_fee_recipient_ata",
+          "name": "creator_vault",
+          "writable": true
+        },
+        {
+          "name": "pump_event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "allocated_lamports",
+          "type": {
+            "option": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "execute_buy_secondary",
+      "docs": [
+        "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
+      ],
+      "discriminator": [
+        4,
+        51,
+        212,
+        248,
+        213,
+        148,
+        13,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdf_mint",
+          "writable": true
+        },
+        {
+          "name": "pool_asdf_account",
+          "writable": true
+        },
+        {
+          "name": "pump_global_config"
+        },
+        {
+          "name": "protocol_fee_recipient",
           "writable": true
         },
         {
@@ -628,17 +742,9 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
-        {
-          "name": "is_secondary_token",
-          "type": "bool"
-        },
         {
           "name": "allocated_lamports",
           "type": {

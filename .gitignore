@@ -23,9 +23,13 @@ src/**/*.js.map
 src/**/*.d.ts.map
 
 # Rust/Anchor build files
-target/
+target/*
 !target/idl/
 !target/types/
+target/idl/*
+!target/idl/asdf_dat.json
+target/types/*
+!target/types/asdf_dat.ts
 **/*.rs.bk
 # Ignore root Cargo.lock but allow program Cargo.lock for reproducible builds
 /Cargo.lock
@@ -59,18 +63,25 @@ keys/
 
 # Program keypairs (SECURITY - NEVER COMMIT)
 ASDF*.json
+ASD[a-z]*.json
 !ASDF*.md
+
+# Mainnet keypairs and configs (SECURITY - NEVER COMMIT)
+mainnet-program-keypair.json
+mainnet-token-*.json
+mainnet-tokens/*.json
+!mainnet-tokens/*.example
+!mainnet-tokens/README.md
 
 # Build artifacts
 bonding-curve.bin
 *.bin
 
-# External program IDLs
+# External program IDLs (downloaded from other projects)
 *-idl.json
 
-# IDL files (generated)
-target/idl/
-target/types/
+# Keep generated IDL and types for client usage
+# (target/idl/ and target/types/ are un-ignored above)
 
 # Logs
 logs/
@@ -230,7 +241,7 @@ venv.bak/
 **/*.rs.bk
 *.pdb
 debug/
-target/
+# target/ already defined above with IDL exceptions
 
 # Yarn Berry
 .yarn/*
@@ -322,4 +333,19 @@ manual-test-report-*.md
 
 # Script temporary outputs
 scripts/testing/*.log
-scripts/testing/output/
+scripts/testing/output/logs/
+
+# Daemon state (runtime)
+.daemon-state.json
+.daemon-state.backup.json
+.daemon-lock.json
+
+# Temporary files at root
+Program
+continue
+start
+debug
+
+# Rust backup files
+programs/**/backup-*
+programs/**/*.backup-*

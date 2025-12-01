@@ -3,8 +3,9 @@ import { Program, AnchorProvider, Wallet, Idl } from "@coral-xyz/anchor";
 import { Keypair } from "@solana/web3.js";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 function loadIdl(): Idl {
   const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
@@ -12,7 +13,13 @@ function loadIdl(): Idl {
 }
 
 async function main() {
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const dummyWallet = Keypair.generate();
   const provider = new AnchorProvider(connection, new Wallet(dummyWallet), {});

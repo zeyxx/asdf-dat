@@ -13,8 +13,10 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
+import { getTypedAccounts } from "../lib/types";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 const colors = {
   reset: "\x1b[0m",
@@ -39,15 +41,22 @@ function loadIdl(): any {
 }
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.clear();
   console.log(`\n${"=".repeat(70)}`);
   console.log(`${colors.bright}${colors.magenta}⚙️  INITIALIZE DAT STATE${colors.reset}`);
   console.log(`${"=".repeat(70)}\n`);
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  // Print network banner
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
 
   const admin = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("👤", `Admin: ${admin.publicKey.toString()}`, colors.cyan);
@@ -76,10 +85,10 @@ async function main() {
 
   // Check if already initialized
   try {
-    await (program.account as any).datState.fetch(datState);
+    await getTypedAccounts(program).datState.fetch(datState);
     log("⚠️", "DAT State already initialized!", colors.yellow);
     log("📊", "Current state:", colors.cyan);
-    const state = await (program.account as any).datState.fetch(datState);
+    const state = await getTypedAccounts(program).datState.fetch(datState);
     log("  ", `Admin: ${state.admin.toString()}`, colors.reset);
     log("  ", `Active: ${state.isActive}`, colors.reset);
     log("  ", `Emergency Pause: ${state.emergencyPause}`, colors.reset);
@@ -103,10 +112,11 @@ async function main() {
       .rpc();
 
     log("✅", "DAT STATE INITIALIZED!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${tx}?cluster=devnet`, colors.cyan);
+    const cluster = networkConfig.name === "Mainnet" ? "" : "?cluster=devnet";
+    log("🔗", `TX: https://explorer.solana.com/tx/${tx}${cluster}`, colors.cyan);
 
     // Fetch and display state
-    const state = await (program.account as any).datState.fetch(datState);
+    const state = await getTypedAccounts(program).datState.fetch(datState);
 
     console.log(`\n${"=".repeat(70)}`);
     console.log(`${colors.bright}${colors.green}📊 DAT CONFIGURATION${colors.reset}`);
@@ -117,8 +127,8 @@ async function main() {
     log("🚨", `Emergency Pause: ${state.emergencyPause}`, colors.green);
     log("📊", `Fee Split BPS: ${state.feeSplitBps} (${state.feeSplitBps / 100}%)`, colors.cyan);
     log("⏱️ ", `Min Cycle Interval: ${state.minCycleInterval}s`, colors.cyan);
-    log("💰", `Min Fees Threshold: ${state.minFeesThreshold / 1e9} SOL`, colors.cyan);
-    log("💎", `Max Fees Per Cycle: ${state.maxFeesPerCycle / 1e9} SOL`, colors.cyan);
+    log("💰", `Min Fees Threshold: ${state.minFeesThreshold.toNumber() / 1e9} SOL`, colors.cyan);
+    log("💎", `Max Fees Per Cycle: ${state.maxFeesPerCycle.toNumber() / 1e9} SOL`, colors.cyan);
     log("📉", `Slippage BPS: ${state.slippageBps} (${state.slippageBps / 100}%)`, colors.cyan);
 
     if (state.rootTokenMint) {

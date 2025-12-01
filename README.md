@@ -1,369 +1,270 @@
-# ASDF-DAT Ecosystem
+# 🔥 ASDF-DAT
 
-**Automated Buyback & Burn Protocol for Solana**
+**Decentralized Autonomous Treasury for Solana Tokens**
 
-An automated system for collecting Pump.fun trading fees and executing buyback-and-burn cycles, with multi-token support and hierarchical redistribution.
+[![Solana](https://img.shields.io/badge/Solana-Mainnet-blueviolet)](https://solana.com)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Phase](https://img.shields.io/badge/Phase-1%20Live-success)](https://pump.fun)
 
-[![Solana](https://img.shields.io/badge/Solana-Devnet-green)](https://solana.com)
-[![Anchor](https://img.shields.io/badge/Anchor-0.31.1-blue)](https://anchor-lang.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)](https://typescriptlang.org)
+> 🤖 Automated buy & burn treasury that turns creator fees into deflationary pressure.
+> Trading happens. Fees appear. Tokens burn. Supply shrinks. *This is fine.* 🐕
 
 ---
 
-## Architecture
+## 😤 The Problem
+
+Creator fees on Pump.fun exist, but most projects ignore them. Value leaks out instead of compounding back. And when you have multiple tokens in an ecosystem? Good luck coordinating anything.
+
+## 💡 The Solution
+
+DAT automates the entire cycle:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    ASDF-DAT ECOSYSTEM                           │
+│                    🔄 THE DAT CYCLE                             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐      │
-│  │  ROOT TOKEN  │◄───│  SECONDARY   │◄───│   MAYHEM     │      │
-│  │   (DATSPL)   │    │   (DATS2)    │    │   (DATM)     │      │
-│  │    100%      │    │  55.2%/44.8% │    │  55.2%/44.8% │      │
-│  └──────┬───────┘    └──────┬───────┘    └──────┬───────┘      │
-│         │                   │                   │               │
-│         └─────────┬─────────┴─────────┬─────────┘               │
-│                   ▼                   ▼                         │
-│           ┌──────────────────────────────────┐                  │
-│           │     ECOSYSTEM ORCHESTRATOR       │                  │
-│           │   Dynamic Balance Allocation     │                  │
-│           └──────────────┬───────────────────┘                  │
-│                          ▼                                      │
-│           ┌──────────────────────────────────┐                  │
-│           │      SOLANA SMART CONTRACT       │                  │
-│           │   ASDfNfUHwVGfrg3SV7SQYWhaVxnrCU │                  │
-│           └──────────────────────────────────┘                  │
+│    TRADE             COLLECT            SPLIT                   │
+│    ─────►           ─────────►        ──────────►               │
+│                                                                 │
+│   Someone          Creator fee        55.2% → Token buyback     │
+│   buys/sells       captured           44.8% → Root treasury     │
+│   any token        (0.3-0.95%)                                  │
+│                                                                 │
+│    ◄─────           ◄─────────        ◄──────────               │
+│    BURN               BUY              ALLOCATE                 │
+│                                                                 │
+│   🔥 Tokens        💰 Fees used       📊 Proportional           │
+│   permanently      to buy tokens      distribution              │
+│   destroyed        from market        per token                 │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Economic Flow
-
-1. **Trading Fees** → Collected from Pump.fun creator vaults
-2. **Fee Split** → Secondary tokens send 44.8% to root treasury
-3. **Buyback** → SOL used to buy tokens on the bonding curve
-4. **Burn** → Purchased tokens are burned, reducing supply
+**Result**: Every trade creates buying pressure. Every cycle reduces supply. Automatic. Trustless. Relentless. 📈
 
 ---
 
-## Features
+## 🧠 How It Works
 
-- **Multi-Token Ecosystem** - Unlimited secondary token support
-- **Token-Agnostic Architecture** - Both SPL and Token-2022 can serve as root or secondary
-- **Hierarchical Fee Distribution** - 44.8% of secondary fees → root token
-- **Dynamic Allocation** - Proportional distribution based on pending fees
-- **Mayhem Mode** - Token-2022 support with extensions
-- **Graceful Deferral** - Tokens with insufficient allocation deferred to next cycle
-- **Emergency Controls** - Pause/Resume for critical situations
+### Token Hierarchy
+
+DAT creates economic alignment between a root token and its ecosystem:
+
+```
+                      ┌─────────────────┐
+                      │  👑 ROOT TOKEN  │
+                      │     ($ASDF)     │
+                      │                 │
+                      │  Receives 44.8% │
+                      │  of ALL fees    │
+                      └────────┬────────┘
+                               │
+             ┌─────────────────┼─────────────────┐
+             │                 │                 │
+             ▼                 ▼                 ▼
+      ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+      │ SECONDARY 1 │   │ SECONDARY 2 │   │ SECONDARY N │
+      │             │   │             │   │             │
+      │ Keeps 55.2% │   │ Keeps 55.2% │   │ Keeps 55.2% │
+      │ for buyback │   │ for buyback │   │ for buyback │
+      └─────────────┘   └─────────────┘   └─────────────┘
+```
+
+**The math is simple:**
+- 📈 Trade any secondary token → Root gets stronger
+- 🔗 More secondaries = more fees flowing to root
+- 🤝 Everyone wins: secondaries burn, root accumulates
+
+### 💸 The 55.2% / 44.8% Split
+
+| Destination | Share | Purpose |
+|-------------|-------|---------|
+| 🔥 Secondary Token | 55.2% | Buy & burn the traded token |
+| 👑 Root Treasury | 44.8% | Accumulate for root buyback |
 
 ---
 
-## Quick Start (Devnet)
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     ☁️  OFF-CHAIN                               │
+│                                                                 │
+│  ┌──────────────────┐         ┌───────────────────────────┐    │
+│  │  👁️ FEE DAEMON   │         │  ⚡ CYCLE ORCHESTRATOR    │    │
+│  │  ─────────────   │         │  ────────────────────     │    │
+│  │  • Polls trades  │────────►│  • Reads pending fees     │    │
+│  │  • Tracks fees   │         │  • Calculates splits      │    │
+│  │  • Updates chain │         │  • Executes buy & burn    │    │
+│  └──────────────────┘         └───────────────────────────┘    │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      ⛓️  ON-CHAIN                               │
+│                                                                 │
+│  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐    │
+│  │   DAT STATE    │  │  TOKEN STATS   │  │ ROOT TREASURY  │    │
+│  │  ────────────  │  │  ────────────  │  │  ────────────  │    │
+│  │  Global config │  │  Per-token     │  │  44.8% from    │    │
+│  │  Fee split %   │  │  pending fees  │  │  all tokens    │    │
+│  │  Admin control │  │  burn totals   │  │  accumulates   │    │
+│  └────────────────┘  └────────────────┘  └────────────────┘    │
+│                                                                 │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │               🎰 PUMP.FUN INTEGRATION                      ││
+│  │  • Bonding Curve (pre-migration) → Native SOL vault        ││
+│  │  • PumpSwap AMM (post-migration) → WSOL token vault        ││
+│  └────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Program ID:** `ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui`
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
+- Node.js 18+
+- Solana CLI
+- A funded wallet (devnet or mainnet)
+
+### Installation
+
 ```bash
-# Install dependencies
+git clone https://github.com/asdfDAT/asdf-dat.git
+cd asdf-dat
 npm install
-
-# Configure Solana CLI
-solana config set --url devnet
 ```
 
-### Generate Test Volume
+### Devnet Test (4 Commands)
 
 ```bash
-# Generate trades (buys + sells) to accumulate fees
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
-npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 10 0.1
-npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 10 0.1
+# 1. Start the fee daemon
+npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
+
+# 2. Generate volume (buy + sell creates fees)
+npx ts-node scripts/generate-volume.ts devnet-tokens/01-froot.json 2 0.5
+
+# 3. Wait for daemon sync
+sleep 30
+
+# 4. Execute the cycle
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-tokens/01-froot.json --network devnet
 ```
 
-### Execute Ecosystem Cycle
+✨ Watch the magic: fees collected → tokens bought → tokens burned.
 
-```bash
-# Full cycle: collect → distribute → buyback → burn (all tokens)
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
-```
+### Mainnet
 
-### Check Statistics
-
-```bash
-# Current token state
-npx ts-node scripts/check-current-stats.ts
-
-# DAT protocol state
-npx ts-node scripts/check-dat-state.ts
-```
+Same commands, replace `--network devnet` with `--network mainnet` and use `mainnet-tokens/` configs.
 
 ---
 
-## Project Structure
+## ✨ Key Features
+
+| Feature | Description |
+|---------|-------------|
+| 🤖 **Automatic Buyback** | No manual intervention. Daemon monitors, orchestrator executes. |
+| 🔗 **Cross-Token Alignment** | Secondary tokens strengthen the root. Economic symbiosis. |
+| 📊 **Fee Attribution** | Shared vault problem solved via balance polling. Each token tracked. |
+| 🛡️ **Emergency Controls** | Pause/resume, admin transfer (two-step), configurable parameters. |
+| 🎰 **Pump.fun Native** | Works with bonding curves AND migrated AMM pools. |
+| 📈 **Scalable** | Add tokens anytime. System handles N secondaries + 1 root. |
+
+---
+
+## 🗺️ Roadmap
+
+```
+═══════════════════════════════════════════════════════════════════
+
+   PHASE 1 (NOW) 🔥            │          PHASE 2 (2026) 🚀
+   Proof of Concept            │          SaaS Platform
+                               │
+   ✅ Single ecosystem         │    ⏳ Multi-tenant support
+   ✅ $ASDF + secondaries      │    ⏳ Any creator can deploy
+   ✅ CLI operations           │    ⏳ One-click setup
+   ✅ Devnet + Mainnet         │    ⏳ Web dashboard
+   ✅ Basic monitoring         │    ⏳ Full analytics suite
+                               │    ⏳ Public API
+                               │
+
+═══════════════════════════════════════════════════════════════════
+```
+
+**Phase 1** proves the concept. **Phase 2** makes it universal.
+
+---
+
+## 📁 Project Structure
 
 ```
 asdf-dat/
-├── programs/asdf-dat/          # Solana Smart Contract (Rust)
-│   └── src/
-│       ├── lib.rs              # Main program (2,164 LOC)
-│       └── tests.rs            # Unit tests
-│
-├── scripts/                    # Operation scripts (56 files)
+├── programs/asdf-dat/src/     # 🦀 Anchor smart contract (Rust)
+│   └── lib.rs                 # 26 instructions, all logic
+├── scripts/                   # 📜 TypeScript automation
 │   ├── execute-ecosystem-cycle.ts   # Main orchestrator
-│   ├── generate-volume.ts           # Trade generation
-│   ├── check-*.ts                   # Monitoring scripts
-│   ├── buy-*.ts / sell-*.ts         # Trading operations
-│   └── init-*.ts / create-*.ts      # Initialization
-│
-├── src/                        # TypeScript applications
-│   ├── bot.ts                  # Automated bot
-│   ├── dashboard.ts            # Web dashboard
-│   └── index.ts                # CLI entry point
-│
-├── lib/                        # Daemons and utilities
-│   ├── fee-monitor.ts          # Fee monitoring
-│   └── validator-daemon.ts     # Validator synchronization
-│
-├── tests/                      # Integration tests
-├── docs/                       # Documentation
-│
-├── devnet-token-spl.json       # Root token config
-├── devnet-token-secondary.json # Secondary token config
-├── devnet-token-mayhem.json    # Mayhem token config
-└── asdf_dat.json               # Program IDL
+│   ├── monitor-ecosystem-fees.ts    # Fee daemon
+│   └── [20+ utility scripts]
+├── lib/                       # 🔧 Shared utilities
+├── devnet-tokens/             # 🧪 Devnet token configs
+├── mainnet-tokens/            # 💎 Mainnet token configs
+└── docs/                      # 📚 Technical documentation
 ```
 
 ---
 
-## Smart Contract Instructions (21 total)
-
-### Core Operations
-| Instruction | Description |
-|-------------|-------------|
-| `initialize` | Initialize DAT state and authority PDAs |
-| `initialize_token_stats` | Create per-token tracking |
-| `collect_fees` | Collect SOL from Pump.fun vault |
-| `execute_buy` | Buy tokens with collected SOL |
-| `burn_and_update` | Burn tokens and update stats |
-| `finalize_allocated_cycle` | Finalize an orchestrated cycle |
-
-### Ecosystem Management
-| Instruction | Description |
-|-------------|-------------|
-| `set_root_token` | Configure root token for fee split |
-| `update_fee_split` | Adjust distribution ratio (1000-9000 bps) |
-| `register_validated_fees` | Register daemon-validated fees |
-| `sync_validator_slot` | Synchronize validator state |
-
-### Token Creation
-| Instruction | Description |
-|-------------|-------------|
-| `create_pumpfun_token` | Create standard SPL token |
-| `create_pumpfun_token_mayhem` | Create Mayhem token (Token-2022) |
-
-### Administration
-| Instruction | Description |
-|-------------|-------------|
-| `emergency_pause` | Pause all operations |
-| `resume` | Resume after pause |
-| `update_parameters` | Modify system parameters |
-| `transfer_admin` | Transfer admin authority |
-
----
-
-## Configuration
-
-### Token Configs
-
-Each token is configured via a JSON file:
-
-```json
-{
-  "mint": "rxeo277TLJfPYX6zaSfbtyHWY7BkTREL9AidoNi38jr",
-  "bondingCurve": "HDHVCfjbnxX3EzAhDpHj1Coiooq7yEPBXp74CDtkvCap",
-  "creator": "4nS8cak3SUafTXsmaZVi1SEVoL67tNotsnmHG1RH7Jjd",
-  "symbol": "DATSPL",
-  "isRoot": true,
-  "mayhemMode": false,
-  "network": "devnet"
-}
-```
-
-### Environment Variables
-
-```bash
-# .env
-RPC_URL=https://api.devnet.solana.com
-WALLET_PATH=./devnet-wallet.json
-```
-
----
-
-## Fee Distribution
-
-### Secondary Tokens (55.2% / 44.8%)
-
-```
-Received allocation: 100%
-    │
-    ├── 55.2% → Secondary token buyback
-    │
-    └── 44.8% → Root Treasury
-                    │
-                    └── Root token buyback
-```
-
-### Root Token (100%)
-
-```
-Collected fees: 100%
-    │
-    └── 100% → Root token buyback
-```
-
----
-
-## Main Scripts
-
-### Ecosystem Cycle
-```bash
-# Execute full cycle on all tokens
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
-```
-
-### Volume Generation
-```bash
-# Generate trades to accumulate fees
-# Args: <token-config> <rounds> <amount-sol>
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 10 0.1
-```
-
-### Monitoring
-```bash
-# Token statistics
-npx ts-node scripts/check-current-stats.ts
-
-# Protocol state
-npx ts-node scripts/check-dat-state.ts
-
-# Vault balance
-npx ts-node scripts/check-creator-vault.ts devnet-token-spl.json
-```
-
-### Token Sales
-```bash
-# Sell all SPL tokens
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
-
-# Sell Mayhem tokens
-npx ts-node scripts/sell-mayhem-tokens.ts devnet-token-mayhem.json
-```
-
----
-
-## Security
-
-### TESTING_MODE
-
-```rust
-// programs/asdf-dat/src/lib.rs:97
-pub const TESTING_MODE: bool = true;  // ⚠️ MUST BE false FOR MAINNET
-```
-
-| Mode | Cycle Interval | AM/PM Limits | Min Fees |
-|------|----------------|--------------|----------|
-| `true` (devnet) | Disabled | Disabled | Disabled |
-| `false` (mainnet) | 60s min | Enforced | 10 SOL |
-
-### Sensitive Files (gitignored)
-
-- `devnet-wallet.json` / `mainnet-wallet.json`
-- `wallet.json`
-- `ASDF*.json` (program keypairs)
-- `*.key` / `*.pem`
-
----
-
-## Mainnet Deployment
-
-### Checklist
-
-- [ ] `TESTING_MODE = false` in lib.rs
-- [ ] New program keypair (never reuse devnet)
-- [ ] Mainnet RPC endpoint configured
-- [ ] Secure mainnet wallet
-- [ ] Mainnet token configs created
-- [ ] Tests on mainnet-beta completed
-- [ ] Monitoring/alerting configured
-
-### Commands
-
-```bash
-# Build with TESTING_MODE = false
-anchor build
-
-# Deploy mainnet
-anchor deploy --provider.cluster mainnet
-
-# Update IDL
-cp target/idl/asdf_dat.json .
-```
-
----
-
-## Dependencies
-
-### Rust
-- `anchor-lang` = "0.31.1"
-- `anchor-spl` = "0.31.1"
-
-### TypeScript
-- `@coral-xyz/anchor` = "0.31.1"
-- `@solana/web3.js` = "^1.91.0"
-- `@pump-fun/pump-sdk` = "^1.22.1"
-- `@pump-fun/pump-swap-sdk` = "^1.7.7"
-
----
-
-## Documentation
+## 📚 Documentation
 
 | Document | Description |
 |----------|-------------|
-| [AUDIT-REPORT-2025-11-25.md](AUDIT-REPORT-2025-11-25.md) | Complete professional audit |
-| [PRODUCTION-WORKFLOW.md](PRODUCTION-WORKFLOW.md) | Production guide |
-| [QUICK_START_DEVNET.md](QUICK_START_DEVNET.md) | Quick start guide |
-| [PUMPFUN_DEVNET_GUIDE.md](PUMPFUN_DEVNET_GUIDE.md) | Pump.fun integration |
-| [MAYHEM-MODE-LAUNCH-GUIDE.md](MAYHEM-MODE-LAUNCH-GUIDE.md) | Mayhem Mode guide |
+| [🏗️ Architecture](docs/ARCHITECTURE.md) | System design, PDAs, data flow |
+| [👨‍💻 Developer Guide](docs/DEVELOPER_GUIDE.md) | Integration, accounts, errors |
+| [📖 API Reference](docs/API_REFERENCE.md) | All 26 instructions documented |
+| [🔧 Operations](docs/OPERATIONS.md) | Monitoring, runbooks, troubleshooting |
 
 ---
 
-## Metrics
+## 🛡️ Security
 
-| Component | Files | Lines |
-|-----------|-------|-------|
-| Smart Contract | 2 | 2,559 |
-| Scripts | 56 | 13,748 |
-| Utilities | 5 | 1,509 |
-| Documentation | 20+ | 4,835+ |
-| **Total** | **89+** | **~23,000** |
+- ✅ **Audited**: Internal security review completed (Nov 2025)
+- ⏸️ **Emergency Pause**: Admin can halt all operations instantly
+- 🔐 **Two-Step Admin Transfer**: Prevents accidental ownership loss
+- ⚖️ **Fee Split Limits**: Max 5% change per transaction, timelocked for larger changes
+- 🚨 **Auto-Pause**: System pauses after 5 consecutive failures
 
----
-
-## Addresses (Devnet)
-
-| Element | Address |
-|---------|---------|
-| **Program ID** | `ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ` |
-| **PumpSwap** | `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA` |
-| **Pump.fun** | `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P` |
-| **Token-2022** | `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` |
+See [Security Notes](docs/DEVELOPER_GUIDE.md#security) for details.
 
 ---
 
-## License
+## 🤝 Contributing
 
-Private project. Contact the team for inquiries.
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/amazing-feature`)
+3. Test on devnet first
+4. Submit a PR with clear description
+
+**Code Standards**: See `CLAUDE.md` for development guidelines.
 
 ---
 
-**Built with [Anchor](https://anchor-lang.com) on [Solana](https://solana.com)**
+## 📜 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+## 🔗 Links
+
+- 🔍 **Program**: [Explorer](https://solscan.io/account/ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui)
+- 🪙 **Root Token ($ASDF)**: [Pump.fun](https://pump.fun/coin/9FxrRPwDF44zzjfzxGKtdqXqH1JKjD4MJ1nbFP7Zpump)
+
+---
+
+*Building infrastructure for Creator Capital Markets.*
+*This is fine.* 🔥🐕

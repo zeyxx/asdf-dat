@@ -8,11 +8,10 @@
     "clean": "rm -rf dist target",
     "compile": "tsc",
     "test": "anchor test",
-    "init": "ts-node scripts/init.ts",
-    "create-token": "ts-node scripts/create-token.ts",
-    "init-accounts": "ts-node scripts/init-all-accounts.ts",
-    "setup-ata": "ts-node scripts/setup-ata.ts",
-    "find-vault": "ts-node scripts/find-creator-vault.ts",
+    "init": "ts-node scripts/init-dat-state.ts",
+    "create-token": "ts-node scripts/create-token-spl.ts",
+    "init-accounts": "ts-node scripts/create-all-required-atas.ts",
+    "check-vault": "ts-node scripts/check-creator-vault.ts",
     "bot": "ts-node src/bot.ts",
     "dashboard": "ts-node src/index.ts dashboard",
     "start": "ts-node src/index.ts all",
@@ -29,7 +28,8 @@
     "express": "^5.1.0",
     "mime-types": "^3.0.2",
     "nft.storage": "^7.2.0",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",

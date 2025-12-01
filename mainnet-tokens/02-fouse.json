@@ -1,0 +1,14 @@
+{
+  "mint": "66jGhyM4Vtc927T99t9QFHi2iDQDz2KvVHhJ3sfFpump",
+  "bondingCurve": "CZs3w68ELxXwjLUuBtdR4VpkzQaKsSGcbxd9jYnDkMvT",
+  "pool": "CZs3w68ELxXwjLUuBtdR4VpkzQaKsSGcbxd9jYnDkMvT",
+  "creator": "dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4",
+  "name": "Finehouse",
+  "symbol": "FOUSE",
+  "uri": "https://pump.fun/coin/66jGhyM4Vtc927T99t9QFHi2iDQDz2KvVHhJ3sfFpump",
+  "isRoot": false,
+  "mayhemMode": false,
+  "tokenProgram": "SPL",
+  "poolType": "bonding_curve",
+  "network": "mainnet"
+}

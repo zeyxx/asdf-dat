@@ -9,6 +9,7 @@
  *   npx ts-node scripts/start-validator.ts [options]
  *
  * Options:
+ *   --network    Network to use: mainnet or devnet (default: devnet)
  *   --verbose    Enable verbose logging
  *   --interval   Flush interval in seconds (default: 30)
  */
@@ -17,30 +18,34 @@ import { Connection, Keypair, PublicKey } from '@solana/web3.js';
 import { AnchorProvider, Program, Wallet, Idl } from '@coral-xyz/anchor';
 import fs from 'fs';
 import path from 'path';
-import { ValidatorDaemon, TokenConfig, createValidatorDaemon } from '../lib/validator-daemon';
+import { ValidatorDaemon, TokenConfig } from '../lib/validator-daemon';
+import { PoolType } from '../lib/amm-utils';
 import { syncValidatorIfNeeded } from './sync-validator-slots';
+import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
 
-const PROGRAM_ID = new PublicKey('ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ');
+const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
 
 // Parse command line arguments
 const args = process.argv.slice(2);
+const networkConfig = getNetworkConfig(args);
 const verbose = args.includes('--verbose') || args.includes('-v');
 const intervalArg = args.find(a => a.startsWith('--interval='));
 const interval = intervalArg ? parseInt(intervalArg.split('=')[1]) * 1000 : 30000;
 
 async function main() {
-  console.log('\n' + '='.repeat(70));
+  printNetworkBanner(networkConfig);
   console.log('🔍 VALIDATOR DAEMON - Trustless Fee Attribution');
   console.log('='.repeat(70) + '\n');
 
   // Load connection
-  const connection = new Connection('https://api.devnet.solana.com', 'confirmed');
+  const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
+  console.log(`🌐 RPC: ${networkConfig.rpcUrl}`);
 
   // Load wallet (for signing - even though register_validated_fees is permissionless,
   // we need a wallet for the Provider)
-  const walletPath = path.join(process.cwd(), 'devnet-wallet.json');
+  const walletPath = path.join(process.cwd(), networkConfig.wallet);
   if (!fs.existsSync(walletPath)) {
-    console.error('❌ Wallet not found at devnet-wallet.json');
+    console.error(`❌ Wallet not found at ${networkConfig.wallet}`);
     console.error('   Please create a wallet or copy an existing one');
     process.exit(1);
   }
@@ -74,12 +79,8 @@ async function main() {
   );
   const program = new Program(idl, provider);
 
-  // Load token configs
-  const tokenFiles = [
-    'devnet-token-spl.json',
-    'devnet-token-secondary.json',
-    'devnet-token-mayhem.json',
-  ];
+  // Load token configs from network config
+  const tokenFiles = networkConfig.tokens;
 
   const tokens: TokenConfig[] = [];
 
@@ -88,13 +89,17 @@ async function main() {
     if (fs.existsSync(filePath)) {
       try {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        const poolType: PoolType = data.poolType || 'bonding_curve';
+
         tokens.push({
           mint: new PublicKey(data.mint),
-          bondingCurve: new PublicKey(data.bondingCurve),
           creator: new PublicKey(data.creator),
           symbol: data.symbol || data.name || 'UNKNOWN',
+          poolType,
+          bondingCurve: data.bondingCurve ? new PublicKey(data.bondingCurve) : undefined,
+          pool: data.pool ? new PublicKey(data.pool) : undefined,
         });
-        console.log(`✅ Loaded ${data.symbol}: ${data.mint}`);
+        console.log(`✅ Loaded ${data.symbol} (${poolType}): ${data.mint}`);
       } catch (error) {
         console.error(`❌ Failed to load ${file}:`, error);
       }

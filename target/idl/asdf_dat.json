@@ -1,5 +1,5 @@
 {
-  "address": "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ",
+  "address": "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui",
   "metadata": {
     "name": "asdf_dat",
     "version": "0.1.0",
@@ -7,6 +7,51 @@
     "description": "ASDF DAT"
   },
   "instructions": [
+    {
+      "name": "accept_admin_transfer",
+      "docs": [
+        "Accept admin transfer (must be called by the proposed admin)"
+      ],
+      "discriminator": [
+        89,
+        211,
+        96,
+        212,
+        233,
+        0,
+        251,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_admin",
+          "docs": [
+            "The proposed admin who is accepting the transfer"
+          ],
+          "signer": true
+        }
+      ],
+      "args": []
+    },
     {
       "name": "burn_and_update",
       "discriminator": [
@@ -104,6 +149,51 @@
       "args": []
     },
     {
+      "name": "cancel_admin_transfer",
+      "docs": [
+        "Cancel a pending admin transfer (called by current admin)"
+      ],
+      "discriminator": [
+        38,
+        131,
+        157,
+        31,
+        240,
+        137,
+        44,
+        215
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "collect_fees",
       "discriminator": [
         164,
@@ -191,6 +281,11 @@
         },
         {
           "name": "creator_vault",
+          "docs": [
+            "Seeds: [\"creator-vault\", creator_pubkey] where creator=dat_authority.",
+            "The CPI to collect_creator_fee will fail if this is not a valid vault.",
+            "NOTE: Vault is a native SOL account (System Program owner), NOT owned by PUMP_PROGRAM."
+          ],
           "writable": true
         },
         {
@@ -201,6 +296,9 @@
         },
         {
           "name": "root_treasury",
+          "docs": [
+            "via PDA derivation: [\"root_treasury\", root_token_mint]"
+          ],
           "writable": true,
           "optional": true
         },
@@ -219,6 +317,126 @@
           "type": "bool"
         }
       ]
+    },
+    {
+      "name": "collect_fees_amm",
+      "docs": [
+        "Collect fees from PumpSwap AMM creator vault",
+        "Used for tokens that have migrated from bonding curve to AMM",
+        "Requires: DAT authority PDA must be set as coin_creator in PumpSwap",
+        "IMPORTANT: This collects WSOL (SPL Token), not native SOL"
+      ],
+      "discriminator": [
+        89,
+        152,
+        80,
+        30,
+        130,
+        141,
+        42,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_stats",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  116,
+                  111,
+                  107,
+                  101,
+                  110,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint"
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wsol_mint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (destination for collected fees)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "creator_vault_authority"
+        },
+        {
+          "name": "creator_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "create_pumpfun_token",
@@ -513,6 +731,10 @@
     },
     {
       "name": "execute_buy",
+      "docs": [
+        "Execute buy on bonding curve - ROOT TOKEN ONLY (simpler, no split logic)",
+        "For secondary tokens, use execute_buy_secondary instead"
+      ],
       "discriminator": [
         14,
         137,
@@ -565,6 +787,9 @@
         },
         {
           "name": "dat_asdf_account",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
           "writable": true
         },
         {
@@ -580,10 +805,6 @@
           "writable": true
         },
         {
-          "name": "pool_wsol_account",
-          "writable": true
-        },
-        {
           "name": "pump_global_config"
         },
         {
@@ -591,7 +812,280 @@
           "writable": true
         },
         {
+          "name": "creator_vault",
+          "writable": true
+        },
+        {
+          "name": "pump_event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "allocated_lamports",
+          "type": {
+            "option": "u64"
+          }
+        }
+      ]
+    },
+    {
+      "name": "execute_buy_amm",
+      "docs": [
+        "Execute buy on PumpSwap AMM pool (for migrated tokens)",
+        "This instruction handles tokens that have graduated from bonding curve to AMM",
+        "Requires WSOL in dat_wsol_account for the buy operation"
+      ],
+      "discriminator": [
+        239,
+        72,
+        220,
+        75,
+        250,
+        12,
+        58,
+        221
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_token_account",
+          "docs": [
+            "DAT's token account for receiving bought tokens - validated mint and authority"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "global_config"
+        },
+        {
+          "name": "base_mint",
+          "docs": [
+            "Base token mint (the token being bought)"
+          ]
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "dat_wsol_account",
+          "writable": true
+        },
+        {
+          "name": "pool_base_token_account",
+          "writable": true
+        },
+        {
+          "name": "pool_quote_token_account",
+          "writable": true
+        },
+        {
+          "name": "protocol_fee_recipient"
+        },
+        {
           "name": "protocol_fee_recipient_ata",
+          "writable": true
+        },
+        {
+          "name": "base_token_program",
+          "docs": [
+            "Base token program (SPL Token or Token2022)"
+          ]
+        },
+        {
+          "name": "quote_token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "associated_token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "pump_swap_program"
+        },
+        {
+          "name": "coin_creator_vault_ata",
+          "writable": true
+        },
+        {
+          "name": "coin_creator_vault_authority"
+        },
+        {
+          "name": "global_volume_accumulator"
+        },
+        {
+          "name": "user_volume_accumulator",
+          "writable": true
+        },
+        {
+          "name": "fee_config"
+        },
+        {
+          "name": "fee_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "desired_tokens",
+          "type": "u64"
+        },
+        {
+          "name": "max_sol_cost",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "execute_buy_secondary",
+      "docs": [
+        "Execute buy for SECONDARY tokens (includes fee split to root treasury)"
+      ],
+      "discriminator": [
+        4,
+        51,
+        212,
+        248,
+        213,
+        148,
+        13,
+        205
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_asdf_account",
+          "docs": [
+            "DAT's token account - validated mint and authority"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "asdf_mint",
+          "writable": true
+        },
+        {
+          "name": "pool_asdf_account",
+          "docs": [
+            "Pool's token account - validated mint matches"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pump_global_config"
+        },
+        {
+          "name": "protocol_fee_recipient",
           "writable": true
         },
         {
@@ -628,17 +1122,9 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
         }
       ],
       "args": [
-        {
-          "name": "is_secondary_token",
-          "type": "bool"
-        },
         {
           "name": "allocated_lamports",
           "type": {
@@ -646,6 +1132,51 @@
           }
         }
       ]
+    },
+    {
+      "name": "execute_fee_split",
+      "docs": [
+        "Execute a pending fee split change (after cooldown period)"
+      ],
+      "discriminator": [
+        205,
+        104,
+        254,
+        72,
+        93,
+        230,
+        0,
+        191
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
     },
     {
       "name": "finalize_allocated_cycle",
@@ -961,6 +1492,101 @@
       "args": []
     },
     {
+      "name": "propose_admin_transfer",
+      "docs": [
+        "Propose a new admin (two-step transfer for security)"
+      ],
+      "discriminator": [
+        218,
+        178,
+        115,
+        190,
+        80,
+        107,
+        95,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "propose_fee_split",
+      "docs": [
+        "Propose a fee split change (subject to timelock)"
+      ],
+      "discriminator": [
+        232,
+        194,
+        55,
+        204,
+        149,
+        144,
+        177,
+        146
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "new_admin"
+        }
+      ],
+      "args": [
+        {
+          "name": "new_fee_split_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
       "name": "record_failure",
       "discriminator": [
         86,
@@ -1026,6 +1652,31 @@
         101
       ],
       "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin signer - only admin can register fees (CRITICAL security fix)"
+          ],
+          "signer": true
+        },
         {
           "name": "validator_state",
           "writable": true,
@@ -1350,6 +2001,10 @@
     },
     {
       "name": "transfer_admin",
+      "docs": [
+        "DEPRECATED: Use propose_admin_transfer + accept_admin_transfer instead",
+        "Kept for backwards compatibility - now just proposes the transfer"
+      ],
       "discriminator": [
         42,
         242,
@@ -1386,6 +2041,74 @@
         },
         {
           "name": "new_admin"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "unwrap_wsol",
+      "docs": [
+        "Unwrap WSOL to native SOL in DAT authority account",
+        "Call this after collect_fees_amm to convert WSOL to SOL for buyback"
+      ],
+      "discriminator": [
+        4,
+        6,
+        123,
+        139,
+        46,
+        174,
+        17,
+        154
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (will be closed)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program"
         }
       ],
       "args": []
@@ -1574,6 +2297,92 @@
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "wrap_wsol",
+      "docs": [
+        "Wrap native SOL to WSOL for AMM buyback",
+        "Call this before execute_buy_amm when root token is on PumpSwap AMM",
+        "The dat_wsol_account must already exist (created by caller)"
+      ],
+      "discriminator": [
+        24,
+        173,
+        95,
+        186,
+        149,
+        56,
+        111,
+        78
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_wsol_account",
+          "docs": [
+            "DAT's WSOL token account (destination for wrapped SOL)",
+            "Must be owned by dat_authority and have WSOL mint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "wsol_mint",
+          "docs": [
+            "WSOL mint (So11111111111111111111111111111111111111112)"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
@@ -1619,6 +2428,19 @@
   ],
   "events": [
     {
+      "name": "AdminTransferProposed",
+      "discriminator": [
+        203,
+        168,
+        175,
+        51,
+        239,
+        104,
+        20,
+        85
+      ]
+    },
+    {
       "name": "AdminTransferred",
       "discriminator": [
         255,
@@ -1629,6 +2451,32 @@
         217,
         38,
         179
+      ]
+    },
+    {
+      "name": "AmmFeesCollected",
+      "discriminator": [
+        52,
+        168,
+        200,
+        204,
+        254,
+        238,
+        245,
+        191
+      ]
+    },
+    {
+      "name": "BuyExecuted",
+      "discriminator": [
+        183,
+        7,
+        73,
+        208,
+        153,
+        81,
+        148,
+        198
       ]
     },
     {
@@ -1915,46 +2763,76 @@
     },
     {
       "code": 6017,
+      "name": "FeeSplitDeltaTooLarge",
+      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+    },
+    {
+      "code": 6018,
       "name": "InsufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "StaleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "SlotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "ValidatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "FeeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "TooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "InvalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "MintMismatch",
       "msg": "Mint mismatch between accounts"
+    },
+    {
+      "code": 6026,
+      "name": "PendingFeesOverflow",
+      "msg": "Pending fees would exceed maximum (69 SOL)"
     }
   ],
   "types": [
+    {
+      "name": "AdminTransferProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "current_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "proposed_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "AdminTransferred",
       "type": {
@@ -1967,6 +2845,46 @@
           {
             "name": "new_admin",
             "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmmFeesCollected",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "wsol_amount",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BuyExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "tokens_bought",
+            "type": "u64"
+          },
+          {
+            "name": "sol_spent",
+            "type": "u64"
           },
           {
             "name": "timestamp",
@@ -2175,13 +3093,24 @@
             "type": "u64"
           },
           {
-            "name": "_reserved",
+            "name": "pending_admin",
             "type": {
-              "array": [
-                "u8",
-                22
-              ]
+              "option": "pubkey"
             }
+          },
+          {
+            "name": "pending_fee_split",
+            "type": {
+              "option": "u16"
+            }
+          },
+          {
+            "name": "pending_fee_split_timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "admin_operation_cooldown",
+            "type": "i64"
           }
         ]
       }
@@ -2212,7 +3141,11 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "new_fee_split_bps",
+            "name": "old_bps",
+            "type": "u16"
+          },
+          {
+            "name": "new_bps",
             "type": "u16"
           },
           {

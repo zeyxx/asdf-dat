@@ -1,7 +1,8 @@
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import fs from "fs";
+import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 const colors = {
   reset: "\x1b[0m",
@@ -18,20 +19,30 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 async function main() {
+  // Parse network argument
+  const args = process.argv.slice(2);
+  const networkConfig = getNetworkConfig(args);
+
   console.log("\n" + "=".repeat(70));
   console.log(`${colors.bright}${colors.magenta}🔄 TRANSFERT PROGRAM UPGRADE AUTHORITY${colors.reset}`);
   console.log("=".repeat(70) + "\n");
 
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+  printNetworkBanner(networkConfig);
+
+  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
+
+  // Determine wallet paths based on network
+  const isMainnet = networkConfig.name === "Mainnet";
+  const walletPrefix = isMainnet ? "mainnet" : "devnet";
 
   // Load old wallet (current upgrade authority)
-  let oldWalletPath = "./old-devnet-wallet.json";
+  let oldWalletPath = `./old-${walletPrefix}-wallet.json`;
   if (!fs.existsSync(oldWalletPath)) {
-    oldWalletPath = "./devnet-wallet-backup.json";
+    oldWalletPath = `./${walletPrefix}-wallet-backup.json`;
     if (!fs.existsSync(oldWalletPath)) {
       log("❌", "Ancien wallet non trouvé!", colors.red);
       log("⚠️", "Besoin de l'ancien wallet pour transférer l'upgrade authority", colors.yellow);
-      log("💡", "Upgrade authority actuel: 9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj", colors.cyan);
+      log("💡", `Placez l'ancien wallet dans: old-${walletPrefix}-wallet.json`, colors.cyan);
       process.exit(1);
     }
   }
@@ -44,7 +55,7 @@ async function main() {
 
   // Load new wallet
   const newWallet = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("./devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(networkConfig.wallet, "utf-8")))
   );
 
   log("🔑", `Nouveau wallet (new authority): ${newWallet.publicKey.toString()}`, colors.green);
@@ -70,7 +81,8 @@ async function main() {
     const { execSync } = require('child_process');
 
     // Use solana program set-upgrade-authority command
-    const command = `solana program set-upgrade-authority ${PROGRAM_ID.toString()} --new-upgrade-authority ${newWallet.publicKey.toString()} --keypair ${oldWalletPath} --url devnet`;
+    const clusterUrl = networkConfig.name === "Mainnet" ? "mainnet-beta" : "devnet";
+    const command = `solana program set-upgrade-authority ${PROGRAM_ID.toString()} --new-upgrade-authority ${newWallet.publicKey.toString()} --keypair ${oldWalletPath} --url ${clusterUrl}`;
 
     log("🔧", "Command: " + command, colors.cyan);
 

@@ -3,20 +3,20 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
+asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [programs.devnet]
-asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
+asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [programs.mainnet]
-asdf_dat = "ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ"
+asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
 cluster = "mainnet"
-wallet = "./wallet.json"
+wallet = "./mainnet-wallet.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
