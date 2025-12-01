@@ -11,6 +11,17 @@
 
 ---
 
+## 🎯 Vision
+
+**Phase 1** (Now): Proof of concept - single ecosystem, automated buy→burn→treasury cycle
+**Phase 2** (2026): SaaS platform - any creator can deploy their own DAT
+
+> "Solana is complex. Rust is technical. Pump.fun is borderline magic.
+> But that's OK. We build clean, modular, stable, and future-ready.
+> This is fine." 🔥🐶
+
+---
+
 ## 😤 The Problem
 
 Creator fees on Pump.fun exist, but most projects ignore them. Value leaks out instead of compounding back. And when you have multiple tokens in an ecosystem? Good luck coordinating anything.
