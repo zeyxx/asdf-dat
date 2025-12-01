@@ -87,10 +87,11 @@ export interface TokenConfig {
   creator: string;
   creatorVault: string;
   tokenProgram: string;
-  poolType: 'bonding_curve' | 'amm';
+  poolType: 'bonding_curve' | 'amm' | 'pumpswap_amm';
   name: string;
   symbol: string;
   isRoot?: boolean;
+  isCTO?: boolean;  // true if token has undergone Community TakeOver (pump.fun)
 }
 
 /**

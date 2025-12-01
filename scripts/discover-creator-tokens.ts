@@ -36,6 +36,7 @@ interface TokenConfig {
   bondingCurve: string;
   pool: string;
   creator: string;
+  isCTO?: boolean;  // true if token has undergone CTO (Community TakeOver)
   name: string;
   symbol: string;
   uri: string;
@@ -106,6 +107,58 @@ async function detectPoolType(
   } catch {
     return 'pumpswap_amm';
   }
+}
+
+/**
+ * Extract the active creator address from on-chain pool data
+ *
+ * For bonding_curve:
+ *   - Creator is at offset 49 (after discriminator + mint + other fields)
+ *   - Vault derived with seeds ["creator-vault", creator]
+ *
+ * For pumpswap_amm (migrated tokens):
+ *   - coin_creator at offset 49 (original creator)
+ *   - cto_creator at offset 211 (CTO creator, if CTO approved)
+ *   - If cto_creator is non-zero, it's the ACTIVE creator receiving fees
+ *   - Vault derived with seeds ["creator_vault", active_creator]
+ */
+async function extractCreatorFromPool(
+  connection: Connection,
+  bondingCurve: PublicKey,
+  ammPool: PublicKey,
+  poolType: PoolType
+): Promise<{ creator: string; isCTO: boolean }> {
+  try {
+    if (poolType === 'bonding_curve') {
+      // Bonding curve: creator at offset 49
+      const bcInfo = await connection.getAccountInfo(bondingCurve);
+      if (bcInfo && bcInfo.data.length >= 81) {
+        const creator = new PublicKey(bcInfo.data.slice(49, 81));
+        return { creator: creator.toBase58(), isCTO: false };
+      }
+    } else {
+      // PumpSwap AMM: check both coin_creator and cto_creator
+      const poolInfo = await connection.getAccountInfo(ammPool);
+      if (poolInfo && poolInfo.data.length >= 243) {
+        const coinCreator = new PublicKey(poolInfo.data.slice(49, 81));
+        const ctoCreator = new PublicKey(poolInfo.data.slice(211, 243));
+
+        // Check if CTO exists (non-zero address at offset 211)
+        const hasCTO = !ctoCreator.equals(PublicKey.default);
+
+        return {
+          creator: hasCTO ? ctoCreator.toBase58() : coinCreator.toBase58(),
+          isCTO: hasCTO
+        };
+      }
+    }
+  } catch (error) {
+    // Log error but don't fail - will fall back to root creator
+    console.log(`${colors.dim}    Warning: Could not extract creator from pool${colors.reset}`);
+  }
+
+  // Fallback: return empty to signal extraction failed
+  return { creator: '', isCTO: false };
 }
 
 // ============================================================================
@@ -601,6 +654,17 @@ async function main() {
     const poolType = await detectPoolType(connection, bondingCurve);
     const pool = poolType === 'bonding_curve' ? bondingCurve : ammPool;
 
+    // Extract creator from on-chain data (not from root token!)
+    const { creator: extractedCreator, isCTO } = await extractCreatorFromPool(
+      connection,
+      bondingCurve,
+      ammPool,
+      poolType
+    );
+
+    // Fall back to root creator if extraction failed (shouldn't happen)
+    const tokenCreator = extractedCreator || creatorWallet;
+
     // Detect token program (Token2022 = mayhemMode)
     let isToken2022 = false;
     try {
@@ -613,12 +677,13 @@ async function main() {
       // Default to SPL
     }
 
-    // Build config
+    // Build config with EXTRACTED creator (not root's creator!)
     const config: TokenConfig = {
       mint,
       bondingCurve: bondingCurve.toBase58(),
       pool: pool.toBase58(),
-      creator: creatorWallet,
+      creator: tokenCreator,
+      ...(isCTO && { isCTO: true }),  // Only add isCTO if true
       name,
       symbol,
       uri: `https://pump.fun/coin/${mint}`,
@@ -634,11 +699,15 @@ async function main() {
     const filepath = writeTokenConfig(network, nextIndex, config, dryRun);
     const poolTag = poolType === 'pumpswap_amm' ? 'AMM' : 'BC';
     const t2022Tag = isToken2022 ? ' T2022' : '';
+    const ctoTag = isCTO ? ' CTO' : '';
 
     console.log(
       `  ${colors.green}[NEW]${colors.reset} ${symbol} (${mint.slice(0, 8)}...) ` +
-        `${colors.dim}[${poolTag}${t2022Tag}]${colors.reset} → ${filepath}`
+        `${colors.dim}[${poolTag}${ctoTag}${t2022Tag}]${colors.reset} → ${filepath}`
     );
+    if (verbose && tokenCreator !== creatorWallet) {
+      console.log(`${colors.dim}       Creator: ${tokenCreator.slice(0, 20)}...${colors.reset}`);
+    }
 
     newCount++;
     nextIndex++;
