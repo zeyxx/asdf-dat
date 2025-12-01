@@ -44,12 +44,6 @@ pub const TOKEN_2022_PROGRAM: Pubkey = Pubkey::new_from_array([
     190, 192, 170, 33, 225, 195, 158, 240, 26, 96, 235, 152, 242, 210, 242, 92
 ]);
 
-/// PumpSwap AMM Program (alternate reference): pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
-pub const PUMPSWAP_PROGRAM: Pubkey = Pubkey::new_from_array([
-    12, 1, 146, 49, 102, 101, 134, 40, 128, 231, 192, 18, 180, 117, 11, 141,
-    69, 120, 62, 88, 103, 145, 226, 163, 79, 211, 126, 135, 231, 111, 228, 196
-]);
-
 /// Fee Program: pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ
 pub const PUMP_FEE_PROGRAM: Pubkey = Pubkey::new_from_array([
     12, 53, 255, 169, 5, 90, 142, 86, 141, 168, 247, 188, 7, 86, 21, 39,
@@ -174,7 +168,10 @@ pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
 pub const MIN_CYCLE_INTERVAL: i64 = 60;
 
 /// Maximum pending fees per token (69 SOL)
-/// Note: This limit prevents excessive accumulation and potential overflow
+/// Rationale: 69 SOL represents ~6900 trades with 0.01 SOL fee each,
+/// well beyond typical accumulation between daemon flushes.
+/// This limit prevents excessive accumulation, potential overflow,
+/// and ensures proportional distribution remains fair.
 pub const MAX_PENDING_FEES: u64 = 69_000_000_000;
 
 // ══════════════════════════════════════════════════════════════════════════════

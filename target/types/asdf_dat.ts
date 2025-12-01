@@ -192,9 +192,6 @@ export type AsdfDat = {
         {
           "name": "admin",
           "signer": true
-        },
-        {
-          "name": "newAdmin"
         }
       ],
       "args": []
@@ -862,7 +859,9 @@ export type AsdfDat = {
       "docs": [
         "Execute buy on PumpSwap AMM pool (for migrated tokens)",
         "This instruction handles tokens that have graduated from bonding curve to AMM",
-        "Requires WSOL in dat_wsol_account for the buy operation"
+        "Requires WSOL in dat_wsol_account for the buy operation",
+        "",
+        "MEDIUM-01 FIX: Added slippage validation to ensure received tokens meet minimum threshold"
       ],
       "discriminator": [
         239,
@@ -1642,10 +1641,10 @@ export type AsdfDat = {
     {
       "name": "registerValidatedFees",
       "docs": [
-        "PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs",
-        "Anyone can call this to commit fee data from off-chain validation",
+        "ADMIN ONLY - Register validated fees extracted from PumpFun transaction logs",
+        "Only admin can call this to commit validated fee data",
         "",
-        "Security: Protected by slot progression and fee caps"
+        "Security: Protected by admin check, slot progression, and fee caps"
       ],
       "discriminator": [
         47,
@@ -2434,6 +2433,19 @@ export type AsdfDat = {
   ],
   "events": [
     {
+      "name": "adminTransferCancelled",
+      "discriminator": [
+        93,
+        23,
+        69,
+        55,
+        216,
+        128,
+        106,
+        56
+      ]
+    },
+    {
       "name": "adminTransferProposed",
       "discriminator": [
         203,
@@ -2679,6 +2691,19 @@ export type AsdfDat = {
         252,
         175
       ]
+    },
+    {
+      "name": "validatorSlotSynced",
+      "discriminator": [
+        238,
+        149,
+        41,
+        188,
+        11,
+        169,
+        226,
+        133
+      ]
     }
   ],
   "errors": [
@@ -2714,111 +2739,144 @@ export type AsdfDat = {
     },
     {
       "code": 6006,
-      "name": "alreadyExecutedThisPeriod",
-      "msg": "Already executed"
-    },
-    {
-      "code": 6007,
       "name": "slippageExceeded",
       "msg": "Slippage exceeded"
     },
     {
-      "code": 6008,
-      "name": "notCoinCreator",
-      "msg": "Not coin creator"
-    },
-    {
-      "code": 6009,
+      "code": 6007,
       "name": "priceImpactTooHigh",
       "msg": "Price impact too high"
     },
     {
-      "code": 6010,
-      "name": "rateTooLow",
-      "msg": "Rate too low"
-    },
-    {
-      "code": 6011,
+      "code": 6008,
       "name": "vaultNotInitialized",
       "msg": "Vault not initialized"
     },
     {
-      "code": 6012,
+      "code": 6009,
       "name": "noPendingBurn",
       "msg": "No pending burn"
     },
     {
-      "code": 6013,
+      "code": 6010,
       "name": "invalidPool",
       "msg": "Invalid pool data"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "invalidRootToken",
       "msg": "Invalid root token"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "invalidRootTreasury",
       "msg": "Invalid root treasury"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "invalidFeeSplit",
       "msg": "Invalid fee split basis points"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "feeSplitDeltaTooLarge",
       "msg": "Fee split change exceeds maximum delta (500 bps per call)"
     },
     {
-      "code": 6018,
+      "code": 6015,
       "name": "insufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6019,
+      "code": 6016,
       "name": "staleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6020,
+      "code": 6017,
       "name": "slotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6021,
+      "code": 6018,
       "name": "validatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6022,
+      "code": 6019,
       "name": "feeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6020,
       "name": "tooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6024,
+      "code": 6021,
       "name": "invalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6025,
+      "code": 6022,
       "name": "mintMismatch",
       "msg": "Mint mismatch between accounts"
     },
     {
-      "code": 6026,
+      "code": 6023,
       "name": "pendingFeesOverflow",
       "msg": "Pending fees would exceed maximum (69 SOL)"
+    },
+    {
+      "code": 6024,
+      "name": "noPendingAdminTransfer",
+      "msg": "No pending admin transfer to cancel"
+    },
+    {
+      "code": 6025,
+      "name": "noPendingFeeSplit",
+      "msg": "No pending fee split change to execute"
+    },
+    {
+      "code": 6026,
+      "name": "invalidAccountOwner",
+      "msg": "Invalid account owner"
+    },
+    {
+      "code": 6027,
+      "name": "slippageConfigTooHigh",
+      "msg": "Slippage configuration too high (max 500 bps)"
+    },
+    {
+      "code": 6028,
+      "name": "accountSizeMismatch",
+      "msg": "Account size mismatch during migration"
     }
   ],
   "types": [
+    {
+      "name": "adminTransferCancelled",
+      "docs": [
+        "Emitted when admin transfer is cancelled"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "cancelledNewAdmin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "adminTransferProposed",
       "docs": [
@@ -3654,7 +3712,7 @@ export type AsdfDat = {
     {
       "name": "validatorSlotReset",
       "docs": [
-        "Emitted when validator slot is reset"
+        "Emitted when validator slot is reset (admin only)"
       ],
       "type": {
         "kind": "struct",
@@ -3669,6 +3727,37 @@ export type AsdfDat = {
           },
           {
             "name": "newSlot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "validatorSlotSynced",
+      "docs": [
+        "Emitted when validator slot is synced (permissionless, stale validators only)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "oldSlot",
+            "type": "u64"
+          },
+          {
+            "name": "newSlot",
+            "type": "u64"
+          },
+          {
+            "name": "slotDelta",
             "type": "u64"
           },
           {

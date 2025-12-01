@@ -100,6 +100,14 @@ pub struct AdminTransferred {
     pub timestamp: i64,
 }
 
+/// Emitted when admin transfer is cancelled
+#[event]
+pub struct AdminTransferCancelled {
+    pub admin: Pubkey,
+    pub cancelled_new_admin: Pubkey,
+    pub timestamp: i64,
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // TOKEN EVENTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -173,12 +181,22 @@ pub struct AmmFeesCollected {
 // VALIDATOR EVENTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Emitted when validator slot is reset
+/// Emitted when validator slot is reset (admin only)
 #[event]
 pub struct ValidatorSlotReset {
     pub mint: Pubkey,
     pub old_slot: u64,
     pub new_slot: u64,
+    pub timestamp: i64,
+}
+
+/// Emitted when validator slot is synced (permissionless, stale validators only)
+#[event]
+pub struct ValidatorSlotSynced {
+    pub mint: Pubkey,
+    pub old_slot: u64,
+    pub new_slot: u64,
+    pub slot_delta: u64,
     pub timestamp: i64,
 }
 

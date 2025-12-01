@@ -110,15 +110,17 @@ pub struct DATState {
 
 impl DATState {
     /// Account size calculation:
-    /// - 5 Pubkeys: 32 * 5 = 160 bytes
-    /// - 14 u64/i64: 8 * 14 = 112 bytes (includes last_sol_sent_to_root)
-    /// - 2 u32: 4 * 2 = 8 bytes
-    /// - 5 u8/bool: 1 * 5 = 5 bytes
+    /// - 5 Pubkeys: 32 * 5 = 160 bytes (admin, asdf_mint, wsol_mint, pool_address, pump_swap_program)
+    /// - 16 u64/i64: 8 * 16 = 128 bytes (total_burned, total_sol_collected, last_cycle_timestamp,
+    ///   initialized_at, last_am_execution, last_pm_execution, last_cycle_sol, last_cycle_burned,
+    ///   min_fees_threshold, max_fees_per_cycle, min_cycle_interval, last_known_price,
+    ///   pending_burn_amount, last_sol_sent_to_root, pending_fee_split_timestamp, admin_operation_cooldown)
+    /// - 2 u32: 4 * 2 = 8 bytes (total_buybacks, failed_cycles)
+    /// - 5 u8/bool: 1 * 5 = 5 bytes (consecutive_failures, is_active, emergency_pause,
+    ///   dat_authority_bump, current_fee_recipient_index)
     /// - 2 u16: 2 * 2 = 4 bytes (slippage_bps, fee_split_bps)
-    /// - 1 Option<Pubkey>: 33 bytes (root_token_mint)
-    /// - 1 Option<Pubkey>: 33 bytes (pending_admin)
+    /// - 2 Option<Pubkey>: 33 * 2 = 66 bytes (root_token_mint, pending_admin)
     /// - 1 Option<u16>: 3 bytes (pending_fee_split)
-    /// - 2 i64: 8 * 2 = 16 bytes (pending_fee_split_timestamp, admin_operation_cooldown)
-    /// Total: 160 + 112 + 8 + 5 + 4 + 33 + 33 + 3 + 16 = 374 bytes
-    pub const LEN: usize = 32 * 5 + 8 * 16 + 4 * 2 + 1 * 5 + 2 * 2 + 33 + 33 + 3;
+    /// Total: 160 + 128 + 8 + 5 + 4 + 66 + 3 = 374 bytes
+    pub const LEN: usize = 32 * 5 + 8 * 16 + 4 * 2 + 1 * 5 + 2 * 2 + 33 * 2 + 3;
 }

@@ -382,7 +382,10 @@ pub struct BurnAndUpdate<'info> {
     pub dat_authority: AccountInfo<'info>,
     #[account(mut)]
     pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = asdf_mint.to_account_info().owner == token_program.key @ ErrorCode::InvalidAccountOwner
+    )]
     pub asdf_mint: InterfaceAccount<'info, Mint>,
     pub token_program: Interface<'info, TokenInterface>,
 }
@@ -501,7 +504,7 @@ pub struct ResetValidatorSlot<'info> {
 pub struct MigrateTokenStats<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
     pub dat_state: Account<'info, DATState>,
-    #[account(mut)]
+    #[account(mut, constraint = token_stats.owner == &crate::ID @ ErrorCode::InvalidAccountOwner)]
     /// CHECK: Manual PDA verification and deserialization for migration
     pub token_stats: AccountInfo<'info>,
     /// CHECK: Mint address for PDA derivation
@@ -518,6 +521,20 @@ pub struct ProposeAdminTransfer<'info> {
     pub admin: Signer<'info>,
     /// CHECK: Proposed new admin (will need to accept)
     pub new_admin: AccountInfo<'info>,
+}
+
+/// CancelAdminTransfer - Current admin cancels a pending transfer
+#[derive(Accounts)]
+pub struct CancelAdminTransfer<'info> {
+    #[account(
+        mut,
+        seeds = [DAT_STATE_SEED],
+        bump,
+        constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess,
+        constraint = dat_state.pending_admin.is_some() @ ErrorCode::InvalidParameter
+    )]
+    pub dat_state: Account<'info, DATState>,
+    pub admin: Signer<'info>,
 }
 
 /// AcceptAdminTransfer - Proposed admin accepts the transfer (two-step transfer)

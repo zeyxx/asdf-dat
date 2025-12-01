@@ -57,7 +57,7 @@ pub fn collect_amm_creator_fee_cpi<'info>(
     // Account order: quote_mint, quote_token_program, coin_creator (signer),
     //                coin_creator_vault_authority, coin_creator_vault_ata, coin_creator_token_account
     let instruction = Box::new(Instruction {
-        program_id: PUMPSWAP_PROGRAM,
+        program_id: PUMP_SWAP_PROGRAM,
         accounts: vec![
             AccountMeta::new_readonly(*quote_mint.key, false),
             AccountMeta::new_readonly(*quote_token_program.key, false),

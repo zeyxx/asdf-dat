@@ -24,20 +24,11 @@ pub enum ErrorCode {
     #[msg("Math overflow")]
     MathOverflow,
 
-    #[msg("Already executed")]
-    AlreadyExecutedThisPeriod,
-
     #[msg("Slippage exceeded")]
     SlippageExceeded,
 
-    #[msg("Not coin creator")]
-    NotCoinCreator,
-
     #[msg("Price impact too high")]
     PriceImpactTooHigh,
-
-    #[msg("Rate too low")]
-    RateTooLow,
 
     #[msg("Vault not initialized")]
     VaultNotInitialized,
@@ -86,4 +77,20 @@ pub enum ErrorCode {
 
     #[msg("Pending fees would exceed maximum (69 SOL)")]
     PendingFeesOverflow,
+
+    // Specific error codes for better debugging (LOW-02 fix)
+    #[msg("No pending admin transfer to cancel")]
+    NoPendingAdminTransfer,
+
+    #[msg("No pending fee split change to execute")]
+    NoPendingFeeSplit,
+
+    #[msg("Invalid account owner")]
+    InvalidAccountOwner,
+
+    #[msg("Slippage configuration too high (max 500 bps)")]
+    SlippageConfigTooHigh,
+
+    #[msg("Account size mismatch during migration")]
+    AccountSizeMismatch,
 }

@@ -114,6 +114,7 @@ pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: 
     require!(denom > 0, ErrorCode::MathOverflow);
 
     let out = num.checked_div(denom).ok_or(ErrorCode::MathOverflow)?;
+    #[cfg(feature = "verbose")]
     msg!("calculate_tokens_out: out={}", out);
 
     Ok(out as u64)

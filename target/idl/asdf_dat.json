@@ -186,9 +186,6 @@
         {
           "name": "admin",
           "signer": true
-        },
-        {
-          "name": "new_admin"
         }
       ],
       "args": []
@@ -856,7 +853,9 @@
       "docs": [
         "Execute buy on PumpSwap AMM pool (for migrated tokens)",
         "This instruction handles tokens that have graduated from bonding curve to AMM",
-        "Requires WSOL in dat_wsol_account for the buy operation"
+        "Requires WSOL in dat_wsol_account for the buy operation",
+        "",
+        "MEDIUM-01 FIX: Added slippage validation to ensure received tokens meet minimum threshold"
       ],
       "discriminator": [
         239,
@@ -1636,10 +1635,10 @@
     {
       "name": "register_validated_fees",
       "docs": [
-        "PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs",
-        "Anyone can call this to commit fee data from off-chain validation",
+        "ADMIN ONLY - Register validated fees extracted from PumpFun transaction logs",
+        "Only admin can call this to commit validated fee data",
         "",
-        "Security: Protected by slot progression and fee caps"
+        "Security: Protected by admin check, slot progression, and fee caps"
       ],
       "discriminator": [
         47,
@@ -2428,6 +2427,19 @@
   ],
   "events": [
     {
+      "name": "AdminTransferCancelled",
+      "discriminator": [
+        93,
+        23,
+        69,
+        55,
+        216,
+        128,
+        106,
+        56
+      ]
+    },
+    {
       "name": "AdminTransferProposed",
       "discriminator": [
         203,
@@ -2673,6 +2685,19 @@
         252,
         175
       ]
+    },
+    {
+      "name": "ValidatorSlotSynced",
+      "discriminator": [
+        238,
+        149,
+        41,
+        188,
+        11,
+        169,
+        226,
+        133
+      ]
     }
   ],
   "errors": [
@@ -2708,111 +2733,144 @@
     },
     {
       "code": 6006,
-      "name": "AlreadyExecutedThisPeriod",
-      "msg": "Already executed"
-    },
-    {
-      "code": 6007,
       "name": "SlippageExceeded",
       "msg": "Slippage exceeded"
     },
     {
-      "code": 6008,
-      "name": "NotCoinCreator",
-      "msg": "Not coin creator"
-    },
-    {
-      "code": 6009,
+      "code": 6007,
       "name": "PriceImpactTooHigh",
       "msg": "Price impact too high"
     },
     {
-      "code": 6010,
-      "name": "RateTooLow",
-      "msg": "Rate too low"
-    },
-    {
-      "code": 6011,
+      "code": 6008,
       "name": "VaultNotInitialized",
       "msg": "Vault not initialized"
     },
     {
-      "code": 6012,
+      "code": 6009,
       "name": "NoPendingBurn",
       "msg": "No pending burn"
     },
     {
-      "code": 6013,
+      "code": 6010,
       "name": "InvalidPool",
       "msg": "Invalid pool data"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "InvalidRootToken",
       "msg": "Invalid root token"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "InvalidRootTreasury",
       "msg": "Invalid root treasury"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "InvalidFeeSplit",
       "msg": "Invalid fee split basis points"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "FeeSplitDeltaTooLarge",
       "msg": "Fee split change exceeds maximum delta (500 bps per call)"
     },
     {
-      "code": 6018,
+      "code": 6015,
       "name": "InsufficientPoolLiquidity",
       "msg": "Insufficient pool liquidity"
     },
     {
-      "code": 6019,
+      "code": 6016,
       "name": "StaleValidation",
       "msg": "Stale validation - slot already processed"
     },
     {
-      "code": 6020,
+      "code": 6017,
       "name": "SlotRangeTooLarge",
       "msg": "Slot range too large"
     },
     {
-      "code": 6021,
+      "code": 6018,
       "name": "ValidatorNotStale",
       "msg": "Validator not stale - sync not needed"
     },
     {
-      "code": 6022,
+      "code": 6019,
       "name": "FeeTooHigh",
       "msg": "Fee amount exceeds maximum for slot range"
     },
     {
-      "code": 6023,
+      "code": 6020,
       "name": "TooManyTransactions",
       "msg": "Transaction count exceeds maximum for slot range"
     },
     {
-      "code": 6024,
+      "code": 6021,
       "name": "InvalidBondingCurve",
       "msg": "Invalid bonding curve account"
     },
     {
-      "code": 6025,
+      "code": 6022,
       "name": "MintMismatch",
       "msg": "Mint mismatch between accounts"
     },
     {
-      "code": 6026,
+      "code": 6023,
       "name": "PendingFeesOverflow",
       "msg": "Pending fees would exceed maximum (69 SOL)"
+    },
+    {
+      "code": 6024,
+      "name": "NoPendingAdminTransfer",
+      "msg": "No pending admin transfer to cancel"
+    },
+    {
+      "code": 6025,
+      "name": "NoPendingFeeSplit",
+      "msg": "No pending fee split change to execute"
+    },
+    {
+      "code": 6026,
+      "name": "InvalidAccountOwner",
+      "msg": "Invalid account owner"
+    },
+    {
+      "code": 6027,
+      "name": "SlippageConfigTooHigh",
+      "msg": "Slippage configuration too high (max 500 bps)"
+    },
+    {
+      "code": 6028,
+      "name": "AccountSizeMismatch",
+      "msg": "Account size mismatch during migration"
     }
   ],
   "types": [
+    {
+      "name": "AdminTransferCancelled",
+      "docs": [
+        "Emitted when admin transfer is cancelled"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "cancelled_new_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
     {
       "name": "AdminTransferProposed",
       "docs": [
@@ -3648,7 +3706,7 @@
     {
       "name": "ValidatorSlotReset",
       "docs": [
-        "Emitted when validator slot is reset"
+        "Emitted when validator slot is reset (admin only)"
       ],
       "type": {
         "kind": "struct",
@@ -3663,6 +3721,37 @@
           },
           {
             "name": "new_slot",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorSlotSynced",
+      "docs": [
+        "Emitted when validator slot is synced (permissionless, stale validators only)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_slot",
+            "type": "u64"
+          },
+          {
+            "name": "new_slot",
+            "type": "u64"
+          },
+          {
+            "name": "slot_delta",
             "type": "u64"
           },
           {

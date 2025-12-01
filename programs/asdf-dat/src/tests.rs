@@ -61,21 +61,28 @@ mod tests {
 
         #[test]
         fn test_calculate_tokens_out_zero_reserves() {
-            // Should handle zero reserves gracefully
+            // Zero SOL reserves should return error (pool has no liquidity)
             let result = calculate_tokens_out_pumpfun(1_000_000_000, 0, 1_000_000_000_000_000);
-            // This should either return an error or handle the division by zero
-            // Depending on implementation, adjust assertion
+            // Function requires virtual_sol_reserves > 0 for pool liquidity
+            assert!(result.is_err(), "Zero SOL reserves should return InsufficientPoolLiquidity error");
         }
 
         #[test]
         fn test_calculate_tokens_out_large_values() {
-            // Test with maximum u64 values to check for overflow
+            // Test with large values to check for overflow handling
             let sol_in: u64 = u64::MAX / 1000;
             let virtual_sol_reserves: u64 = u64::MAX / 1000;
             let virtual_token_reserves: u64 = u64::MAX / 1000;
 
             let result = calculate_tokens_out_pumpfun(sol_in, virtual_sol_reserves, virtual_token_reserves);
-            // Should not panic, should return valid result or proper error
+            // Should not panic - either returns Ok with valid result or Err for overflow
+            // With equal reserves and input, output should be ~half of reserves
+            if let Ok(tokens) = result {
+                // tokens = (sol_in * token_reserves) / (sol_reserves + sol_in)
+                // With equal values: tokens ≈ reserves / 2
+                assert!(tokens <= virtual_token_reserves);
+            }
+            // If Err, that's also acceptable for extreme values
         }
 
         #[test]
@@ -117,10 +124,11 @@ mod tests {
 
         #[test]
         fn test_deserialize_bonding_curve_invalid_length() {
-            // Test with data too short
+            // Test with data too short (need at least 16 bytes for reserves)
             let data = vec![0u8; 10];
             let result = deserialize_bonding_curve(&data);
             // Should return error for insufficient data
+            assert!(result.is_err(), "Should fail with insufficient data length");
         }
 
         #[test]
@@ -221,11 +229,8 @@ mod tests {
             let _ = ErrorCode::CycleTooSoon;
             let _ = ErrorCode::InvalidParameter;
             let _ = ErrorCode::MathOverflow;
-            let _ = ErrorCode::AlreadyExecutedThisPeriod;
             let _ = ErrorCode::SlippageExceeded;
-            let _ = ErrorCode::NotCoinCreator;
             let _ = ErrorCode::PriceImpactTooHigh;
-            let _ = ErrorCode::RateTooLow;
             let _ = ErrorCode::VaultNotInitialized;
             let _ = ErrorCode::NoPendingBurn;
             let _ = ErrorCode::InvalidPool;
@@ -233,7 +238,21 @@ mod tests {
             let _ = ErrorCode::InvalidRootTreasury;
             let _ = ErrorCode::InvalidFeeSplit;
             let _ = ErrorCode::InsufficientPoolLiquidity;
-            let _ = ErrorCode::PendingFeesOverflow; // New: 69 SOL cap
+            let _ = ErrorCode::PendingFeesOverflow;
+            let _ = ErrorCode::FeeSplitDeltaTooLarge;
+            let _ = ErrorCode::StaleValidation;
+            let _ = ErrorCode::SlotRangeTooLarge;
+            let _ = ErrorCode::ValidatorNotStale;
+            let _ = ErrorCode::FeeTooHigh;
+            let _ = ErrorCode::TooManyTransactions;
+            let _ = ErrorCode::InvalidBondingCurve;
+            let _ = ErrorCode::MintMismatch;
+            // New specific error codes (LOW-02 fix)
+            let _ = ErrorCode::NoPendingAdminTransfer;
+            let _ = ErrorCode::NoPendingFeeSplit;
+            let _ = ErrorCode::InvalidAccountOwner;
+            let _ = ErrorCode::SlippageConfigTooHigh;
+            let _ = ErrorCode::AccountSizeMismatch;
         }
 
         #[test]
@@ -260,23 +279,27 @@ mod tests {
 
         #[test]
         fn test_dat_state_size() {
-            // DATState should be 208 bytes according to space calculation
-            // Verify the account size is correct
-            const EXPECTED_SIZE: usize = 8 + 208; // discriminator + data
+            // DATState should be 374 bytes according to size calculation
+            // See state/dat_state.rs for detailed breakdown
+            use crate::state::DATState;
+            assert_eq!(DATState::LEN, 374, "DATState size mismatch");
         }
 
         #[test]
         fn test_token_stats_size() {
-            // TokenStats should be 138 bytes
-            const EXPECTED_SIZE: usize = 8 + 138; // discriminator + data
+            // TokenStats should be 130 bytes (see state/token_stats.rs)
+            use crate::state::TokenStats;
+            assert_eq!(TokenStats::LEN, 130, "TokenStats size mismatch");
         }
 
         #[test]
         fn test_testing_mode_default() {
-            // In production, TESTING_MODE should be false
-            // This test will fail if someone forgets to change it
-            // Uncomment for production validation:
-            // assert!(!TESTING_MODE, "TESTING_MODE must be false for production!");
+            // Verify TESTING_MODE constant is accessible
+            // In production, this should be false
+            use crate::TESTING_MODE;
+            // For devnet testing, TESTING_MODE may be true
+            // For mainnet deployment, ensure this is set to false
+            let _ = TESTING_MODE; // Compile-time check that constant exists
         }
     }
 

@@ -384,6 +384,7 @@ pub mod asdf_dat {
     // Update the fee split ratio (admin only)
     // Bounded between 1000 (10%) and 9000 (90%) to prevent extreme configurations
     // HIGH-02 FIX: Maximum 5% (500 bps) change per call to prevent instant rug
+    // HIGH-03 FIX: 1 hour cooldown between changes to prevent rapid manipulation
     // NOTE: For larger changes, use propose_fee_split + execute_fee_split (timelocked)
     pub fn update_fee_split(ctx: Context<AdminControl>, new_fee_split_bps: u16) -> Result<()> {
         require!(
@@ -392,6 +393,16 @@ pub mod asdf_dat {
         );
 
         let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        // HIGH-03 FIX: Enforce cooldown between fee split changes
+        // Uses pending_fee_split_timestamp to track last update (shared with propose_fee_split)
+        let elapsed = clock.unix_timestamp.saturating_sub(state.pending_fee_split_timestamp);
+        require!(
+            elapsed >= state.admin_operation_cooldown,
+            ErrorCode::CycleTooSoon
+        );
+
         let old_fee_split_bps = state.fee_split_bps;
 
         // HIGH-02 FIX: Limit instant changes to max 5% (500 bps) per call
@@ -399,7 +410,8 @@ pub mod asdf_dat {
         require!(delta <= 500, ErrorCode::FeeSplitDeltaTooLarge);
 
         state.fee_split_bps = new_fee_split_bps;
-        let clock = Clock::get()?;
+        // Update timestamp to enforce cooldown on next call
+        state.pending_fee_split_timestamp = clock.unix_timestamp;
 
         emit!(FeeSplitUpdated {
             old_bps: old_fee_split_bps,
@@ -418,6 +430,13 @@ pub mod asdf_dat {
     ) -> Result<()> {
         let token_stats = &mut ctx.accounts.token_stats;
         let clock = Clock::get()?;
+
+        // Rate limiting: minimum 10 seconds between updates per token
+        const MIN_FEE_UPDATE_INTERVAL: i64 = 10;
+        require!(
+            clock.unix_timestamp >= token_stats.last_fee_update_timestamp + MIN_FEE_UPDATE_INTERVAL,
+            ErrorCode::CycleTooSoon
+        );
 
         // Check pending fees cap (69 SOL max)
         let new_total = token_stats.pending_fees_lamports.saturating_add(amount_lamports);
@@ -498,10 +517,10 @@ pub mod asdf_dat {
         Ok(())
     }
 
-    /// PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs
-    /// Anyone can call this to commit fee data from off-chain validation
+    /// ADMIN ONLY - Register validated fees extracted from PumpFun transaction logs
+    /// Only admin can call this to commit validated fee data
     ///
-    /// Security: Protected by slot progression and fee caps
+    /// Security: Protected by admin check, slot progression, and fee caps
     pub fn register_validated_fees(
         ctx: Context<RegisterValidatedFees>,
         fee_amount: u64,
@@ -580,9 +599,16 @@ pub mod asdf_dat {
         let slot_delta = current_slot.saturating_sub(validator.last_validated_slot);
         require!(slot_delta > 1000, ErrorCode::ValidatorNotStale);
 
-        #[cfg(feature = "verbose")]
         let old_slot = validator.last_validated_slot;
         validator.last_validated_slot = current_slot;
+
+        emit!(ValidatorSlotSynced {
+            mint: validator.mint,
+            old_slot,
+            new_slot: current_slot,
+            slot_delta,
+            timestamp: clock.unix_timestamp,
+        });
 
         #[cfg(feature = "verbose")]
         msg!("Synced validator slot for {} from {} to {} (delta: {})",
@@ -626,7 +652,7 @@ pub mod asdf_dat {
 
         if current_size != OLD_SIZE {
             msg!("Unexpected TokenStats size: {}. Expected {} or {}", current_size, OLD_SIZE, NEW_SIZE);
-            return err!(ErrorCode::InvalidParameter);
+            return err!(ErrorCode::AccountSizeMismatch);
         }
 
         msg!("Migrating TokenStats from size {} to {}", OLD_SIZE, NEW_SIZE);
@@ -662,7 +688,7 @@ pub mod asdf_dat {
             let mut lamports = token_stats_account.lamports.borrow_mut();
             **lamports = new_lamports;
         }
-        token_stats_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::InvalidParameter)?;
+        token_stats_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::AccountSizeMismatch)?;
 
         // Write data back with new fields
         let mut new_data = token_stats_account.try_borrow_mut_data()?;
@@ -995,6 +1021,8 @@ pub mod asdf_dat {
     /// Execute buy on PumpSwap AMM pool (for migrated tokens)
     /// This instruction handles tokens that have graduated from bonding curve to AMM
     /// Requires WSOL in dat_wsol_account for the buy operation
+    ///
+    /// MEDIUM-01 FIX: Added slippage validation to ensure received tokens meet minimum threshold
     pub fn execute_buy_amm(
         ctx: Context<ExecuteBuyAMM>,
         desired_tokens: u64,     // Amount of tokens to buy
@@ -1002,6 +1030,11 @@ pub mod asdf_dat {
     ) -> Result<()> {
         // Check state conditions first (read-only)
         require!(ctx.accounts.dat_state.is_active && !ctx.accounts.dat_state.emergency_pause, ErrorCode::DATNotActive);
+
+        // MEDIUM-01 FIX: Validate max_sol_cost against configured limits
+        let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
+        let slippage_bps = ctx.accounts.dat_state.slippage_bps;
+        require!(max_sol_cost <= max_fees, ErrorCode::InvalidParameter);
 
         // Get bump before CPI
         let bump = ctx.accounts.dat_state.dat_authority_bump;
@@ -1021,6 +1054,13 @@ pub mod asdf_dat {
         let tokens_received = tokens_after.saturating_sub(tokens_before);
 
         msg!("AMM buy complete: received {} tokens", tokens_received);
+
+        // MEDIUM-01 FIX: Validate slippage - ensure we received minimum expected tokens
+        // Calculate minimum acceptable: desired_tokens * (1 - slippage_bps/10000)
+        let min_tokens = (desired_tokens as u128)
+            .saturating_mul((10000 - slippage_bps as u128))
+            .saturating_div(10000) as u64;
+        require!(tokens_received >= min_tokens, ErrorCode::SlippageExceeded);
 
         // Update state for burn tracking (mutable borrow after CPI)
         let state = &mut ctx.accounts.dat_state;
@@ -1172,7 +1212,7 @@ pub mod asdf_dat {
 
         // Validate slippage: max 5% (500 bps)
         if let Some(v) = new_slippage_bps {
-            require!(v <= 500, ErrorCode::InvalidParameter);
+            require!(v <= 500, ErrorCode::SlippageConfigTooHigh);
             state.slippage_bps = v;
         }
 
@@ -1238,10 +1278,18 @@ pub mod asdf_dat {
     }
 
     /// Cancel a pending admin transfer (called by current admin)
-    pub fn cancel_admin_transfer(ctx: Context<ProposeAdminTransfer>) -> Result<()> {
+    pub fn cancel_admin_transfer(ctx: Context<CancelAdminTransfer>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
-        require!(state.pending_admin.is_some(), ErrorCode::InvalidParameter);
+        let clock = Clock::get()?;
+        // Constraint already validates pending_admin.is_some() in context
+        let cancelled_admin = state.pending_admin.ok_or(ErrorCode::NoPendingAdminTransfer)?;
         state.pending_admin = None;
+
+        emit!(AdminTransferCancelled {
+            admin: ctx.accounts.admin.key(),
+            cancelled_new_admin: cancelled_admin,
+            timestamp: clock.unix_timestamp,
+        });
         Ok(())
     }
 
@@ -1268,7 +1316,7 @@ pub mod asdf_dat {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
 
-        require!(state.pending_fee_split.is_some(), ErrorCode::InvalidParameter);
+        require!(state.pending_fee_split.is_some(), ErrorCode::NoPendingFeeSplit);
 
         let elapsed = clock.unix_timestamp.saturating_sub(state.pending_fee_split_timestamp);
         require!(
@@ -1277,7 +1325,7 @@ pub mod asdf_dat {
         );
 
         let new_fee_split = state.pending_fee_split
-            .ok_or(ErrorCode::InvalidParameter)?;
+            .ok_or(ErrorCode::NoPendingFeeSplit)?;
         let old_fee_split = state.fee_split_bps;
 
         state.fee_split_bps = new_fee_split;
