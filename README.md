@@ -1,4 +1,4 @@
-# ASDF-DAT
+# 🔥 ASDF-DAT
 
 **Decentralized Autonomous Treasury for Solana Tokens**
 
@@ -6,22 +6,22 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Phase](https://img.shields.io/badge/Phase-1%20Live-success)](https://pump.fun)
 
-> Automated buy & burn treasury that turns creator fees into deflationary pressure.
-> Trading happens. Fees appear. Tokens burn. Supply shrinks. This is fine.
+> 🤖 Automated buy & burn treasury that turns creator fees into deflationary pressure.
+> Trading happens. Fees appear. Tokens burn. Supply shrinks. *This is fine.* 🐕
 
 ---
 
-## The Problem
+## 😤 The Problem
 
 Creator fees on Pump.fun exist, but most projects ignore them. Value leaks out instead of compounding back. And when you have multiple tokens in an ecosystem? Good luck coordinating anything.
 
-## The Solution
+## 💡 The Solution
 
 DAT automates the entire cycle:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                       THE DAT CYCLE                             │
+│                    🔄 THE DAT CYCLE                             │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │    TRADE             COLLECT            SPLIT                   │
@@ -34,18 +34,18 @@ DAT automates the entire cycle:
 │    ◄─────           ◄─────────        ◄──────────               │
 │    BURN               BUY              ALLOCATE                 │
 │                                                                 │
-│   Tokens           Fees used to       Proportional              │
-│   permanently      buy tokens         distribution              │
+│   🔥 Tokens        💰 Fees used       📊 Proportional           │
+│   permanently      to buy tokens      distribution              │
 │   destroyed        from market        per token                 │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-**Result**: Every trade creates buying pressure. Every cycle reduces supply. Automatic. Trustless. Relentless.
+**Result**: Every trade creates buying pressure. Every cycle reduces supply. Automatic. Trustless. Relentless. 📈
 
 ---
 
-## How It Works
+## 🧠 How It Works
 
 ### Token Hierarchy
 
@@ -53,7 +53,7 @@ DAT creates economic alignment between a root token and its ecosystem:
 
 ```
                       ┌─────────────────┐
-                      │   ROOT TOKEN    │
+                      │  👑 ROOT TOKEN  │
                       │     ($ASDF)     │
                       │                 │
                       │  Receives 44.8% │
@@ -72,27 +72,27 @@ DAT creates economic alignment between a root token and its ecosystem:
 ```
 
 **The math is simple:**
-- Trade any secondary token → Root gets stronger
-- More secondaries = more fees flowing to root
-- Everyone wins: secondaries burn, root accumulates
+- 📈 Trade any secondary token → Root gets stronger
+- 🔗 More secondaries = more fees flowing to root
+- 🤝 Everyone wins: secondaries burn, root accumulates
 
-### The 55.2% / 44.8% Split
+### 💸 The 55.2% / 44.8% Split
 
 | Destination | Share | Purpose |
 |-------------|-------|---------|
-| Secondary Token | 55.2% | Buy & burn the traded token |
-| Root Treasury | 44.8% | Accumulate for root buyback |
+| 🔥 Secondary Token | 55.2% | Buy & burn the traded token |
+| 👑 Root Treasury | 44.8% | Accumulate for root buyback |
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                         OFF-CHAIN                               │
+│                     ☁️  OFF-CHAIN                               │
 │                                                                 │
 │  ┌──────────────────┐         ┌───────────────────────────┐    │
-│  │   FEE DAEMON     │         │   CYCLE ORCHESTRATOR      │    │
+│  │  👁️ FEE DAEMON   │         │  ⚡ CYCLE ORCHESTRATOR    │    │
 │  │  ─────────────   │         │  ────────────────────     │    │
 │  │  • Polls trades  │────────►│  • Reads pending fees     │    │
 │  │  • Tracks fees   │         │  • Calculates splits      │    │
@@ -103,7 +103,7 @@ DAT creates economic alignment between a root token and its ecosystem:
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                          ON-CHAIN                               │
+│                      ⛓️  ON-CHAIN                               │
 │                                                                 │
 │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐    │
 │  │   DAT STATE    │  │  TOKEN STATS   │  │ ROOT TREASURY  │    │
@@ -114,7 +114,7 @@ DAT creates economic alignment between a root token and its ecosystem:
 │  └────────────────┘  └────────────────┘  └────────────────┘    │
 │                                                                 │
 │  ┌────────────────────────────────────────────────────────────┐│
-│  │                  PUMP.FUN INTEGRATION                      ││
+│  │               🎰 PUMP.FUN INTEGRATION                      ││
 │  │  • Bonding Curve (pre-migration) → Native SOL vault        ││
 │  │  • PumpSwap AMM (post-migration) → WSOL token vault        ││
 │  └────────────────────────────────────────────────────────────┘│
@@ -125,7 +125,7 @@ DAT creates economic alignment between a root token and its ecosystem:
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -157,7 +157,7 @@ sleep 30
 npx ts-node scripts/execute-ecosystem-cycle.ts devnet-tokens/01-froot.json --network devnet
 ```
 
-Watch the magic: fees collected → tokens bought → tokens burned.
+✨ Watch the magic: fees collected → tokens bought → tokens burned.
 
 ### Mainnet
 
@@ -165,34 +165,34 @@ Same commands, replace `--network devnet` with `--network mainnet` and use `main
 
 ---
 
-## Key Features
+## ✨ Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **Automatic Buyback** | No manual intervention. Daemon monitors, orchestrator executes. |
-| **Cross-Token Alignment** | Secondary tokens strengthen the root. Economic symbiosis. |
-| **Fee Attribution** | Shared vault problem solved via balance polling. Each token tracked. |
-| **Emergency Controls** | Pause/resume, admin transfer (two-step), configurable parameters. |
-| **Pump.fun Native** | Works with bonding curves AND migrated AMM pools. |
-| **Scalable** | Add tokens anytime. System handles N secondaries + 1 root. |
+| 🤖 **Automatic Buyback** | No manual intervention. Daemon monitors, orchestrator executes. |
+| 🔗 **Cross-Token Alignment** | Secondary tokens strengthen the root. Economic symbiosis. |
+| 📊 **Fee Attribution** | Shared vault problem solved via balance polling. Each token tracked. |
+| 🛡️ **Emergency Controls** | Pause/resume, admin transfer (two-step), configurable parameters. |
+| 🎰 **Pump.fun Native** | Works with bonding curves AND migrated AMM pools. |
+| 📈 **Scalable** | Add tokens anytime. System handles N secondaries + 1 root. |
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
 ```
 ═══════════════════════════════════════════════════════════════════
 
-   PHASE 1 (NOW)              │          PHASE 2 (2026)
-   Proof of Concept           │          SaaS Platform
-                              │
-   ✓ Single ecosystem         │    ○ Multi-tenant support
-   ✓ $ASDF + secondaries      │    ○ Any creator can deploy
-   ✓ CLI operations           │    ○ One-click setup
-   ✓ Devnet + Mainnet         │    ○ Web dashboard
-   ✓ Basic monitoring         │    ○ Full analytics suite
-                              │    ○ Public API
-                              │
+   PHASE 1 (NOW) 🔥            │          PHASE 2 (2026) 🚀
+   Proof of Concept            │          SaaS Platform
+                               │
+   ✅ Single ecosystem         │    ⏳ Multi-tenant support
+   ✅ $ASDF + secondaries      │    ⏳ Any creator can deploy
+   ✅ CLI operations           │    ⏳ One-click setup
+   ✅ Devnet + Mainnet         │    ⏳ Web dashboard
+   ✅ Basic monitoring         │    ⏳ Full analytics suite
+                               │    ⏳ Public API
+                               │
 
 ═══════════════════════════════════════════════════════════════════
 ```
@@ -201,48 +201,48 @@ Same commands, replace `--network devnet` with `--network mainnet` and use `main
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
 asdf-dat/
-├── programs/asdf-dat/src/     # Anchor smart contract (Rust)
+├── programs/asdf-dat/src/     # 🦀 Anchor smart contract (Rust)
 │   └── lib.rs                 # 26 instructions, all logic
-├── scripts/                   # TypeScript automation
+├── scripts/                   # 📜 TypeScript automation
 │   ├── execute-ecosystem-cycle.ts   # Main orchestrator
 │   ├── monitor-ecosystem-fees.ts    # Fee daemon
 │   └── [20+ utility scripts]
-├── lib/                       # Shared utilities
-├── devnet-tokens/             # Devnet token configs
-├── mainnet-tokens/            # Mainnet token configs
-└── docs/                      # Technical documentation
+├── lib/                       # 🔧 Shared utilities
+├── devnet-tokens/             # 🧪 Devnet token configs
+├── mainnet-tokens/            # 💎 Mainnet token configs
+└── docs/                      # 📚 Technical documentation
 ```
 
 ---
 
-## Documentation
+## 📚 Documentation
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/ARCHITECTURE.md) | System design, PDAs, data flow |
-| [Developer Guide](docs/DEVELOPER_GUIDE.md) | Integration, accounts, errors |
-| [API Reference](docs/API_REFERENCE.md) | All 26 instructions documented |
-| [Operations](docs/OPERATIONS.md) | Monitoring, runbooks, troubleshooting |
+| [🏗️ Architecture](docs/ARCHITECTURE.md) | System design, PDAs, data flow |
+| [👨‍💻 Developer Guide](docs/DEVELOPER_GUIDE.md) | Integration, accounts, errors |
+| [📖 API Reference](docs/API_REFERENCE.md) | All 26 instructions documented |
+| [🔧 Operations](docs/OPERATIONS.md) | Monitoring, runbooks, troubleshooting |
 
 ---
 
-## Security
+## 🛡️ Security
 
-- **Audited**: Internal security review completed (Nov 2025)
-- **Emergency Pause**: Admin can halt all operations instantly
-- **Two-Step Admin Transfer**: Prevents accidental ownership loss
-- **Fee Split Limits**: Max 5% change per transaction, timelocked for larger changes
-- **Auto-Pause**: System pauses after 5 consecutive failures
+- ✅ **Audited**: Internal security review completed (Nov 2025)
+- ⏸️ **Emergency Pause**: Admin can halt all operations instantly
+- 🔐 **Two-Step Admin Transfer**: Prevents accidental ownership loss
+- ⚖️ **Fee Split Limits**: Max 5% change per transaction, timelocked for larger changes
+- 🚨 **Auto-Pause**: System pauses after 5 consecutive failures
 
 See [Security Notes](docs/DEVELOPER_GUIDE.md#security) for details.
 
 ---
 
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feat/amazing-feature`)
@@ -253,16 +253,16 @@ See [Security Notes](docs/DEVELOPER_GUIDE.md#security) for details.
 
 ---
 
-## License
+## 📜 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-## Links
+## 🔗 Links
 
-- **Program**: [Explorer](https://solscan.io/account/ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui)
-- **Root Token ($ASDF)**: [Pump.fun](https://pump.fun/coin/9FxrRPwDF44zzjfzxGKtdqXqH1JKjD4MJ1nbFP7Zpump)
+- 🔍 **Program**: [Explorer](https://solscan.io/account/ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui)
+- 🪙 **Root Token ($ASDF)**: [Pump.fun](https://pump.fun/coin/9FxrRPwDF44zzjfzxGKtdqXqH1JKjD4MJ1nbFP7Zpump)
 
 ---
 
