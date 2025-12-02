@@ -59,6 +59,9 @@ export interface MonitorConfig {
   minPollInterval?: number;  // Minimum poll interval (default: 3000 = 3s)
   maxPollInterval?: number;  // Maximum poll interval (default: 30000 = 30s)
   adaptivePolling?: boolean; // Enable adaptive polling (default: true)
+  // Resilience config
+  maxSignatures?: number;    // Max signatures to keep in memory for deduplication (default: 10000)
+  requireChecksum?: boolean; // Require valid checksum on state load (default: false for backwards compatibility)
 }
 
 // State persistence interface
@@ -121,7 +124,8 @@ export class PumpFunFeeMonitor {
   private lastSignatures: Map<string, string>;  // keyed by mint -> last processed signature
   private processedSignatures: Set<string>;  // Deduplication: track all processed signatures
   private signatureQueue: string[];  // FIFO queue for memory-bounded cleanup
-  private readonly MAX_SIGNATURES = 10000;  // Maximum signatures to keep in memory
+  private maxSignatures: number;  // Configurable: Maximum signatures to keep in memory
+  private requireChecksum: boolean; // Configurable: Require valid checksum on state load
   private pollInterval: number;
   private updateInterval: number;
   private verbose: boolean;
@@ -163,6 +167,9 @@ export class PumpFunFeeMonitor {
     this.maxPollInterval = config.maxPollInterval || 30000;  // 30s maximum
     this.adaptivePolling = config.adaptivePolling !== false; // default true
     this.currentPollInterval = this.pollInterval;
+    // Resilience config
+    this.maxSignatures = config.maxSignatures || 10000;      // Default 10k signatures
+    this.requireChecksum = config.requireChecksum || false;  // Default false for backwards compat
 
     // Initialize token map (keyed by mint)
     for (const token of config.tokens) {
@@ -194,11 +201,15 @@ export class PumpFunFeeMonitor {
           continue;
         }
 
-        // Validate checksum if present
-        if (state.checksum) {
+        // Validate checksum if present OR if required
+        if (state.checksum || this.requireChecksum) {
+          if (!state.checksum && this.requireChecksum) {
+            this.log(`⚠️ ${file}: checksum required but not present (rejecting state)`);
+            continue;
+          }
           const expectedChecksum = calculateChecksum(state.lastSignatures);
           if (state.checksum !== expectedChecksum) {
-            this.log(`⚠️ ${file}: checksum mismatch (corrupted state)`);
+            this.log(`⚠️ ${file}: checksum mismatch (corrupted state) - expected ${expectedChecksum.slice(0, 8)}..., got ${state.checksum?.slice(0, 8)}...`);
             continue;
           }
         }
@@ -300,8 +311,9 @@ export class PumpFunFeeMonitor {
     this.log("🔍 Starting PumpFun Fee Monitor v2 (Balance Polling)...");
     this.log(`📊 Monitoring ${this.tokens.size} tokens (limit: ${this.txLimit} TX/poll)`);
     if (this.adaptivePolling) {
-      this.log(`🔄 Adaptive polling enabled (${this.minPollInterval/1000}s - ${this.maxPollInterval/1000}s)`);
+      this.log(`🔄 Adaptive polling enabled (${this.minPollInterval/1000}s - ${this.maxPollInterval/1000}s, exponential backoff)`);
     }
+    this.log(`🛡️ Resilience: maxSignatures=${this.maxSignatures}, requireChecksum=${this.requireChecksum}`);
 
     // Initialize last known signatures for tokens WITHOUT persisted state
     let loadedCount = 0;
@@ -384,13 +396,18 @@ export class PumpFunFeeMonitor {
           this.consecutiveErrors++;
           this.consecutiveSuccess = 0;
 
-          // Increase interval on errors (back off)
-          if (this.consecutiveErrors >= 2) {
-            this.currentPollInterval = Math.min(
-              this.maxPollInterval,
-              this.currentPollInterval * 1.5
-            );
-            this.log(`⚠️ Backing off poll interval to ${(this.currentPollInterval/1000).toFixed(1)}s due to errors`);
+          // Exponential backoff: interval = baseInterval * 2^errors (capped at maxInterval)
+          // This provides much faster recovery after brief issues while
+          // aggressively backing off during sustained outages
+          const backoffMultiplier = Math.pow(2, Math.min(this.consecutiveErrors, 6)); // Cap at 2^6 = 64x
+          const newInterval = Math.min(
+            this.maxPollInterval,
+            this.pollInterval * backoffMultiplier
+          );
+
+          if (newInterval > this.currentPollInterval) {
+            this.currentPollInterval = newInterval;
+            this.log(`⚠️ Exponential backoff: poll interval now ${(this.currentPollInterval/1000).toFixed(1)}s (${this.consecutiveErrors} consecutive errors)`);
           }
         }
 
@@ -543,9 +560,9 @@ export class PumpFunFeeMonitor {
       this.signatureQueue.push(sig.signature);
     }
 
-    // Memory cleanup: remove oldest signatures when exceeding limit
+    // Memory cleanup: remove oldest signatures when exceeding limit (rotating window)
     // Done outside loop for efficiency (batch cleanup)
-    while (this.signatureQueue.length > this.MAX_SIGNATURES) {
+    while (this.signatureQueue.length > this.maxSignatures) {
       const oldest = this.signatureQueue.shift();
       if (oldest) {
         this.processedSignatures.delete(oldest);

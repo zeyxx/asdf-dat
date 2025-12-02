@@ -54,7 +54,11 @@ import { discoverCreatorTokens, DiscoveredToken } from "../lib/token-discovery";
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 // Configuration (can be overridden by env vars)
-const UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "30000"); // 30 seconds
+// Default intervals: 60s for mainnet (reduce RPC load), 30s for devnet (faster testing)
+const DEFAULT_MAINNET_INTERVAL = 60000; // 60 seconds
+const DEFAULT_DEVNET_INTERVAL = 30000;  // 30 seconds
+// Will be set in main() based on network if not explicitly configured
+let UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "0"); // 0 means use network default
 const VERBOSE = process.env.VERBOSE === "true";
 const API_PORT = parseInt(process.env.API_PORT || "3030");
 const API_KEY = process.env.DAEMON_API_KEY || ""; // Optional API key for auth
@@ -660,6 +664,13 @@ async function main() {
   const networkConfig = getNetworkConfig(args);
   const isVerbose = args.includes("--verbose") || VERBOSE;
   const autoDiscover = args.includes("--auto-discover");
+
+  // Set UPDATE_INTERVAL based on network if not explicitly configured
+  if (UPDATE_INTERVAL === 0) {
+    const isMainnet = networkConfig.name.toLowerCase() === 'mainnet';
+    UPDATE_INTERVAL = isMainnet ? DEFAULT_MAINNET_INTERVAL : DEFAULT_DEVNET_INTERVAL;
+  }
+  console.log(`📡 Poll interval: ${UPDATE_INTERVAL / 1000}s (${networkConfig.name})`);
 
   // Initialize logger
   const logger = createLogger("daemon", {
