@@ -18,7 +18,7 @@ dotenv.config({ path: '.env.local', override: true }); // Load .env.local (overr
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { PublicKey } from '@solana/web3.js';
+import { PublicKey, Connection, ConnectionConfig } from '@solana/web3.js';
 
 export type NetworkType = 'mainnet' | 'devnet';
 
@@ -42,6 +42,7 @@ export interface ComputeConfig {
 export interface NetworkConfig {
   rpcUrl: string;
   rpcFallbackUrl?: string;
+  rpcUrls: string[]; // Array of RPC URLs for failover
   wallet: string;
   tokens: string[];
   name: string;
@@ -72,6 +73,10 @@ export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
   devnet: {
     rpcUrl: process.env.DEVNET_RPC_URL || 'https://api.devnet.solana.com',
     rpcFallbackUrl: undefined,
+    rpcUrls: [
+      process.env.DEVNET_RPC_URL || 'https://api.devnet.solana.com',
+      'https://devnet.helius-rpc.com/?api-key=' + (process.env.HELIUS_API_KEY || ''),
+    ].filter((url) => url && !url.endsWith('=')), // Filter out empty API key URLs
     wallet: 'devnet-wallet.json',
     tokens: loadDevnetTokens(),
     name: 'Devnet',
@@ -96,6 +101,7 @@ export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
   mainnet: {
     rpcUrl: getHeliusRpcUrl(),
     rpcFallbackUrl: process.env.RPC_FALLBACK_URL,
+    rpcUrls: buildMainnetRpcUrls(),
     wallet: 'mainnet-wallet.json',
     tokens: loadMainnetTokens(),
     name: 'Mainnet',
@@ -141,6 +147,38 @@ function getHeliusRpcUrl(): string {
   // Fallback to public endpoint (not recommended for production)
   console.warn('[WARN] No HELIUS_API_KEY set. Using public RPC (rate limited).');
   return 'https://api.mainnet-beta.solana.com';
+}
+
+/**
+ * Build mainnet RPC URLs array for failover
+ * Order: Helius primary → Custom fallback → Public endpoint (last resort)
+ */
+function buildMainnetRpcUrls(): string[] {
+  const urls: string[] = [];
+
+  // Primary: Helius
+  const heliusUrl = getHeliusRpcUrl();
+  if (!heliusUrl.includes('api.mainnet-beta.solana.com')) {
+    urls.push(heliusUrl);
+  }
+
+  // Secondary: Custom fallback from env
+  if (process.env.RPC_FALLBACK_URL) {
+    urls.push(process.env.RPC_FALLBACK_URL);
+  }
+
+  // Tertiary: Additional RPC providers (env-configurable)
+  if (process.env.RPC_BACKUP_1) {
+    urls.push(process.env.RPC_BACKUP_1);
+  }
+  if (process.env.RPC_BACKUP_2) {
+    urls.push(process.env.RPC_BACKUP_2);
+  }
+
+  // Last resort: Public endpoint
+  urls.push('https://api.mainnet-beta.solana.com');
+
+  return urls;
 }
 
 /**
@@ -331,4 +369,138 @@ export function isMainnet(config: NetworkConfig): boolean {
  */
 export function getCommitment(config: NetworkConfig): 'confirmed' | 'finalized' {
   return config.name === 'Mainnet' ? 'finalized' : 'confirmed';
+}
+
+// ============================================================================
+// RPC Failover Support
+// ============================================================================
+
+/**
+ * Create a connection with automatic failover support
+ *
+ * Tries each RPC URL in order until one succeeds.
+ * On failure, automatically switches to next URL.
+ *
+ * @param config Network configuration
+ * @param connectionConfig Optional connection configuration
+ * @returns Connection object and a method to get next fallback
+ */
+export function createConnectionWithFailover(
+  config: NetworkConfig,
+  connectionConfig?: ConnectionConfig
+): {
+  connection: Connection;
+  currentUrl: string;
+  tryNextRpc: () => Connection | null;
+  getRpcIndex: () => number;
+} {
+  let currentIndex = 0;
+  const urls = config.rpcUrls.length > 0 ? config.rpcUrls : [config.rpcUrl];
+
+  const createConnection = (url: string): Connection => {
+    return new Connection(url, {
+      commitment: config.name === 'Mainnet' ? 'finalized' : 'confirmed',
+      ...connectionConfig,
+    });
+  };
+
+  return {
+    connection: createConnection(urls[0]),
+    currentUrl: urls[0],
+
+    /**
+     * Try next RPC endpoint in the failover list
+     * @returns New connection or null if no more endpoints
+     */
+    tryNextRpc: (): Connection | null => {
+      currentIndex++;
+      if (currentIndex >= urls.length) {
+        return null;
+      }
+      console.warn(`[RPC Failover] Switching to: ${maskRpcUrl(urls[currentIndex])}`);
+      return createConnection(urls[currentIndex]);
+    },
+
+    /**
+     * Get current RPC index (for logging)
+     */
+    getRpcIndex: (): number => currentIndex,
+  };
+}
+
+/**
+ * Execute an RPC call with automatic failover
+ *
+ * @param config Network configuration
+ * @param operation Async operation to execute with connection
+ * @param maxRetries Maximum retries per endpoint (default: 2)
+ * @returns Result of the operation
+ */
+export async function withRpcFailover<T>(
+  config: NetworkConfig,
+  operation: (connection: Connection) => Promise<T>,
+  maxRetries: number = 2
+): Promise<T> {
+  const urls = config.rpcUrls.length > 0 ? config.rpcUrls : [config.rpcUrl];
+
+  for (let urlIndex = 0; urlIndex < urls.length; urlIndex++) {
+    const url = urls[urlIndex];
+    const connection = new Connection(url, {
+      commitment: config.name === 'Mainnet' ? 'finalized' : 'confirmed',
+    });
+
+    for (let retry = 0; retry < maxRetries; retry++) {
+      try {
+        return await operation(connection);
+      } catch (error: unknown) {
+        const errorMsg = error instanceof Error ? error.message : String(error);
+
+        // Check if it's a recoverable RPC error
+        const isRpcError =
+          errorMsg.includes('429') || // Rate limited
+          errorMsg.includes('503') || // Service unavailable
+          errorMsg.includes('502') || // Bad gateway
+          errorMsg.includes('timeout') ||
+          errorMsg.includes('ECONNREFUSED') ||
+          errorMsg.includes('ENOTFOUND') ||
+          errorMsg.includes('fetch failed');
+
+        if (!isRpcError) {
+          // Non-RPC error, don't retry
+          throw error;
+        }
+
+        // If last retry on this endpoint, move to next
+        if (retry === maxRetries - 1) {
+          if (urlIndex < urls.length - 1) {
+            console.warn(
+              `[RPC Failover] ${maskRpcUrl(url)} failed after ${maxRetries} attempts. Trying next endpoint...`
+            );
+          }
+        } else {
+          // Exponential backoff before retry
+          const delay = Math.min(1000 * Math.pow(2, retry), 8000);
+          console.warn(`[RPC Failover] Retry ${retry + 1}/${maxRetries} in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+  }
+
+  throw new Error(`[RPC Failover] All ${urls.length} RPC endpoints failed`);
+}
+
+/**
+ * Mask RPC URL for safe logging (hide API keys)
+ */
+function maskRpcUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    if (parsed.searchParams.has('api-key')) {
+      parsed.searchParams.set('api-key', '***');
+    }
+    return parsed.toString();
+  } catch {
+    return url.replace(/api-key=[^&]+/, 'api-key=***');
+  }
 }
