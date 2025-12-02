@@ -216,9 +216,10 @@ export async function withRetry<T>(
 }
 
 /**
- * Determine if an error is retryable
+ * Determine if an error is retryable (transient RPC/network error)
+ * Exported for use in orchestrator error handling
  */
-function isRetryableError(error: Error): boolean {
+export function isRetryableError(error: Error): boolean {
   const message = error.message.toLowerCase();
 
   // Rate limit errors (429)

@@ -419,5 +419,57 @@ The system is designed to handle unlimited tokens:
 
 ---
 
+## PDA Derivation Edge Cases & Recovery
+
+### PDA Seeds Reference
+
+| Account | Seeds | Program |
+|---------|-------|---------|
+| DAT State | `["dat_v3"]` | ASDF-DAT |
+| DAT Authority | `["auth_v3"]` | ASDF-DAT |
+| Token Stats | `["token_stats_v1", mint]` | ASDF-DAT |
+| Root Treasury | `["root_treasury", root_mint]` | ASDF-DAT |
+| Validator State | `["validator_v1", mint, bonding_curve]` | ASDF-DAT |
+| BC Creator Vault | `["creator-vault", creator]` (hyphen) | Pump.fun |
+| AMM Creator Vault | `["creator_vault", creator]` (underscore) | PumpSwap |
+
+### Bump Seeds & Collision Prevention
+
+PDAs use "bump seeds" (255→0 search) to find valid off-curve addresses. The Solana runtime guarantees uniqueness for a given seed combination.
+
+**Key Points:**
+- Different seeds = different PDA (no collision possible)
+- Same seeds in different programs = different PDA
+- Bump is deterministic (always same for same seeds)
+
+### Validator State Stale Recovery
+
+If `validator_state.last_validated_slot` lags significantly (>1000 slots):
+
+1. **Diagnosis**: Check `last_validated_slot` vs current slot
+2. **Cause**: Usually RPC downtime or daemon restart without state
+3. **Recovery**: Call `sync_validator_slot` (admin only, 1hr cooldown)
+
+```bash
+# Check validator state
+npx ts-node scripts/check-validator-state.ts --network devnet
+
+# Sync if stale (admin only)
+npx ts-node scripts/sync-validator-slot.ts --network devnet
+```
+
+### Bonding Curve → AMM Migration
+
+When a Pump.fun token graduates from bonding curve to PumpSwap AMM:
+
+1. **Detect**: Token config `poolType` changes from `bonding_curve` to `pumpswap_amm`
+2. **Update Config**: Edit token JSON: `"poolType": "amm"`, update `bondingCurve` to pool address
+3. **Restart Daemon**: New pool address will be polled for transactions
+4. **Verify**: Daemon logs show "AMM pool" for the token
+
+**No fund loss during migration** - fees accumulate in the new AMM creator vault automatically.
+
+---
+
 *For implementation details, see [Developer Guide](DEVELOPER_GUIDE.md).*
 *For instruction reference, see [API Reference](API_REFERENCE.md).*

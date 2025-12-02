@@ -29,7 +29,10 @@ export type AlertType =
   | 'daemon_restart'
   | 'circuit_breaker_open'
   | 'rpc_degraded'
-  | 'memory_high';
+  | 'memory_high'
+  | 'daemon_stale'
+  | 'fee_divergence'
+  | 'root_treasury_change';
 
 export interface Alert {
   severity: AlertSeverity;
@@ -309,6 +312,92 @@ export class AlertingService {
           heapUsedMB: used.heapUsed / 1024 / 1024,
           heapTotalMB: used.heapTotal / 1024 / 1024,
           heapPercent,
+        },
+      });
+    }
+  }
+
+  /**
+   * Check if daemon appears stale (no new transactions detected for too long)
+   * @param lastTxDetectedAgoMs Time since last transaction was detected
+   * @param thresholdMs Threshold in milliseconds (default: 1 hour for devnet, 24 hours for mainnet)
+   */
+  checkDaemonStale(lastTxDetectedAgoMs: number, thresholdMs: number = 3600000): void {
+    if (lastTxDetectedAgoMs > thresholdMs) {
+      const hoursAgo = (lastTxDetectedAgoMs / 3600000).toFixed(1);
+      this.send({
+        severity: 'warning',
+        type: 'daemon_stale',
+        title: 'Daemon Appears Stale',
+        message: `No new transactions detected in ${hoursAgo} hours. Check if trading is occurring or if daemon is stuck.`,
+        data: {
+          lastTxDetectedAgoMs,
+          thresholdMs,
+          hoursAgo: parseFloat(hoursAgo),
+        },
+      });
+    }
+  }
+
+  /**
+   * Check if fee collection diverges from expected (tracked vs. actual)
+   * @param expectedFees Expected fees from daemon tracking (lamports)
+   * @param actualFees Actual fees collected (lamports)
+   * @param tolerancePercent Acceptable divergence (default: 10%)
+   */
+  checkFeeDivergence(expectedFees: number, actualFees: number, tolerancePercent: number = 10): void {
+    if (expectedFees === 0 && actualFees === 0) return;
+
+    const divergencePercent = expectedFees > 0
+      ? Math.abs((actualFees - expectedFees) / expectedFees) * 100
+      : 100;
+
+    if (divergencePercent > tolerancePercent) {
+      this.send({
+        severity: 'warning',
+        type: 'fee_divergence',
+        title: 'Fee Collection Divergence Detected',
+        message: `Actual fees (${(actualFees / 1e9).toFixed(6)} SOL) diverged ${divergencePercent.toFixed(1)}% from expected (${(expectedFees / 1e9).toFixed(6)} SOL)`,
+        data: {
+          expectedFees,
+          actualFees,
+          divergencePercent,
+          tolerancePercent,
+        },
+      });
+    }
+  }
+
+  /**
+   * Check root treasury balance and alert on significant changes
+   * @param balanceLamports Current root treasury balance
+   * @param previousBalanceLamports Previous balance for comparison
+   * @param minChangeForAlert Minimum change to trigger alert (default: 0.1 SOL)
+   */
+  checkRootTreasuryChange(
+    balanceLamports: number,
+    previousBalanceLamports: number,
+    minChangeForAlert: number = 100_000_000
+  ): void {
+    const change = balanceLamports - previousBalanceLamports;
+    const absChange = Math.abs(change);
+
+    if (absChange >= minChangeForAlert) {
+      const changeSOL = change / 1e9;
+      const balanceSOL = balanceLamports / 1e9;
+      const direction = change > 0 ? 'increased' : 'decreased';
+
+      this.send({
+        severity: 'info',
+        type: 'root_treasury_change',
+        title: 'Root Treasury Balance Changed',
+        message: `Treasury ${direction} by ${Math.abs(changeSOL).toFixed(4)} SOL. New balance: ${balanceSOL.toFixed(4)} SOL`,
+        data: {
+          balanceLamports,
+          previousBalanceLamports,
+          changeLamports: change,
+          changeSOL,
+          direction,
         },
       });
     }

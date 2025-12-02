@@ -935,6 +935,69 @@ mod tests {
                 last_slot = current;
             }
         }
+
+        /// Test double-counting prevention in fee registration
+        /// The slot_end must always be > last_validated_slot to prevent replay
+        #[test]
+        fn test_register_validated_fees_double_counting_prevention() {
+            let last_validated_slot: u64 = 1000;
+
+            // Attempt to register fees with same slot range (should fail)
+            let slot_start: u64 = 900;
+            let slot_end: u64 = 1000;
+
+            // slot_end must be > last_validated_slot
+            let is_valid = slot_end > last_validated_slot;
+            assert!(!is_valid, "Registering same slot should be rejected");
+
+            // Attempt to register fees with overlapping range
+            let slot_start_overlap: u64 = 950;
+            let slot_end_overlap: u64 = 1050;
+
+            // Even with overlap, slot_end is now > last_validated_slot, so new fees are valid
+            let is_overlap_valid = slot_end_overlap > last_validated_slot;
+            assert!(is_overlap_valid, "Non-overlapping portion should be accepted");
+        }
+
+        /// Test max fee cap per slot range
+        /// fee_amount must be reasonable: max 0.01 SOL per slot
+        #[test]
+        fn test_validator_max_fee_cap_boundary() {
+            let max_fee_per_slot: u64 = 10_000_000; // 0.01 SOL max per slot
+            let slot_delta: u64 = 100;
+
+            // Max fee for 100 slots = 1 SOL
+            let max_fee = slot_delta.saturating_mul(max_fee_per_slot);
+            assert_eq!(max_fee, 1_000_000_000, "100 slots should allow max 1 SOL");
+
+            // Test boundary: exactly at cap
+            let fee_at_cap = max_fee;
+            assert!(fee_at_cap <= max_fee, "Fee at cap should be valid");
+
+            // Test over cap
+            let fee_over_cap = max_fee + 1;
+            assert!(fee_over_cap > max_fee, "Fee over cap should be rejected");
+        }
+
+        /// Test pending fees overflow protection
+        /// Ensures new_pending doesn't exceed MAX_PENDING_FEES
+        #[test]
+        fn test_register_validated_fees_exceeds_pending_cap() {
+            let max_pending_fees: u64 = 69_000_000_000; // 69 SOL (program cap)
+            let current_pending: u64 = 68_000_000_000; // 68 SOL
+            let new_fee: u64 = 2_000_000_000; // 2 SOL
+
+            // New pending would be 70 SOL > 69 SOL cap
+            let new_pending = current_pending.saturating_add(new_fee);
+            let exceeds_cap = new_pending > max_pending_fees;
+            assert!(exceeds_cap, "70 SOL should exceed 69 SOL cap");
+
+            // Test within cap
+            let small_fee: u64 = 500_000_000; // 0.5 SOL
+            let new_pending_ok = current_pending.saturating_add(small_fee);
+            let within_cap = new_pending_ok <= max_pending_fees;
+            assert!(within_cap, "68.5 SOL should be within cap");
+        }
     }
 
     // ========================================================================

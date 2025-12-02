@@ -11,7 +11,8 @@ Runbooks, monitoring, and troubleshooting procedures for operating the DAT ecosy
 3. [Monitoring](#monitoring)
 4. [Incident Response](#incident-response)
 5. [Maintenance](#maintenance)
-6. [Troubleshooting](#troubleshooting)
+6. [Dry-Run Mode](#dry-run-mode)
+7. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -356,6 +357,119 @@ npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet > daemon.log 2>&1
 mv daemon.log daemon.log.$(date +%Y%m%d)
 gzip daemon.log.*
 ```
+
+---
+
+## Dry-Run Mode
+
+The orchestrator supports `--dry-run` mode to preview cycle execution without making any on-chain changes.
+
+### Usage
+
+```bash
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-tokens/01-froot.json --network devnet --dry-run
+```
+
+### JSON Output Schema
+
+Reports are saved to `reports/dry-run-{timestamp}.json`:
+
+```typescript
+interface DryRunReport {
+  timestamp: string;                              // ISO timestamp
+  network: 'devnet' | 'mainnet';
+  status: 'READY' | 'INSUFFICIENT_FEES' | 'COOLDOWN_ACTIVE' | 'NO_TOKENS';
+
+  ecosystem: {
+    totalPendingFees: number;      // lamports
+    totalPendingFeesSOL: string;   // formatted (e.g., "0.0567 SOL")
+    tokensTotal: number;           // Total tokens in ecosystem
+    tokensEligible: number;        // Tokens meeting threshold
+    tokensDeferred: number;        // Tokens below threshold
+  };
+
+  tokens: Array<{
+    symbol: string;                // e.g., "DATSPL"
+    mint: string;                  // Base58 pubkey
+    isRoot: boolean;
+    pendingFees: number;           // lamports
+    pendingFeesSOL: string;        // formatted
+    allocation: number;            // Proportional allocation (lamports)
+    allocationSOL: string;
+    willProcess: boolean;          // True if meets threshold
+    deferReason?: string;          // Reason if deferred
+  }>;
+
+  thresholds: {
+    minAllocationSecondary: number;
+    minAllocationSecondarySOL: string;
+    minAllocationRoot: number;
+    minAllocationRootSOL: string;
+  };
+
+  costs: {
+    estimatedTxFeesPerToken: number;
+    estimatedTxFeesPerTokenSOL: string;
+    totalEstimatedCost: number;
+    totalEstimatedCostSOL: string;
+  };
+
+  warnings: string[];              // e.g., ["Token X below threshold"]
+  recommendations: string[];       // e.g., ["Generate more volume for X"]
+}
+```
+
+### Example Output
+
+```json
+{
+  "timestamp": "2025-01-15T14:30:00.000Z",
+  "network": "devnet",
+  "status": "READY",
+  "ecosystem": {
+    "totalPendingFees": 25000000,
+    "totalPendingFeesSOL": "0.025 SOL",
+    "tokensTotal": 3,
+    "tokensEligible": 2,
+    "tokensDeferred": 1
+  },
+  "tokens": [
+    {
+      "symbol": "DATSPL",
+      "mint": "ABC...",
+      "isRoot": true,
+      "pendingFees": 10000000,
+      "pendingFeesSOL": "0.01 SOL",
+      "allocation": 10000000,
+      "allocationSOL": "0.01 SOL",
+      "willProcess": true
+    }
+  ],
+  "thresholds": {
+    "minAllocationSecondary": 5690000,
+    "minAllocationSecondarySOL": "0.00569 SOL",
+    "minAllocationRoot": 2000000,
+    "minAllocationRootSOL": "0.002 SOL"
+  },
+  "costs": {
+    "estimatedTxFeesPerToken": 7000000,
+    "estimatedTxFeesPerTokenSOL": "0.007 SOL",
+    "totalEstimatedCost": 14000000,
+    "totalEstimatedCostSOL": "0.014 SOL"
+  },
+  "warnings": ["DATM below minimum threshold"],
+  "recommendations": ["Generate 0.5 SOL more volume for DATM"]
+}
+```
+
+### Status Codes
+
+| Status | Meaning | Action |
+|--------|---------|--------|
+| `READY` | All conditions met | Safe to execute cycle |
+| `INSUFFICIENT_FEES` | Fees below threshold | Generate more volume |
+| `COOLDOWN_ACTIVE` | Too soon since last cycle | Wait 60+ seconds |
+| `NO_TOKENS` | No tokens found | Check token configs |
 
 ---
 

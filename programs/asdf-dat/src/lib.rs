@@ -1069,7 +1069,7 @@ pub mod asdf_dat {
         // MEDIUM-01 FIX: Validate slippage - ensure we received minimum expected tokens
         // Calculate minimum acceptable: desired_tokens * (1 - slippage_bps/10000)
         let min_tokens = (desired_tokens as u128)
-            .saturating_mul((10000 - slippage_bps as u128))
+            .saturating_mul(10000 - slippage_bps as u128)
             .saturating_div(10000) as u64;
         require!(tokens_received >= min_tokens, ErrorCode::SlippageExceeded);
 
@@ -1221,9 +1221,10 @@ pub mod asdf_dat {
     ) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
 
-        // Validate slippage: max 5% (500 bps)
+        // Validate slippage: min 0.1% (10 bps), max 5% (500 bps)
+        // Disallow 0 to prevent division issues in buy calculations
         if let Some(v) = new_slippage_bps {
-            require!(v <= 500, ErrorCode::SlippageConfigTooHigh);
+            require!(v >= 10 && v <= 500, ErrorCode::SlippageConfigTooHigh);
             state.slippage_bps = v;
         }
 
@@ -1233,9 +1234,17 @@ pub mod asdf_dat {
             state.min_cycle_interval = v;
         }
 
-        // Apply fee thresholds
-        if let Some(v) = new_min_fees { state.min_fees_threshold = v; }
-        if let Some(v) = new_max_fees { state.max_fees_per_cycle = v; }
+        // Apply fee thresholds with bounds validation
+        // min_fees: must be at least 0.001 SOL (1_000_000 lamports) and at most 1 SOL
+        if let Some(v) = new_min_fees {
+            require!(v >= 1_000_000 && v <= 1_000_000_000, ErrorCode::InvalidParameter);
+            state.min_fees_threshold = v;
+        }
+        // max_fees: must be at least 0.01 SOL (10_000_000 lamports)
+        if let Some(v) = new_max_fees {
+            require!(v >= 10_000_000, ErrorCode::InvalidParameter);
+            state.max_fees_per_cycle = v;
+        }
 
         // Validate min <= max after both are set
         require!(

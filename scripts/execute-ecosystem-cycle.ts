@@ -40,7 +40,7 @@ import {
   deriveAmmCreatorVaultAuthority,
 } from '../lib/amm-utils';
 import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
-import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep } from '../lib/rpc-utils';
+import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError } from '../lib/rpc-utils';
 import { ExecutionLock, LockError } from '../lib/execution-lock';
 import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
 import { validateAlertingEnv } from '../lib/env-validator';
@@ -116,6 +116,121 @@ const colors = {
   red: '\x1b[31m',
   magenta: '\x1b[35m',
 };
+
+// ============================================================================
+// Dead-Letter Queue & Error Handling
+// ============================================================================
+
+const DEAD_LETTER_FILE = '.dead-letter-tokens.json';
+
+interface DeadLetterEntry {
+  timestamp: string;
+  token: string;
+  mint: string;
+  error: string;
+  isTransient: boolean;
+  pendingFees: number;
+  allocation: number;
+  retryCount: number;
+}
+
+/**
+ * Append a failed token to the dead-letter file for manual review
+ */
+function appendToDeadLetter(
+  token: { symbol: string; mint: PublicKey },
+  error: Error,
+  pendingFees: number,
+  allocation: number,
+  retryCount: number
+): void {
+  const entry: DeadLetterEntry = {
+    timestamp: new Date().toISOString(),
+    token: token.symbol,
+    mint: token.mint.toBase58(),
+    error: error.message,
+    isTransient: isRetryableError(error),
+    pendingFees,
+    allocation,
+    retryCount,
+  };
+
+  let entries: DeadLetterEntry[] = [];
+  try {
+    if (fs.existsSync(DEAD_LETTER_FILE)) {
+      entries = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
+    }
+  } catch {
+    // File doesn't exist or is invalid - start fresh
+  }
+
+  entries.push(entry);
+
+  // Keep only last 100 entries
+  if (entries.length > 100) {
+    entries = entries.slice(-100);
+  }
+
+  fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
+  log('📝', `Added ${token.symbol} to dead-letter queue: ${DEAD_LETTER_FILE}`, colors.yellow);
+}
+
+/**
+ * Execute token cycle with retry logic for transient errors
+ */
+async function executeTokenWithRetry(
+  executeFn: () => Promise<CycleResult>,
+  token: { symbol: string; mint: PublicKey },
+  pendingFees: number,
+  allocation: number,
+  maxRetries: number = 3
+): Promise<CycleResult> {
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await executeFn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      // Check if it's a transient error worth retrying
+      if (!isRetryableError(lastError)) {
+        // Permanent error - don't retry, log to dead-letter
+        log('❌', `${token.symbol}: Permanent error (attempt ${attempt}): ${lastError.message}`, colors.red);
+        appendToDeadLetter(token, lastError, pendingFees, allocation, attempt);
+        return {
+          token: token.symbol,
+          success: false,
+          pendingFees,
+          allocation,
+          error: `PERMANENT: ${lastError.message}`,
+        };
+      }
+
+      // Transient error - retry with exponential backoff
+      if (attempt < maxRetries) {
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
+        log('⚠️', `${token.symbol}: Transient error (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, colors.yellow);
+        log('  ', `Error: ${lastError.message}`, colors.yellow);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+
+  // All retries exhausted - log to dead-letter
+  if (lastError) {
+    log('❌', `${token.symbol}: All ${maxRetries} retries exhausted`, colors.red);
+    appendToDeadLetter(token, lastError, pendingFees, allocation, maxRetries);
+  }
+
+  return {
+    token: token.symbol,
+    success: false,
+    pendingFees,
+    allocation,
+    error: `RETRIES_EXHAUSTED: ${lastError?.message || 'Unknown error'}`,
+  };
+}
 
 // ============================================================================
 // Types & Interfaces
@@ -1370,13 +1485,23 @@ async function executeSecondaryTokensDynamic(
       log('  📦', `Vault already drained - using datAuthority balance`, colors.cyan);
     }
 
-    // Execute the cycle (N+1: collect + buy + finalize + burn in single TX)
-    const result = await executeSecondaryWithAllocation(program, allocation, adminKeypair);
+    // Execute the cycle with retry wrapper for transient errors
+    // This allows graceful degradation - if one token fails, continue with others
+    const result = await executeTokenWithRetry(
+      () => executeSecondaryWithAllocation(program, allocation, adminKeypair),
+      allocation.token,
+      allocation.pendingFees,
+      allocation.calculatedShare,
+      3 // maxRetries
+    );
     results[allocation.token.symbol] = result;
 
     if (result.success) {
       viable.push(allocation);
       isFirstToken = false; // Only first successful token drains the vault
+    } else {
+      // Token failed but we continue with others (graceful degradation)
+      log('⚠️', `${allocation.token.symbol} failed but continuing with remaining tokens`, colors.yellow);
     }
 
     console.log('');

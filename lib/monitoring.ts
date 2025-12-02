@@ -32,7 +32,9 @@ export interface DaemonMetrics {
   errorCount: number;
   lastPollTimestamp: number;
   lastFlushTimestamp: number;
+  lastTxDetectedTimestamp: number;  // Last time a new TX was detected (for stale check)
   tokensMonitored: number;
+  rootTreasuryBalance: number;      // Last known root treasury balance
 }
 
 export interface CycleMetrics {
@@ -65,7 +67,9 @@ export class MonitoringService {
       errorCount: 0,
       lastPollTimestamp: 0,
       lastFlushTimestamp: 0,
+      lastTxDetectedTimestamp: 0,
       tokensMonitored: 0,
+      rootTreasuryBalance: 0,
     };
 
     this.cycleMetrics = {
@@ -106,6 +110,19 @@ export class MonitoringService {
       metrics.pendingFees += amount;
     }
     this.daemonMetrics.totalFeesDetected += amount;
+    this.daemonMetrics.lastTxDetectedTimestamp = Date.now();
+  }
+
+  /**
+   * Update root treasury balance (for tracking fund flow)
+   */
+  updateRootTreasuryBalance(balanceLamports: number): void {
+    const previous = this.daemonMetrics.rootTreasuryBalance;
+    this.daemonMetrics.rootTreasuryBalance = balanceLamports;
+
+    // Check for significant changes (via alerting)
+    const alerting = getAlerting();
+    alerting.checkRootTreasuryChange(balanceLamports, previous);
   }
 
   recordFeesFlushed(mint: string, amount: number): void {
@@ -405,8 +422,24 @@ export class MonitoringService {
       alerting.checkPendingFees(timeSinceFlush, pendingSOL);
     }
 
+    // Check daemon stale (no new transactions detected)
+    if (this.daemonMetrics.lastTxDetectedTimestamp > 0) {
+      const timeSinceLastTx = now - this.daemonMetrics.lastTxDetectedTimestamp;
+      // Default threshold: 1 hour (configurable via parameter in future)
+      alerting.checkDaemonStale(timeSinceLastTx, 3600000);
+    }
+
     // Check memory usage
     alerting.checkMemory();
+  }
+
+  /**
+   * Check fee collection divergence
+   * Call this after a cycle with expected vs actual fees
+   */
+  checkFeeDivergence(expectedFees: number, actualFees: number): void {
+    const alerting = getAlerting();
+    alerting.checkFeeDivergence(expectedFees, actualFees);
   }
 
   // ============================================================================
