@@ -1,10 +1,37 @@
 # ASDF-DAT Technical Reference
 
-This document serves as the definitive technical reference for the ASDF-DAT ecosystem. **Always consult this before making changes or assumptions about the system.**
+Definitive technical reference for the Optimistic Burn Protocol.
 
-## Core Concept: DAT (Decentralized Autonomous Treasury)
+---
 
-DAT creates economic alignment between tokens through automatic fee capture and buyback & burn mechanics.
+## Philosophy
+
+### Creation > Extraction
+
+We don't take value. We create it.
+We don't print tokens. We burn them.
+We don't optimize for fees. We minimize them.
+
+### Optimistic Burn Model
+
+Single daemon executes. Chain proves. Anyone verifies.
+
+```
+Volume → Fees accumulate → Daemon flushes → Tokens burn → On-chain proof
+```
+
+### 99/1 Split
+
+- 99% → Buyback & burn (native yield through deflation)
+- 1% → Dev sustainability (keeps infrastructure running)
+
+1% today = 99% burns forever.
+
+---
+
+## Core Concept
+
+DAT creates value through automatic fee capture and permanent supply reduction.
 
 ### Token Hierarchy
 
@@ -18,73 +45,66 @@ DAT creates economic alignment between tokens through automatic fee capture and 
 ```
 
 - **Root Token**: Receives 44.8% of ALL secondary token fees
-- **Secondary Tokens**: Keep 55.2% of their own fees for buyback
+- **Secondary Tokens**: Keep 55.2% for their own buyback & burn
 
-### Fee Split: 55.2% / 44.8%
+### Fee Flow
 
 ```
-Secondary Token Trade (any DEX volume)
+Secondary Token Trade
            │
            ▼
-    Creator Fee (dynamic %)
+    Creator Fee (dynamic)
            │
     ┌──────┴──────┐
     │             │
     ▼             ▼
   55.2%        44.8%
 Secondary    Root Token
- Buyback     Treasury
+ Burn        Treasury
 ```
 
 ---
 
 ## Pump.fun Integration
 
-### CRITICAL: Creator Fee Structure
+### Creator Fees (Dynamic)
 
-**Creator fees on Pump.fun are DYNAMIC and set by Pump.fun based on market cap:**
+Set by Pump.fun based on market cap:
 
-| Market Cap Range | Creator Fee |
-|------------------|-------------|
-| $88K - $300K     | 0.95%       |
-| > $20M           | 0.05%       |
+| Market Cap | Creator Fee |
+|------------|-------------|
+| $88K-$300K | 0.95% |
+| > $20M | 0.05% |
 
-The fee percentage is **NOT** set by the token creator. It is determined by Pump.fun's "Project Ascend" system.
+### Pool Types
 
-### Two Pool Types
-
-#### 1. Bonding Curve (Pre-migration)
+**Bonding Curve (Pre-migration)**
 - Program: `6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P`
-- Creator vault: Native SOL
-- Vault derivation: `["creator-vault", creator_pubkey]` (with HYPHEN)
-- Fees accumulate as SOL
+- Vault: Native SOL
+- Seeds: `["creator-vault", creator]` (hyphen)
 
-#### 2. PumpSwap AMM (Post-migration)
+**PumpSwap AMM (Post-migration)**
 - Program: `pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA`
-- Creator vault: WSOL Token Account
-- Vault derivation: `["creator_vault", creator_pubkey]` (with UNDERSCORE)
-- Fees accumulate as WSOL (need unwrap to SOL)
+- Vault: WSOL
+- Seeds: `["creator_vault", creator]` (underscore)
 
-### CRITICAL: Shared Vault Architecture
+### Shared Vault Architecture
 
-**All tokens created by the same creator share a SINGLE vault.**
+All tokens from same creator share ONE vault.
 
 ```
 Creator Wallet (DAT Authority)
            │
            ▼
-    Shared Creator Vault  ◄── All secondary fees go here
+    Shared Creator Vault  ◄── All fees here
            │
     ┌──────┼──────┬──────┐
     │      │      │      │
     ▼      ▼      ▼      ▼
-  DATS2   DATM  Token3  Token4
+  Token1  Token2  Token3  Token4
 ```
 
-**Implications:**
-1. Cannot know per-token fees just from vault balance
-2. Need daemon to track fees via preBalances/postBalances
-3. Proportional distribution based on tracked `pending_fees`
+Implication: Daemon required for per-token fee attribution.
 
 ---
 
@@ -96,6 +116,7 @@ ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui
 ```
 
 ### PDA Seeds
+
 | Account | Seeds |
 |---------|-------|
 | DAT State | `["dat_v3"]` |
@@ -106,276 +127,158 @@ ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui
 
 ### Key Accounts
 
-#### DATState
-Global configuration:
-- `admin`: Admin pubkey
-- `root_token_mint`: Root token for 44.8% share
-- `fee_split_bps`: 5520 = 55.2% to secondary
-- `is_active`, `emergency_pause`: Control flags
+**DATState** - Global configuration
+- `admin`, `root_token_mint`, `fee_split_bps`
+- `is_active`, `emergency_pause`
 
-#### TokenStats
-Per-token statistics:
-- `mint`: Token mint address
-- `total_burned`: Cumulative tokens burned
-- `total_sol_collected`: Cumulative fees collected
-- `pending_fees_lamports`: **CRITICAL** - Fees tracked but not yet used
-- `is_root_token`: Boolean flag
+**TokenStats** - Per-token statistics
+- `mint`, `total_burned`, `total_sol_collected`
+- `pending_fees_lamports` (fees tracked, not yet flushed)
+- `is_root_token`
 
 ---
 
-## Fee Attribution System
+## Fee Attribution
 
-### The Problem
-Shared vault = Cannot know per-token fees from balance alone.
+### Problem
+Shared vault = cannot determine per-token fees from balance alone.
 
-### The Solution: Balance Polling Daemon
+### Solution: Balance Polling Daemon
 
-**Key insight:** Each token has a UNIQUE bonding curve/pool, but they share the SAME creator vault.
+Each token has a unique bonding curve/pool, but shares the vault.
 
 ```
 Token A Trade ──► Token A's BC (unique) ──► Creator Vault (shared)
 Token B Trade ──► Token B's BC (unique) ──► Creator Vault (shared)
 
-Fee Monitor Daemon
-       │
-       ├── Poll Token A's bonding curve for transactions
-       │   └── In those TX: extract vault balance delta → attribute to Token A
-       │
-       ├── Poll Token B's bonding curve for transactions
-       │   └── In those TX: extract vault balance delta → attribute to Token B
-       │
-       └── Update each TokenStats.pending_fees on-chain
+Fee Daemon
+    │
+    ├── Poll Token A's BC for transactions
+    │   └── Extract vault delta → attribute to Token A
+    │
+    └── Poll Token B's BC for transactions
+        └── Extract vault delta → attribute to Token B
 ```
 
-### How It Works
+### Daemon Operation
 
-1. **Daemon** (`monitor-ecosystem-fees.ts`):
-   - Polls each token's **unique** bonding curve/pool for transactions
-   - For each TX, extracts the shared vault's balance change
-   - Since we polled TOKEN A's BC, the fee in that TX belongs to TOKEN A
-   - Calls `update_pending_fees` instruction
-   - **State persistence**: Saves `lastSignatures` to `.daemon-state.json` for crash recovery
+1. **Monitor** (`monitor-ecosystem-fees.ts`):
+   - Polls each token's bonding curve/pool
+   - Extracts vault balance deltas
+   - Updates `pending_fees` on-chain
+   - Persists state to `.daemon-state.json`
 
-2. **Orchestrator** (`execute-ecosystem-cycle.ts`):
+2. **Flush** (`execute-ecosystem-cycle.ts`):
    - Reads `pending_fees` from all TokenStats
    - Calculates proportional distribution
-   - Executes buyback for each token with allocated amount
+   - Executes buyback & burn per token
 
-### Scalability to N Tokens
+### Scalability
 
-The daemon is designed to scale to **any number of tokens**:
-
-| Feature | Implementation | Benefit |
-|---------|---------------|---------|
-| **State Persistence** | `.daemon-state.json` | No fee loss on restart |
-| **TX Limit** | 50 per poll (configurable) | Handles high-volume periods |
-| **Parallel Polling** | Sequential per token | Prevents RPC rate limits |
-| **Crash Recovery** | Auto-restore signatures | Resume from last known state |
-
-**State File Format:**
-```json
-{
-  "lastSignatures": {
-    "<mint_pubkey>": "<last_processed_signature>",
-    ...
-  },
-  "lastUpdated": "2025-01-01T00:00:00.000Z",
-  "version": 1
-}
-```
-
-**Adding New Tokens:**
-1. Create `devnet-token-new.json` config
-2. Run `init-token-stats.ts` for the new token
-3. Restart daemon - auto-detects new tokens
-
-### Fee Flow
-
-```
-Trading Activity
-       │
-       ▼
-Creator Vault (shared)
-       │
-       ├── Daemon detects via balance polling
-       │   └── Updates TokenStats.pending_fees
-       │   └── Persists lastSignature to .daemon-state.json
-       │
-       ▼
-Cycle Execution
-       │
-       ├── collect_fees (drains vault to datAuthority)
-       │
-       ├── For each secondary (proportional to pending_fees):
-       │   ├── execute_buy_secondary (with allocated_lamports)
-       │   ├── split_fees_to_root (44.8% to root_treasury)
-       │   ├── finalize_allocated_cycle (reset pending_fees)
-       │   └── burn_and_update (burn tokens)
-       │
-       └── Root token cycle (uses root_treasury balance)
-```
+| Feature | Implementation |
+|---------|---------------|
+| State persistence | `.daemon-state.json` |
+| TX limit | 50 per poll (configurable) |
+| Crash recovery | Auto-restore signatures |
 
 ---
 
-## Key Constants
+## Thresholds
 
-### From lib.rs
+### Constants (lib.rs)
+
 ```rust
-MIN_FEES_TO_CLAIM: u64 = 10_000_000;      // 0.01 SOL
-MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;  // 1 SOL
-INITIAL_SLIPPAGE_BPS: u16 = 500;          // 5%
-MIN_CYCLE_INTERVAL: i64 = 60;             // 60 seconds
+FLUSH_THRESHOLD: u64 = 10_000_000;        // 0.01 SOL - minimum to flush
+INITIAL_SLIPPAGE_BPS: u16 = 500;          // 5% - slippage protection
+MIN_CYCLE_INTERVAL: i64 = 60;             // 60 seconds between cycles
 
-// Buy safety margins
-RENT_EXEMPT_MINIMUM: u64 = 890_880;       // ~0.00089 SOL
-SAFETY_BUFFER: u64 = 50_000;              // ~0.00005 SOL
-ATA_RENT_RESERVE: u64 = 2_100_000;        // ~0.0021 SOL
+// Safety margins
+RENT_EXEMPT_MINIMUM: u64 = 890_880;
+ATA_RENT_RESERVE: u64 = 2_100_000;
 MIN_FEES_FOR_SPLIT: u64 = 5_500_000;      // ~0.0055 SOL
-MINIMUM_BUY_AMOUNT: u64 = 100_000;        // ~0.0001 SOL
 ```
 
-### From execute-ecosystem-cycle.ts
+### TypeScript Constants
+
 ```typescript
 SECONDARY_KEEP_RATIO = 0.552;  // 55.2%
 
-// Minimum allocation = amount needed BEFORE 44.8% split
-MIN_ALLOCATION_SECONDARY = Math.ceil(
-  (RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE + MINIMUM_BUY_AMOUNT)
-  / SECONDARY_KEEP_RATIO
-);
-// = 3,140,880 / 0.552 = ~5,690,000 lamports (~0.00569 SOL)
+// Minimum allocation per secondary (before split)
+MIN_ALLOCATION_SECONDARY = ~5,690,000 lamports (~0.00569 SOL)
 
-TX_FEE_RESERVE_PER_TOKEN = 7_000_000;  // ~0.007 SOL
-
-TOTAL_COST_PER_SECONDARY = MIN_ALLOCATION_SECONDARY + TX_FEE_RESERVE_PER_TOKEN;
-// = ~12,690,000 lamports (~0.0127 SOL per secondary token)
+// TX fee reserve per token
+TX_FEE_RESERVE_PER_TOKEN = 7,000,000 lamports (~0.007 SOL)
 ```
 
 ---
 
 ## Execution Flow
 
-### Ecosystem Cycle (N+1 Pattern)
+### Flush Cycle (N+1 Pattern)
 
-Each secondary token executes in a **single batch transaction**:
-
+Each secondary in single batch transaction:
 ```
-TX: [Compute Budget] + [Collect] + [Buy] + [Finalize] + [Burn]
+[Compute Budget] + [Collect] + [Buy] + [Finalize] + [Burn]
 ```
 
-This is the N+1 pattern:
 1. First token: Collect drains vault → Buy with proportional share
-2. Other tokens: Collect (no-op, vault empty) → Buy from remaining datAuthority balance
+2. Other tokens: Collect (no-op) → Buy from remaining balance
 
 ### Root Token Cycle
 
 After all secondaries:
-1. Collect from root creator vault (if bonding curve)
-2. Add root_treasury balance (44.8% from all secondaries)
-3. Buy tokens with full balance
+1. Collect from root creator vault
+2. Add root_treasury balance (44.8% from secondaries)
+3. Buy tokens
 4. Burn tokens
 
 ---
 
-## Testing Requirements
+## Testing
 
-**Full documentation: [docs/DEVNET_TESTING_PROCEDURE.md](docs/DEVNET_TESTING_PROCEDURE.md)**
+### Volume Requirements
 
-### Critical Thresholds for Testing
-
-| Threshold | Value | Description |
-|-----------|-------|-------------|
-| **MIN_FEES_FOR_SPLIT** | 0.0055 SOL | Minimum per secondary token to execute cycle |
-| **MIN_ALLOCATION_SECONDARY** | 0.00569 SOL | Minimum allocation after proportional split |
-| **Creator Fee (devnet BC)** | ~0.3% | Approximate fee on bonding curve trades |
-
-### Volume Calculation for Successful Cycle
-
-To reach **0.006 SOL fees** per secondary token with ~0.3% creator fee:
+To reach 0.006 SOL fees per token with ~0.3% creator fee:
 ```
-Required volume = 0.006 / 0.003 = 2 SOL per token
+Required: 2 SOL volume per token
+Optimized: 2 rounds of 0.5 SOL buy + sell
 ```
 
-**Optimized approach (buy + sell cycles):**
-- Each round: 0.5 SOL buy + sell all = ~0.003 SOL fees
-- **2 rounds minimum** per token = 0.006 SOL fees ✅
-
-### Quick Devnet Test (OPTIMIZED)
+### Quick Devnet Test
 
 ```bash
-# 1. Start daemon (background)
-pkill -f "monitor-ecosystem-fees" 2>/dev/null || true
-npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet > /tmp/daemon-output.txt 2>&1 &
+# Start daemon
+npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
 
-# 2. Generate volume: 2 rounds of buy (0.5 SOL) + sell per token
-# Round 1 - BUYS
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 1 0.5
-npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 1 0.5
-npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 1 0.5
+# Generate volume (buy + sell = fees both directions)
+npx ts-node scripts/generate-volume.ts devnet-tokens/01-froot.json 2 0.5
+npx ts-node scripts/sell-spl-tokens-simple.ts devnet-tokens/01-froot.json
 
-# Round 1 - SELLS
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-secondary.json
-npx ts-node scripts/sell-mayhem-tokens.ts
+# Wait for sync
+sleep 30
 
-# Round 2 - BUYS
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 1 0.5
-npx ts-node scripts/generate-volume.ts devnet-token-secondary.json 1 0.5
-npx ts-node scripts/generate-volume.ts devnet-token-mayhem.json 1 0.5
-
-# Round 2 - SELLS
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-secondary.json
-npx ts-node scripts/sell-mayhem-tokens.ts
-
-# 3. Wait for daemon sync (15s)
-sleep 15
-
-# 4. Execute cycle
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
+# Flush
+npx ts-node scripts/execute-ecosystem-cycle.ts devnet-tokens/01-froot.json --network devnet
 ```
 
-### Volume Generation Rules
-- **ALWAYS buy AND sell** - Each direction generates creator fees
-- **Use 0.5 SOL per trade** for efficient fee accumulation (~0.0015 SOL fees each)
-- **2 rounds minimum** (buy+sell each) = ~0.006 SOL fees per token
-- Creator fee varies: 0.05% (high mcap) to 0.95% (low mcap), ~0.3% typical on devnet
+### Token Configs
 
-### Devnet Tokens
 ```
-devnet-token-spl.json      - DATSPL (Root token, SPL bonding curve)
-devnet-token-secondary.json - DATS2 (Secondary, SPL bonding curve)
-devnet-token-mayhem.json    - DATM (Secondary, Token2022)
-```
-
-### Sell Scripts
-```bash
-# SPL tokens (DATSPL, DATS2)
-npx ts-node scripts/sell-spl-tokens-simple.ts <token-config.json>
-
-# Token2022 / Mayhem mode (DATM)
-npx ts-node scripts/sell-mayhem-tokens.ts
+devnet-tokens/01-froot.json  - Root token
+devnet-tokens/02-fs1.json    - Secondary 1
+mainnet-tokens/01-root.json  - Root token ($ASDF)
 ```
 
 ---
 
-## Common Errors & Solutions
+## Common Errors
 
-### "Insufficient fees"
-- pending_fees below MIN_FEES_FOR_SPLIT (0.0055 SOL)
-- Solution: Generate more volume or wait for daemon sync
-
-### "Cycle too soon"
-- MIN_CYCLE_INTERVAL (60s) not elapsed
-- TESTING_MODE = false in production
-
-### "Invalid root treasury"
-- Root token not configured via `set_root_token`
-- Solution: Run `set-root-token.ts` first
-
-### "Vault not initialized"
-- Creator vault doesn't exist yet
-- Solution: Execute at least one trade to initialize
+| Error | Cause | Solution |
+|-------|-------|----------|
+| Below threshold | pending_fees < 0.0055 SOL | Generate more volume |
+| Cycle too soon | < 60s elapsed | Wait |
+| Invalid root treasury | Root not configured | Run `set-root-token.ts` |
+| Vault not initialized | No trades yet | Execute a trade |
 
 ---
 
@@ -383,352 +286,106 @@ npx ts-node scripts/sell-mayhem-tokens.ts
 
 ```
 asdf-dat/
-├── programs/asdf-dat/src/lib.rs   # Solana program (Anchor)
+├── programs/asdf-dat/src/lib.rs   # Solana program
 ├── lib/
-│   ├── fee-monitor.ts             # Balance polling daemon library
-│   ├── amm-utils.ts               # PumpSwap AMM utilities
-│   └── network-config.ts          # Network configuration
+│   ├── fee-monitor.ts             # Daemon library
+│   ├── amm-utils.ts               # AMM utilities
+│   └── network-config.ts          # Network config
 ├── scripts/
-│   ├── execute-ecosystem-cycle.ts # Main orchestrator
-│   ├── monitor-ecosystem-fees.ts  # Fee daemon entry point
-│   ├── init-dat-state.ts          # Initialize DAT state
-│   ├── init-token-stats.ts        # Initialize TokenStats
-│   ├── set-root-token.ts          # Configure root token
-│   └── generate-volume.ts         # Generate test volume
-├── devnet-tokens/                 # Devnet token configurations
-│   ├── 01-froot.json              # Root token
-│   └── 02-fs1.json, etc.          # Secondary tokens
-├── mainnet-tokens/                # Mainnet token configurations
-│   ├── 01-root.json               # Root token ($ASDF)
-│   └── XX-secondary.json          # Secondary tokens
-├── devnet-wallet.json             # Devnet admin wallet
-├── mainnet-wallet.json            # Mainnet admin wallet
+│   ├── execute-ecosystem-cycle.ts # Flush orchestrator
+│   ├── monitor-ecosystem-fees.ts  # Fee daemon
+│   └── ...                        # Utilities
+├── devnet-tokens/                 # Devnet configs
+├── mainnet-tokens/                # Mainnet configs
 └── docs/                          # Documentation
 ```
 
 ---
 
-## Mainnet vs Devnet
+## Network Configuration
 
 | Aspect | Devnet | Mainnet |
 |--------|--------|---------|
-| RPC | api.devnet.solana.com | api.mainnet-beta.solana.com |
 | Wallet | devnet-wallet.json | mainnet-wallet.json |
-| TESTING_MODE | Can be true | Must be false |
-| Token directory | devnet-tokens/ | mainnet-tokens/ |
+| Tokens | devnet-tokens/ | mainnet-tokens/ |
 | RPC Fallback | Optional | Required |
 
-Use `--network devnet` or `--network mainnet` flag on all scripts.
+Use `--network devnet` or `--network mainnet` on all scripts.
 
 ---
 
-## Important Reminders
+## Principles
 
-1. **All documentation in English** (per project requirements)
-2. **Shared vault = need daemon for fee attribution**
-3. **Creator fees are dynamic** (set by Pump.fun based on market cap)
-4. **55.2%/44.8% split is configurable** via `fee_split_bps`
-5. **N+1 batch transactions** for efficiency
-6. **Always verify daemon is syncing** before running cycles
-7. **To generate volume on Pump.fun tokens, always do buys AND sells** - both directions generate fees
-8. **Root token receives 100% of its own creator fees** - this is hardcoded in the infrastructure
-9. **Don't trust, verify** - always check on-chain state
-10. **The daemon is a feature, not a bug** - multiple daemons can be used to cross-verify fee tracking
-
-### Quick Test Workflow (daemon already running)
-
-```bash
-# Generate volume (daemon auto-detects)
-npx ts-node scripts/generate-volume.ts devnet-token-spl.json 1 0.5
-npx ts-node scripts/sell-spl-tokens-simple.ts devnet-token-spl.json
-
-# Wait for sync
-sleep 30
-
-# Execute cycle
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-token-spl.json
-```
-- # ASDF-DAT - PROJECT MEMORY
-
-## Project Stage
-
-**Current**: Devnet testing finalization → Mainnet deployment
-**Next**: Phase 2 development (multi-tenant infrastructure)
-
-This prompt remains valid throughout all development phases.
+1. **Don't trust, verify** - Always check on-chain state
+2. **Shared vault = daemon required** - Fee attribution is a feature
+3. **Both directions generate fees** - Buy AND sell for volume
+4. **Root gets 100% of its own fees** - Hardcoded in infrastructure
+5. **Multiple daemons can cross-verify** - Redundancy is good
 
 ---
 
-## Git Standards
+# Development Standards
 
-### Quality > Quantity. Always.
+## Quality > Quantity
 
-### Commit Format
-```
-type(scope): description (max 50 chars)
-
-- Why this change matters
-- What it enables for users
-```
-
-**Types:**
-- `feat`: New feature
-- `fix`: Bug fix  
-- `docs`: Documentation
-- `refactor`: Code restructure
-- `test`: Tests
-- `chore`: Maintenance
-
-**Good Commits:**
-```
-feat(treasury): add threshold-based buyback trigger
-
-- Reduces gas costs by batching small amounts
-- Executes automatically when threshold met
-
-fix(pda): correct bonding curve derivation
-
-- Aligned with pump.fun program structure
-- Fixes account not found errors
-
-docs(readme): simplify for non-technical readers
-
-- Plain english explanations
-- Visual diagrams added
-```
-
-**Bad Commits:**
-```
-fix stuff
-update
-wip
-asdfasdf
-```
-
-### Branch Strategy
-```
-main        → Production (always deployable)
-develop     → Integration testing
-feat/xxx    → Features
-fix/xxx     → Fixes
-```
-
-### Before ANY Commit
-```
-□ Tests pass
-□ No debug code left
-□ No commented junk
-□ No hardcoded secrets
-□ Clear commit message
-□ Would this embarrass me in a code review?
-```
-
----
-
-## Documentation Standards
-
-### The Trencher Test
-```
-Before writing docs, ask:
-"Would someone who just trades on pump.fun understand this?"
-
-If no → simplify until yes.
-```
-
-### Language Rules
-```
-❌ JARGON
-"Implements deflationary tokenomics via programmatic supply reduction mechanisms"
-
-✅ PLAIN ENGLISH  
-"Fees come in → Buys tokens → Burns them → Less supply"
-```
-```
-❌ ASSUMED KNOWLEDGE
-"CPI to the AMM for atomic swaps"
-
-✅ EXPLAIN SIMPLY
-"Automatically swaps SOL for tokens using pump.fun"
-```
-
-### Code Comments
-```rust
-// ❌ Useless (says WHAT, obvious)
-// Add fee to total
-total += fee;
-
-// ✅ Useful (says WHY)
-// Accumulate until threshold to save gas on small amounts
-total += fee;
-
-// ✅ Business context
-// 5.52% protocol fee - this funds the ecosystem sustainability
-let protocol_fee = amount * 552 / 10000;
-```
-
----
-
-## Code Quality
-
-### Principles
 ```
 1 working feature    >  3 half-done features
 1 clean file         >  5 messy files
-1 clear function     >  1 clever function
 Simple & readable    >  Complex & impressive
 ```
 
-### Phase 2 Ready
+## Phase 2 Ready
 
-Phase 1 code is the FOUNDATION. Always ask:
-```
-"Will this make Phase 2 easier or harder?"
-```
+Phase 1 is foundation. Always ask: "Will this make Phase 2 easier or harder?"
+
 ```rust
-// ❌ Hardcoded (blocks Phase 2)
-const TOKEN_MINT: &str = "ABC123...";
-
-// ✅ Configurable (Phase 2 ready)
-pub struct Config {
-    pub token_mint: Pubkey,
-}
+// Creation, not extraction
+pub const DEV_SUSTAINABILITY_BPS: u16 = 100;  // 1% - keeps lights on
 ```
 
-### Remove Before Commit
+## Commit Format
 
-- `msg!("DEBUG: ...")` statements
-- Commented out code blocks
-- `// TODO` without issue reference
-- Unused imports
-- Test wallets/keys
-
----
-
-## File Structure
-
-### Naming
 ```
-✅ Clear
-treasury.rs
-buyback_executor.rs
-fee_calculator.rs
-config.rs
+type(scope): description
 
-❌ Vague
-utils.rs
-helpers.rs
-misc.rs
-temp.rs
+- Why this change matters
+- What it enables
 ```
 
-### Organization
-```
-programs/asdf-dat/src/
-├── lib.rs              # Entry point
-├── instructions/       # Instruction handlers
-│   ├── mod.rs
-│   ├── initialize.rs
-│   ├── execute_cycle.rs
-│   └── ...
-├── state/              # Account structures
-│   ├── mod.rs
-│   ├── treasury.rs
-│   └── config.rs
-├── errors.rs           # Custom errors
-└── constants.rs        # Named constants
-```
+Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
----
+## Before Commit
 
-## Testing Discipline
+- Tests pass
+- No debug code
+- No commented junk
+- No hardcoded secrets
+- Clear message
 
-### Before Saying "Done"
-```
-□ Ran full test suite (not just the new test)
-□ All tests pass
-□ Tested edge cases
-□ Verified on devnet (if applicable)
-□ Can prove it works (tx signature, logs)
-```
+## Comments Explain WHY
 
-### Test Naming
 ```rust
-// ✅ Describes scenario and expectation
-#[test]
-fn test_buyback_executes_when_threshold_reached() {}
+// Accumulate until threshold - reduces tx costs
+total += fee;
 
-#[test]
-fn test_buyback_fails_when_below_threshold() {}
-
-// ❌ Vague
-#[test]
-fn test_buyback() {}
-
-#[test]
-fn test1() {}
+// 1% dev sustainability - 1% today = 99% burns forever
+let dev_share = amount / 100;
 ```
 
 ---
 
-## Deployment Stages
+## Deployment
 
-### Devnet
+**Devnet**: Experiment freely. Break things, learn, fix.
 
-- Experiment freely
-- Break things, learn, fix
-- Iterate fast
+**Mainnet**: Triple-check. Small test first. Monitor after.
 
-### Mainnet
-
-- Triple-check everything
-- Small test transaction first
-- Monitor after deployment
-- Never rush
 ```
 MAINNET = REAL VALUE
-Ask Jean Terre if ANY doubt.
+If doubt exists, ask first.
 ```
 
 ---
 
-## Communication
-
-### When Stuck
-```
-1. Read full error message
-2. Try to understand WHY
-3. Check if seen before
-4. If stuck > 10 min → Ask with:
-   - What you tried
-   - Full error
-   - Relevant code
-```
-
-### Status Updates
-```
-✅ Clear
-"Treasury init working. Tests pass. Ready for cycle implementation."
-
-❌ Vague  
-"Made progress on stuff."
-```
-
----
-
-## The Golden Rules
-```
-1. Test. Verify. Confirm. Never assume.
-
-2. Write code for the reader, not the writer.
-
-3. A trencher at 3am should understand the docs.
-
-4. Phase 1 is Phase 2's foundation. Build accordingly.
-
-5. Quality > Quantity. Always.
-```
-
----
-
-*Building infrastructure that lasts.*
-*Precision matters.* 🔥
+*Flush. Burn. Verify.*
+*This is fine.* 🔥🐕

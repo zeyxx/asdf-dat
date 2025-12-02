@@ -1,16 +1,21 @@
 /**
- * PumpFun Fee Monitor v2
+ * Fee Attribution Engine
  *
- * Monitors PumpFun transactions to capture exact fee amounts per token
- * and update on-chain TokenStats.pending_fees for accurate per-token attribution.
+ * Optimistic Burn Protocol - attributes fees to individual tokens from
+ * the shared creator vault.
  *
- * Architecture v2 - Balance Polling:
- * - Polls each bonding curve/pool for new transactions
- * - Extracts fees from preBalances/postBalances (BC) or preTokenBalances/postTokenBalances (AMM)
- * - Updates TokenStats via update_pending_fees instruction
+ * Problem: All tokens share one vault. Cannot determine per-token fees from balance alone.
  *
- * Key insight: All tokens share the same creator vault, but each has a unique
- * bonding curve/pool. By monitoring each BC/pool, we can attribute fees correctly.
+ * Solution: Each token has a unique bonding curve/pool. Poll each BC/pool for trades,
+ * extract vault balance deltas from that transaction, attribute to that token.
+ *
+ * Flow:
+ * 1. Poll bonding curve/pool for new transactions
+ * 2. Extract vault balance change (preBalances → postBalances)
+ * 3. Update TokenStats.pending_fees on-chain
+ * 4. Persist state for crash recovery
+ *
+ * Chain records everything. Daemon attributes. Anyone can verify.
  */
 
 import {
