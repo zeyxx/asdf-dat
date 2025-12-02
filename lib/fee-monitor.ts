@@ -67,6 +67,8 @@ interface DaemonState {
   lastUpdated: string;
   version: number;
   checksum?: string; // SHA-256 of lastSignatures for integrity verification
+  // HIGH-03 FIX: Persist processedSignatures to prevent double-counting on restart
+  processedSignatures?: string[]; // Last N signatures for deduplication across restarts
 }
 
 // Maximum age for state file (24 hours)
@@ -217,8 +219,17 @@ export class PumpFunFeeMonitor {
           }
         }
 
+        // HIGH-03 FIX: Restore processedSignatures for deduplication across restarts
+        let processedCount = 0;
+        if (state.processedSignatures && Array.isArray(state.processedSignatures)) {
+          for (const sig of state.processedSignatures) {
+            this.processedSignatures.add(sig);
+            processedCount++;
+          }
+        }
+
         const source = file === backupFile ? 'backup' : 'state';
-        this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures)`);
+        this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures, ${processedCount} processed)`);
 
         // If loaded from backup, immediately save to restore main file
         if (file === backupFile) {
@@ -242,11 +253,15 @@ export class PumpFunFeeMonitor {
   private saveState(): void {
     try {
       const signaturesObj = Object.fromEntries(this.lastSignatures);
+      // HIGH-03 FIX: Persist last 1000 processedSignatures for deduplication across restarts
+      const processedSigsArray = Array.from(this.processedSignatures).slice(-1000);
+
       const state: DaemonState = {
         lastSignatures: signaturesObj,
         lastUpdated: new Date().toISOString(),
         version: STATE_VERSION,
         checksum: calculateChecksum(signaturesObj),
+        processedSignatures: processedSigsArray,
       };
 
       const stateJson = JSON.stringify(state, null, 2);

@@ -435,9 +435,35 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
         return;
       }
 
-      // Parse request body
+      // Parse request body with size limit and error handling (HIGH-04 FIX)
+      const MAX_BODY_SIZE = 1024 * 1024; // 1MB limit
       let body = "";
-      req.on("data", (chunk) => { body += chunk; });
+      let bodySize = 0;
+
+      req.on("error", (err) => {
+        logger.error("Request stream error", { error: err.message });
+        if (!res.headersSent) {
+          res.setHeader("Content-Type", "application/json");
+          res.writeHead(400);
+          res.end(JSON.stringify({ success: false, error: "Request error" }));
+        }
+      });
+
+      req.on("data", (chunk) => {
+        bodySize += chunk.length;
+        if (bodySize > MAX_BODY_SIZE) {
+          req.destroy();
+          logger.warn("Request body too large", { size: bodySize, limit: MAX_BODY_SIZE });
+          if (!res.headersSent) {
+            res.setHeader("Content-Type", "application/json");
+            res.writeHead(413); // Payload Too Large
+            res.end(JSON.stringify({ success: false, error: "Request body too large" }));
+          }
+          return;
+        }
+        body += chunk;
+      });
+
       req.on("end", async () => {
         try {
           const data = JSON.parse(body);
@@ -891,6 +917,18 @@ async function main() {
   // Prevent process from exiting
   await new Promise(() => {});
 }
+
+// MEDIUM-06 FIX: Global exception handlers to prevent silent crashes
+process.on("uncaughtException", (error) => {
+  console.error("\n💥 Uncaught Exception:", error.message);
+  console.error(error.stack);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("\n⚠️ Unhandled Rejection:", reason);
+  // Don't exit for unhandled rejections, just log them
+});
 
 // Run with error handling
 main().catch((error) => {

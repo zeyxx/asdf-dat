@@ -469,9 +469,14 @@ pub struct RegisterValidatedFees<'info> {
     pub token_stats: Account<'info, TokenStats>,
 }
 
-/// Accounts for sync_validator_slot instruction (permissionless)
+/// Accounts for sync_validator_slot instruction
+/// HIGH-02 FIX: Now requires admin authorization to prevent DoS attacks
 #[derive(Accounts)]
 pub struct SyncValidatorSlot<'info> {
+    // HIGH-02 FIX: Added DATState and admin signer for authorization
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
     #[account(
         mut,
         seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
@@ -479,9 +484,11 @@ pub struct SyncValidatorSlot<'info> {
     )]
     pub validator_state: Account<'info, ValidatorState>,
 
-    // NOTE: NO SIGNER REQUIRED - This is PERMISSIONLESS!
-    // Anyone can call this to sync a stale validator to current slot
-    // The instruction itself validates that sync is only allowed if stale
+    /// Admin authority - HIGH-02 FIX: Required to prevent DoS
+    #[account(
+        constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess
+    )]
+    pub admin: Signer<'info>,
 }
 
 #[derive(Accounts)]

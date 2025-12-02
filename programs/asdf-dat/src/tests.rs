@@ -279,10 +279,11 @@ mod tests {
 
         #[test]
         fn test_dat_state_size() {
-            // DATState should be 374 bytes according to size calculation
+            // DATState should be 382 bytes according to size calculation
             // See state/dat_state.rs for detailed breakdown
+            // HIGH-01 FIX: Added last_direct_fee_split_timestamp (+8 bytes)
             use crate::state::DATState;
-            assert_eq!(DATState::LEN, 374, "DATState size mismatch");
+            assert_eq!(DATState::LEN, 382, "DATState size mismatch");
         }
 
         #[test]

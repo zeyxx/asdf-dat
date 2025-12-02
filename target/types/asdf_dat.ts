@@ -1972,6 +1972,24 @@ export type AsdfDat = {
       ],
       "accounts": [
         {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "validatorState",
           "writable": true,
           "pda": {
@@ -2000,6 +2018,13 @@ export type AsdfDat = {
               }
             ]
           }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin authority - HIGH-02 FIX: Required to prevent DoS"
+          ],
+          "signer": true
         }
       ],
       "args": []
@@ -3299,6 +3324,14 @@ export type AsdfDat = {
             "name": "adminOperationCooldown",
             "docs": [
               "Timelock: cooldown period in seconds (default 3600 = 1hr)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "lastDirectFeeSplitTimestamp",
+            "docs": [
+              "Last time update_fee_split was called (direct path)",
+              "Separate from pending_fee_split_timestamp to prevent bypass attacks"
             ],
             "type": "i64"
           }

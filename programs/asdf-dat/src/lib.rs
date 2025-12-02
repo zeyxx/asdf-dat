@@ -304,6 +304,8 @@ pub mod asdf_dat {
         state.pending_fee_split = None;       // No pending fee split change
         state.pending_fee_split_timestamp = 0;
         state.admin_operation_cooldown = 3600; // Default 1 hour cooldown
+        // HIGH-01 FIX: Separate timestamp for direct fee split changes
+        state.last_direct_fee_split_timestamp = 0;
 
         emit!(DATInitialized {
             admin: state.admin,
@@ -395,9 +397,9 @@ pub mod asdf_dat {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
 
-        // HIGH-03 FIX: Enforce cooldown between fee split changes
-        // Uses pending_fee_split_timestamp to track last update (shared with propose_fee_split)
-        let elapsed = clock.unix_timestamp.saturating_sub(state.pending_fee_split_timestamp);
+        // HIGH-01 FIX: Enforce cooldown between DIRECT fee split changes
+        // Uses separate timestamp from propose_fee_split to prevent bypass attacks
+        let elapsed = clock.unix_timestamp.saturating_sub(state.last_direct_fee_split_timestamp);
         require!(
             elapsed >= state.admin_operation_cooldown,
             ErrorCode::CycleTooSoon
@@ -405,13 +407,13 @@ pub mod asdf_dat {
 
         let old_fee_split_bps = state.fee_split_bps;
 
-        // HIGH-02 FIX: Limit instant changes to max 5% (500 bps) per call
+        // Limit instant changes to max 5% (500 bps) per call
         let delta = (new_fee_split_bps as i32 - old_fee_split_bps as i32).unsigned_abs() as u16;
         require!(delta <= 500, ErrorCode::FeeSplitDeltaTooLarge);
 
         state.fee_split_bps = new_fee_split_bps;
-        // Update timestamp to enforce cooldown on next call
-        state.pending_fee_split_timestamp = clock.unix_timestamp;
+        // HIGH-01 FIX: Update SEPARATE timestamp for direct path
+        state.last_direct_fee_split_timestamp = clock.unix_timestamp;
 
         emit!(FeeSplitUpdated {
             old_bps: old_fee_split_bps,

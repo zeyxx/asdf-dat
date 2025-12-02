@@ -1966,6 +1966,24 @@
       ],
       "accounts": [
         {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
           "name": "validator_state",
           "writable": true,
           "pda": {
@@ -1994,6 +2012,13 @@
               }
             ]
           }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin authority - HIGH-02 FIX: Required to prevent DoS"
+          ],
+          "signer": true
         }
       ],
       "args": []
@@ -3293,6 +3318,14 @@
             "name": "admin_operation_cooldown",
             "docs": [
               "Timelock: cooldown period in seconds (default 3600 = 1hr)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_direct_fee_split_timestamp",
+            "docs": [
+              "Last time update_fee_split was called (direct path)",
+              "Separate from pending_fee_split_timestamp to prevent bypass attacks"
             ],
             "type": "i64"
           }
