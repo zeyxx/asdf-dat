@@ -815,6 +815,45 @@ export class PumpFunFeeMonitor {
   }
 
   /**
+   * Register a new token for monitoring (hot-reload)
+   * Called by auto-discovery or manual registration endpoint
+   * @param token Token configuration to register
+   * @returns true if registered successfully, false if already exists
+   */
+  public registerToken(token: TokenConfig): boolean {
+    const mintKey = token.mint.toBase58();
+
+    // Check if already registered
+    if (this.tokens.has(mintKey)) {
+      this.log(`⚠️ Token ${token.symbol} already registered (${mintKey.slice(0, 8)}...)`);
+      return false;
+    }
+
+    // Register the token
+    this.tokens.set(mintKey, token);
+    this.pendingFees.set(mintKey, 0n);
+
+    // Initialize lastSignature if we have state from a previous run
+    if (!this.lastSignatures.has(mintKey)) {
+      this.lastSignatures.set(mintKey, '');
+    }
+
+    this.log(`✅ Registered new token: ${token.symbol} (${mintKey.slice(0, 8)}...)`);
+
+    // Save state immediately to persist new token
+    this.saveState();
+
+    return true;
+  }
+
+  /**
+   * Get list of registered token mints
+   */
+  public getRegisteredTokens(): string[] {
+    return Array.from(this.tokens.keys());
+  }
+
+  /**
    * Get health metrics for monitoring/alerting
    */
   public getHealthMetrics(): {

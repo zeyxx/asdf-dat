@@ -79,7 +79,7 @@ async function main(): Promise<void> {
   log(`Current fee_split_bps: ${originalFeeSplit} (${originalFeeSplit / 100}%)`);
   log(`Admin operation cooldown: ${cooldown}s (${cooldown / 3600}h)`);
   log(`Pending fee split timestamp: ${lastTimestamp > 0 ? new Date(lastTimestamp * 1000).toISOString() : 'None'}`);
-  log(`Pending fee split value: ${initialState.pendingFeeSplitBps || 'None'}`);
+  log(`Pending fee split value: ${initialState.pendingFeeSplit || 'None'}`);
 
   logTest(
     results,
@@ -240,7 +240,7 @@ async function main(): Promise<void> {
 
   log('Timelock configuration:');
   log(`  admin_operation_cooldown: ${finalState.adminOperationCooldown?.toNumber() || 0}s`);
-  log(`  pending_fee_split_bps: ${finalState.pendingFeeSplitBps || 'None'}`);
+  log(`  pending_fee_split_bps: ${finalState.pendingFeeSplit || 'None'}`);
   log(`  pending_fee_split_timestamp: ${finalState.pendingFeeSplitTimestamp?.toNumber() || 0}`);
 
   // Verify cooldown is reasonable (should be 1h = 3600s)
