@@ -408,7 +408,12 @@ pub mod asdf_dat {
         let old_fee_split_bps = state.fee_split_bps;
 
         // Limit instant changes to max 5% (500 bps) per call
-        let delta = (new_fee_split_bps as i32 - old_fee_split_bps as i32).unsigned_abs() as u16;
+        // HIGH-01 FIX: Use pure unsigned arithmetic to avoid any signed overflow concerns
+        let delta: u16 = if new_fee_split_bps >= old_fee_split_bps {
+            new_fee_split_bps - old_fee_split_bps
+        } else {
+            old_fee_split_bps - new_fee_split_bps
+        };
         require!(delta <= 500, ErrorCode::FeeSplitDeltaTooLarge);
 
         state.fee_split_bps = new_fee_split_bps;
@@ -985,6 +990,10 @@ pub mod asdf_dat {
             ctx.accounts.dat_authority.lamports().saturating_sub(RENT_EXEMPT_MINIMUM + SAFETY_BUFFER)
         );
         require!(available >= MIN_FEES_FOR_SPLIT, ErrorCode::InsufficientFees);
+
+        // CRITICAL-03 FIX: Root treasury is REQUIRED for secondary tokens
+        // Without this check, callers could pass root_treasury=None and skip the 44.8% fee split
+        require!(ctx.accounts.root_treasury.is_some(), ErrorCode::InvalidRootTreasury);
 
         // Execute split - SECURITY: Validate root_treasury PDA before transfer
         if let Some(treasury) = &ctx.accounts.root_treasury {
