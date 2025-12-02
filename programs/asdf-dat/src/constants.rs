@@ -111,6 +111,21 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DEV SUSTAINABILITY
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Dev sustainability wallet: dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4
+/// Receives 1% of secondary burns - keeps infrastructure running
+/// 1% today = 99% burns forever
+pub const DEV_WALLET: Pubkey = Pubkey::new_from_array([
+    9, 97, 12, 254, 90, 14, 23, 86, 57, 91, 82, 93, 3, 190, 97, 174,
+    236, 104, 14, 8, 135, 85, 242, 4, 180, 76, 160, 246, 199, 117, 11, 155
+]);
+
+/// Dev fee in basis points (100 = 1%)
+pub const DEV_FEE_BPS: u16 = 100;
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PDA SEEDS
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -152,30 +167,34 @@ pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 23
 pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42, 181, 139, 43, 66];
 
 // ══════════════════════════════════════════════════════════════════════════════
-// OPERATIONAL THRESHOLDS
+// FLUSH THRESHOLDS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Minimum fees required to claim (0.01 SOL)
-pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
+/// Flush threshold - minimum fees before cycle executes (0.01 SOL)
+/// Accumulate until threshold to reduce transaction costs
+pub const FLUSH_THRESHOLD: u64 = 10_000_000;
 
-/// Maximum fees per cycle (69420 SOL - effectively unlimited, market decides via slippage)
+/// Alias for backward compatibility
+pub const MIN_FEES_TO_CLAIM: u64 = FLUSH_THRESHOLD;
+
+/// Maximum fees per flush - effectively unlimited (69420 SOL)
+/// Market-driven cap via slippage protection instead of artificial limits
 pub const MAX_FEES_PER_CYCLE: u64 = 69_420_000_000_000;
 
-/// Initial slippage tolerance (5%)
+/// Slippage protection (5%) - prevents unfavorable execution
 pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
 
-/// Minimum interval between cycles (60 seconds)
+/// Minimum interval between flushes (60 seconds)
+/// Prevents spam while allowing responsive execution
 pub const MIN_CYCLE_INTERVAL: i64 = 60;
 
 /// Maximum pending fees per token (69 SOL)
-/// Rationale: 69 SOL represents ~6900 trades with 0.01 SOL fee each,
-/// well beyond typical accumulation between daemon flushes.
-/// This limit prevents excessive accumulation, potential overflow,
-/// and ensures proportional distribution remains fair.
+/// ~6900 trades at 0.01 SOL each - well beyond typical daemon sync interval
+/// Prevents accumulation overflow and ensures fair distribution
 pub const MAX_PENDING_FEES: u64 = 69_000_000_000;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EXECUTE BUY CONSTANTS (module level to reduce stack usage)
+// BURN CYCLE RESERVES
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Rent exempt minimum for token accounts (~0.00089 SOL)
@@ -187,7 +206,8 @@ pub const SAFETY_BUFFER: u64 = 50_000;
 /// ATA rent reserve (~0.0021 SOL)
 pub const ATA_RENT_RESERVE: u64 = 2_100_000;
 
-/// Minimum fees required before split (~0.0055 SOL)
+/// Minimum fees before split is worthwhile (~0.0055 SOL)
+/// Below this, transaction costs exceed value
 pub const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
 
 /// Minimum buy amount (~0.0001 SOL)

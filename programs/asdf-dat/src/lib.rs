@@ -1535,6 +1535,41 @@ pub mod asdf_dat {
 
         Ok(())
     }
+
+    /// Transfer 1% dev sustainability fee
+    /// Called at the end of each batch transaction, after burn succeeds
+    /// 1% today = 99% burns forever
+    pub fn transfer_dev_fee(ctx: Context<TransferDevFee>, secondary_share: u64) -> Result<()> {
+        // Calculate 1% of secondary share
+        let dev_fee = secondary_share
+            .checked_mul(DEV_FEE_BPS as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        if dev_fee > 0 {
+            let bump = ctx.accounts.dat_state.dat_authority_bump;
+            let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+            invoke_signed(
+                &anchor_lang::solana_program::system_instruction::transfer(
+                    ctx.accounts.dat_authority.key,
+                    ctx.accounts.dev_wallet.key,
+                    dev_fee,
+                ),
+                &[
+                    ctx.accounts.dat_authority.to_account_info(),
+                    ctx.accounts.dev_wallet.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[seeds],
+            )?;
+
+            msg!("Dev sustainability fee: {} lamports", dev_fee);
+        }
+
+        Ok(())
+    }
 }
 
 

@@ -669,3 +669,25 @@ pub struct CreatePumpfunTokenMayhem<'info> {
     /// CHECK: Main pump program (6EF8r...)
     pub pump_program: AccountInfo<'info>,
 }
+
+/// TransferDevFee - Transfer 1% dev sustainability fee at end of batch
+/// Called after burn to ensure cycle completed successfully before taking fee
+#[derive(Accounts)]
+pub struct TransferDevFee<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// CHECK: DAT authority PDA - source of SOL for dev fee
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+
+    /// CHECK: Dev wallet - validated against hardcoded constant
+    /// 1% today = 99% burns forever
+    #[account(
+        mut,
+        address = DEV_WALLET @ ErrorCode::InvalidDevWallet
+    )]
+    pub dev_wallet: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+}

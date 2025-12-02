@@ -2070,6 +2070,82 @@
       "args": []
     },
     {
+      "name": "transfer_dev_fee",
+      "docs": [
+        "Transfer 1% dev sustainability fee",
+        "Called at the end of each batch transaction, after burn succeeds",
+        "1% today = 99% burns forever"
+      ],
+      "discriminator": [
+        50,
+        51,
+        38,
+        67,
+        231,
+        227,
+        103,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dat_authority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "dev_wallet",
+          "docs": [
+            "1% today = 99% burns forever"
+          ],
+          "writable": true,
+          "address": "dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "secondary_share",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "unwrap_wsol",
       "docs": [
         "Unwrap WSOL to native SOL in DAT authority account",
@@ -2729,12 +2805,12 @@
     {
       "code": 6000,
       "name": "DATNotActive",
-      "msg": "DAT not active"
+      "msg": "Protocol paused"
     },
     {
       "code": 6001,
       "name": "InsufficientFees",
-      "msg": "Insufficient fees"
+      "msg": "Below flush threshold - accumulating"
     },
     {
       "code": 6002,
@@ -2744,7 +2820,7 @@
     {
       "code": 6003,
       "name": "CycleTooSoon",
-      "msg": "Cycle too soon"
+      "msg": "Flush interval not elapsed"
     },
     {
       "code": 6004,
@@ -2754,37 +2830,37 @@
     {
       "code": 6005,
       "name": "MathOverflow",
-      "msg": "Math overflow"
+      "msg": "Arithmetic overflow"
     },
     {
       "code": 6006,
       "name": "SlippageExceeded",
-      "msg": "Slippage exceeded"
+      "msg": "Slippage exceeded - price moved unfavorably"
     },
     {
       "code": 6007,
       "name": "PriceImpactTooHigh",
-      "msg": "Price impact too high"
+      "msg": "Price impact exceeds safe threshold"
     },
     {
       "code": 6008,
       "name": "VaultNotInitialized",
-      "msg": "Vault not initialized"
+      "msg": "Vault not initialized - execute a trade first"
     },
     {
       "code": 6009,
       "name": "NoPendingBurn",
-      "msg": "No pending burn"
+      "msg": "No tokens pending burn"
     },
     {
       "code": 6010,
       "name": "InvalidPool",
-      "msg": "Invalid pool data"
+      "msg": "Invalid pool state"
     },
     {
       "code": 6011,
       "name": "InvalidRootToken",
-      "msg": "Invalid root token"
+      "msg": "Invalid root token configuration"
     },
     {
       "code": 6012,
@@ -2794,12 +2870,12 @@
     {
       "code": 6013,
       "name": "InvalidFeeSplit",
-      "msg": "Invalid fee split basis points"
+      "msg": "Fee split must be 0-10000 bps"
     },
     {
       "code": 6014,
       "name": "FeeSplitDeltaTooLarge",
-      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+      "msg": "Fee split delta exceeds 5% maximum"
     },
     {
       "code": 6015,
@@ -2809,52 +2885,52 @@
     {
       "code": 6016,
       "name": "StaleValidation",
-      "msg": "Stale validation - slot already processed"
+      "msg": "Slot already processed"
     },
     {
       "code": 6017,
       "name": "SlotRangeTooLarge",
-      "msg": "Slot range too large"
+      "msg": "Slot range exceeds maximum"
     },
     {
       "code": 6018,
       "name": "ValidatorNotStale",
-      "msg": "Validator not stale - sync not needed"
+      "msg": "Validator current - sync not needed"
     },
     {
       "code": 6019,
       "name": "FeeTooHigh",
-      "msg": "Fee amount exceeds maximum for slot range"
+      "msg": "Fee amount exceeds range maximum"
     },
     {
       "code": 6020,
       "name": "TooManyTransactions",
-      "msg": "Transaction count exceeds maximum for slot range"
+      "msg": "Transaction count exceeds range maximum"
     },
     {
       "code": 6021,
       "name": "InvalidBondingCurve",
-      "msg": "Invalid bonding curve account"
+      "msg": "Invalid bonding curve"
     },
     {
       "code": 6022,
       "name": "MintMismatch",
-      "msg": "Mint mismatch between accounts"
+      "msg": "Mint mismatch"
     },
     {
       "code": 6023,
       "name": "PendingFeesOverflow",
-      "msg": "Pending fees would exceed maximum (69 SOL)"
+      "msg": "Pending fees at maximum capacity"
     },
     {
       "code": 6024,
       "name": "NoPendingAdminTransfer",
-      "msg": "No pending admin transfer to cancel"
+      "msg": "No pending admin transfer"
     },
     {
       "code": 6025,
       "name": "NoPendingFeeSplit",
-      "msg": "No pending fee split change to execute"
+      "msg": "No pending fee split change"
     },
     {
       "code": 6026,
@@ -2864,12 +2940,17 @@
     {
       "code": 6027,
       "name": "SlippageConfigTooHigh",
-      "msg": "Slippage configuration too high (max 500 bps)"
+      "msg": "Slippage exceeds 5% maximum"
     },
     {
       "code": 6028,
       "name": "AccountSizeMismatch",
-      "msg": "Account size mismatch during migration"
+      "msg": "Account size mismatch"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidDevWallet",
+      "msg": "Invalid dev wallet address"
     }
   ],
   "types": [

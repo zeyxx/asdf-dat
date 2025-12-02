@@ -1,96 +1,105 @@
 use anchor_lang::prelude::*;
 
-/// ASDF-DAT Error Codes
+/// Optimistic Burn Protocol Error Codes
 ///
-/// Comprehensive error handling for all program operations.
-/// Each error has a unique code and descriptive message.
+/// Clear, actionable error messages for all operations.
 #[error_code]
 pub enum ErrorCode {
-    #[msg("DAT not active")]
+    // Flush cycle errors
+    #[msg("Protocol paused")]
     DATNotActive,
 
-    #[msg("Insufficient fees")]
+    #[msg("Below flush threshold - accumulating")]
     InsufficientFees,
 
     #[msg("Unauthorized")]
     UnauthorizedAccess,
 
-    #[msg("Cycle too soon")]
+    #[msg("Flush interval not elapsed")]
     CycleTooSoon,
 
     #[msg("Invalid parameter")]
     InvalidParameter,
 
-    #[msg("Math overflow")]
+    #[msg("Arithmetic overflow")]
     MathOverflow,
 
-    #[msg("Slippage exceeded")]
+    // Execution protection
+    #[msg("Slippage exceeded - price moved unfavorably")]
     SlippageExceeded,
 
-    #[msg("Price impact too high")]
+    #[msg("Price impact exceeds safe threshold")]
     PriceImpactTooHigh,
 
-    #[msg("Vault not initialized")]
+    #[msg("Vault not initialized - execute a trade first")]
     VaultNotInitialized,
 
-    #[msg("No pending burn")]
+    #[msg("No tokens pending burn")]
     NoPendingBurn,
 
-    #[msg("Invalid pool data")]
+    #[msg("Invalid pool state")]
     InvalidPool,
 
-    #[msg("Invalid root token")]
+    // Token hierarchy errors
+    #[msg("Invalid root token configuration")]
     InvalidRootToken,
 
     #[msg("Invalid root treasury")]
     InvalidRootTreasury,
 
-    #[msg("Invalid fee split basis points")]
+    // Fee split errors
+    #[msg("Fee split must be 0-10000 bps")]
     InvalidFeeSplit,
 
-    #[msg("Fee split change exceeds maximum delta (500 bps per call)")]
+    #[msg("Fee split delta exceeds 5% maximum")]
     FeeSplitDeltaTooLarge,
 
+    // Pool/liquidity errors
     #[msg("Insufficient pool liquidity")]
     InsufficientPoolLiquidity,
 
-    #[msg("Stale validation - slot already processed")]
+    // Validator errors
+    #[msg("Slot already processed")]
     StaleValidation,
 
-    #[msg("Slot range too large")]
+    #[msg("Slot range exceeds maximum")]
     SlotRangeTooLarge,
 
-    #[msg("Validator not stale - sync not needed")]
+    #[msg("Validator current - sync not needed")]
     ValidatorNotStale,
 
-    #[msg("Fee amount exceeds maximum for slot range")]
+    #[msg("Fee amount exceeds range maximum")]
     FeeTooHigh,
 
-    #[msg("Transaction count exceeds maximum for slot range")]
+    #[msg("Transaction count exceeds range maximum")]
     TooManyTransactions,
 
-    #[msg("Invalid bonding curve account")]
+    // Account validation
+    #[msg("Invalid bonding curve")]
     InvalidBondingCurve,
 
-    #[msg("Mint mismatch between accounts")]
+    #[msg("Mint mismatch")]
     MintMismatch,
 
-    #[msg("Pending fees would exceed maximum (69 SOL)")]
+    #[msg("Pending fees at maximum capacity")]
     PendingFeesOverflow,
 
-    // Specific error codes for better debugging (LOW-02 fix)
-    #[msg("No pending admin transfer to cancel")]
+    // Admin operations
+    #[msg("No pending admin transfer")]
     NoPendingAdminTransfer,
 
-    #[msg("No pending fee split change to execute")]
+    #[msg("No pending fee split change")]
     NoPendingFeeSplit,
 
     #[msg("Invalid account owner")]
     InvalidAccountOwner,
 
-    #[msg("Slippage configuration too high (max 500 bps)")]
+    #[msg("Slippage exceeds 5% maximum")]
     SlippageConfigTooHigh,
 
-    #[msg("Account size mismatch during migration")]
+    #[msg("Account size mismatch")]
     AccountSizeMismatch,
+
+    #[msg("Invalid dev wallet address")]
+    InvalidDevWallet,
 }

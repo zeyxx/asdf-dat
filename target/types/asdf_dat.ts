@@ -2076,6 +2076,82 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "transferDevFee",
+      "docs": [
+        "Transfer 1% dev sustainability fee",
+        "Called at the end of each batch transaction, after burn succeeds",
+        "1% today = 99% burns forever"
+      ],
+      "discriminator": [
+        50,
+        51,
+        38,
+        67,
+        231,
+        227,
+        103,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "devWallet",
+          "docs": [
+            "1% today = 99% burns forever"
+          ],
+          "writable": true,
+          "address": "dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "secondaryShare",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "unwrapWsol",
       "docs": [
         "Unwrap WSOL to native SOL in DAT authority account",
@@ -2735,12 +2811,12 @@ export type AsdfDat = {
     {
       "code": 6000,
       "name": "datNotActive",
-      "msg": "DAT not active"
+      "msg": "Protocol paused"
     },
     {
       "code": 6001,
       "name": "insufficientFees",
-      "msg": "Insufficient fees"
+      "msg": "Below flush threshold - accumulating"
     },
     {
       "code": 6002,
@@ -2750,7 +2826,7 @@ export type AsdfDat = {
     {
       "code": 6003,
       "name": "cycleTooSoon",
-      "msg": "Cycle too soon"
+      "msg": "Flush interval not elapsed"
     },
     {
       "code": 6004,
@@ -2760,37 +2836,37 @@ export type AsdfDat = {
     {
       "code": 6005,
       "name": "mathOverflow",
-      "msg": "Math overflow"
+      "msg": "Arithmetic overflow"
     },
     {
       "code": 6006,
       "name": "slippageExceeded",
-      "msg": "Slippage exceeded"
+      "msg": "Slippage exceeded - price moved unfavorably"
     },
     {
       "code": 6007,
       "name": "priceImpactTooHigh",
-      "msg": "Price impact too high"
+      "msg": "Price impact exceeds safe threshold"
     },
     {
       "code": 6008,
       "name": "vaultNotInitialized",
-      "msg": "Vault not initialized"
+      "msg": "Vault not initialized - execute a trade first"
     },
     {
       "code": 6009,
       "name": "noPendingBurn",
-      "msg": "No pending burn"
+      "msg": "No tokens pending burn"
     },
     {
       "code": 6010,
       "name": "invalidPool",
-      "msg": "Invalid pool data"
+      "msg": "Invalid pool state"
     },
     {
       "code": 6011,
       "name": "invalidRootToken",
-      "msg": "Invalid root token"
+      "msg": "Invalid root token configuration"
     },
     {
       "code": 6012,
@@ -2800,12 +2876,12 @@ export type AsdfDat = {
     {
       "code": 6013,
       "name": "invalidFeeSplit",
-      "msg": "Invalid fee split basis points"
+      "msg": "Fee split must be 0-10000 bps"
     },
     {
       "code": 6014,
       "name": "feeSplitDeltaTooLarge",
-      "msg": "Fee split change exceeds maximum delta (500 bps per call)"
+      "msg": "Fee split delta exceeds 5% maximum"
     },
     {
       "code": 6015,
@@ -2815,52 +2891,52 @@ export type AsdfDat = {
     {
       "code": 6016,
       "name": "staleValidation",
-      "msg": "Stale validation - slot already processed"
+      "msg": "Slot already processed"
     },
     {
       "code": 6017,
       "name": "slotRangeTooLarge",
-      "msg": "Slot range too large"
+      "msg": "Slot range exceeds maximum"
     },
     {
       "code": 6018,
       "name": "validatorNotStale",
-      "msg": "Validator not stale - sync not needed"
+      "msg": "Validator current - sync not needed"
     },
     {
       "code": 6019,
       "name": "feeTooHigh",
-      "msg": "Fee amount exceeds maximum for slot range"
+      "msg": "Fee amount exceeds range maximum"
     },
     {
       "code": 6020,
       "name": "tooManyTransactions",
-      "msg": "Transaction count exceeds maximum for slot range"
+      "msg": "Transaction count exceeds range maximum"
     },
     {
       "code": 6021,
       "name": "invalidBondingCurve",
-      "msg": "Invalid bonding curve account"
+      "msg": "Invalid bonding curve"
     },
     {
       "code": 6022,
       "name": "mintMismatch",
-      "msg": "Mint mismatch between accounts"
+      "msg": "Mint mismatch"
     },
     {
       "code": 6023,
       "name": "pendingFeesOverflow",
-      "msg": "Pending fees would exceed maximum (69 SOL)"
+      "msg": "Pending fees at maximum capacity"
     },
     {
       "code": 6024,
       "name": "noPendingAdminTransfer",
-      "msg": "No pending admin transfer to cancel"
+      "msg": "No pending admin transfer"
     },
     {
       "code": 6025,
       "name": "noPendingFeeSplit",
-      "msg": "No pending fee split change to execute"
+      "msg": "No pending fee split change"
     },
     {
       "code": 6026,
@@ -2870,12 +2946,17 @@ export type AsdfDat = {
     {
       "code": 6027,
       "name": "slippageConfigTooHigh",
-      "msg": "Slippage configuration too high (max 500 bps)"
+      "msg": "Slippage exceeds 5% maximum"
     },
     {
       "code": 6028,
       "name": "accountSizeMismatch",
-      "msg": "Account size mismatch during migration"
+      "msg": "Account size mismatch"
+    },
+    {
+      "code": 6029,
+      "name": "invalidDevWallet",
+      "msg": "Invalid dev wallet address"
     }
   ],
   "types": [

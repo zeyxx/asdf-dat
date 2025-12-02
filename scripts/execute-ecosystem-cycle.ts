@@ -1,31 +1,30 @@
 /**
- * Execute Ecosystem Cycle - Complete orchestration of hierarchical token buyback
+ * Flush Orchestrator
  *
- * This script orchestrates the complete ecosystem cycle:
- * 1. Query pending fees from all secondary tokens
- * 2. Collect all fees from creator vault (once)
- * 3. Calculate proportional distribution
- * 4. Execute buy for each secondary token with allocated amount
- * 5. Finalize each secondary token (reset pending_fees, increment cycles)
- * 6. Execute root token cycle with accumulated fees
+ * Optimistic Burn Protocol - executes the complete flush cycle:
+ * Collect fees → Buy tokens → Burn → Verify
  *
- * Architecture: Root token receives 44.8% from all secondaries
+ * Flow:
+ * 1. Query pending_fees from all TokenStats
+ * 2. Collect fees from shared creator vault
+ * 3. Calculate proportional distribution (55.2% secondary / 44.8% root)
+ * 4. Execute buyback for each token with allocated amount
+ * 5. Burn acquired tokens
+ * 6. Update on-chain state (reset pending_fees, increment cycles)
  *
  * Usage:
  *   npx ts-node scripts/execute-ecosystem-cycle.ts [options]
  *
  * Options:
  *   --network devnet|mainnet   Select network (default: devnet)
- *   --dry-run                  Preview cycle without executing (outputs JSON + console report)
- *
- * Examples:
- *   npx ts-node scripts/execute-ecosystem-cycle.ts --network devnet
- *   npx ts-node scripts/execute-ecosystem-cycle.ts --network mainnet --dry-run
+ *   --dry-run                  Preview without executing
  *
  * Requirements:
- *   - All tokens must be initialized with TokenStats
- *   - Root token must be configured (set_root_token)
- *   - Fee monitoring should be running (to populate pending_fees)
+ *   - TokenStats initialized for all tokens
+ *   - Root token configured (set_root_token)
+ *   - Fee daemon running (to populate pending_fees)
+ *
+ * Verify on-chain: all burns recorded, supply reduced, cycle count incremented.
  */
 
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction, Commitment } from '@solana/web3.js';
@@ -69,6 +68,11 @@ const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nas
 const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+
+// Dev sustainability wallet - receives 1% of secondary burns
+// 1% today = 99% burns forever
+const DEV_WALLET = new PublicKey('dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4');
+const DEV_FEE_BPS = 100; // 1%
 
 // ============================================================================
 // Scalability Constants (aligned with lib.rs execute_buy)
@@ -1725,8 +1729,24 @@ async function executeSecondaryWithAllocation(
 
     instructions.push(burnIx);
 
+    // Dev sustainability fee - 1% of secondary share (after split)
+    // This is the 99/1 split: 99% burned, 1% keeps infrastructure running
+    log('  📦', 'Building dev fee instruction...', colors.cyan);
+    const secondaryShareLamports = Math.floor(allocation.allocation * SECONDARY_KEEP_RATIO);
+    const devFeeIx = await program.methods
+      .transferDevFee(new BN(secondaryShareLamports))
+      .accounts({
+        datState,
+        datAuthority,
+        devWallet: DEV_WALLET,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    instructions.push(devFeeIx);
+
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn + devFee)...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
