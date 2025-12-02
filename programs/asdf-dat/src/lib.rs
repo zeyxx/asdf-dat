@@ -11,341 +11,25 @@ use anchor_spl::{
 #[cfg(test)]
 mod tests;
 
+// Modular architecture (Phase 2 ready)
+pub mod constants;
+pub mod contexts;
+pub mod errors;
+pub mod events;
+pub mod helpers;
+pub mod state;
+
+// Re-export for external access
+pub use constants::*;
+pub use contexts::*;
+pub use errors::ErrorCode;  // Explicit import to avoid ambiguity with anchor_lang
+pub use events::*;
+pub use helpers::*;
+pub use state::*;
+
 declare_id!("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
-pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([140, 47, 4, 227, 97, 106, 121, 165, 182, 1, 57, 199, 219, 179, 84, 96, 133, 60, 197, 80, 154, 74, 254, 48, 216, 94, 192, 158, 146, 118, 39, 244]); // $ASDF token mint (mainnet) - set via set_asdf_mint instruction
-pub const WSOL_MINT: Pubkey = Pubkey::new_from_array([6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172, 28, 180, 133, 237, 95, 91, 55, 145, 58, 140, 245, 133, 126, 255, 0, 169]);
-pub const POOL_PUMPSWAP: Pubkey = Pubkey::new_from_array([191, 204, 38, 188, 201, 126, 120, 53, 102, 177, 245, 238, 71, 192, 66, 165, 130, 17, 150, 235, 78, 240, 56, 247, 205, 54, 243, 244, 230, 203, 227, 170]); // DuhRX5JTPtsWU5n44t8tcFEfmzy2Eu27p4y6z8Rhf2bb (mainnet)
-// pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA - PumpSwap AMM program
-pub const PUMP_SWAP_PROGRAM: Pubkey = Pubkey::new_from_array([12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101, 244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99]);
-// 6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P - Main Pump.fun program
-pub const PUMP_PROGRAM: Pubkey = Pubkey::new_from_array([1, 86, 224, 246, 147, 102, 90, 207, 68, 219, 21, 104, 191, 23, 91, 170, 81, 137, 203, 151, 245, 210, 255, 59, 101, 93, 43, 182, 253, 109, 24, 176]);
-
-// Token2022 program ID
-pub const TOKEN_2022_PROGRAM: Pubkey = Pubkey::new_from_array([
-    6, 221, 246, 225, 215, 101, 161, 147, 217, 203, 225, 70, 206, 235, 121, 172,
-    190, 192, 170, 33, 225, 195, 158, 240, 26, 96, 235, 152, 242, 210, 242, 92
-]); // TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
-
-pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
-pub const MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;
-pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
-pub const MIN_CYCLE_INTERVAL: i64 = 60;
-pub const MAX_PENDING_FEES: u64 = 69_000_000_000; // 69 SOL max pending fees per token
-
-pub const DAT_STATE_SEED: &[u8] = b"dat_v3";
-pub const DAT_AUTHORITY_SEED: &[u8] = b"auth_v3";
-pub const TOKEN_STATS_SEED: &[u8] = b"token_stats_v1";
-pub const ROOT_TREASURY_SEED: &[u8] = b"root_treasury";
-pub const VALIDATOR_STATE_SEED: &[u8] = b"validator_v1";
-
-// PumpFun instruction discriminators (8-byte hashes)
-pub const PUMPFUN_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
-pub const PUMPFUN_CREATE_DISCRIMINATOR: [u8; 8] = [24, 30, 200, 40, 5, 28, 7, 119];
-pub const PUMPFUN_COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PUMPSWAP AMM CONSTANTS - For tokens that have migrated from bonding curve
-// ══════════════════════════════════════════════════════════════════════════════
-// PumpSwap AMM buy instruction discriminator (same as bonding curve buy)
-pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
-
-// PumpSwap collect_coin_creator_fee instruction discriminator
-pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42, 181, 139, 43, 66];
-
-// PumpSwap Creator Vault seed
-pub const PUMPSWAP_CREATOR_VAULT_SEED: &[u8] = b"creator_vault";
-
-// PumpSwap AMM Program ID - pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
-pub const PUMPSWAP_PROGRAM: Pubkey = Pubkey::new_from_array([
-    12, 1, 146, 49, 102, 101, 134, 40, 128, 231, 192, 18, 180, 117, 11, 141,
-    69, 120, 62, 88, 103, 145, 226, 163, 79, 211, 126, 135, 231, 111, 228, 196
-]);
-
-// PumpSwap Global Config PDA - 4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf
-pub const PUMPSWAP_GLOBAL_CONFIG: Pubkey = Pubkey::new_from_array([
-    58, 134, 94, 105, 238, 15, 84, 128, 202, 188, 246, 99, 87, 228, 220, 47,
-    24, 213, 141, 69, 193, 234, 116, 137, 251, 55, 35, 217, 121, 60, 114, 166
-]);
-
-// PumpSwap Event Authority PDA - Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1
-pub const PUMPSWAP_EVENT_AUTHORITY: Pubkey = Pubkey::new_from_array([
-    172, 241, 54, 235, 1, 252, 28, 78, 136, 61, 35, 200, 181, 132, 74, 181,
-    154, 55, 246, 106, 221, 87, 197, 233, 172, 59, 83, 224, 89, 211, 92, 100
-]);
-
-// Fee Program - pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ
-pub const PUMP_FEE_PROGRAM: Pubkey = Pubkey::new_from_array([
-    12, 53, 255, 169, 5, 90, 142, 86, 141, 168, 247, 188, 7, 86, 21, 39,
-    76, 241, 201, 44, 164, 31, 64, 0, 156, 81, 106, 164, 20, 194, 124, 112
-]);
-
-// Global Volume Accumulator PDA - Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y
-pub const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR: Pubkey = Pubkey::new_from_array([
-    250, 9, 17, 165, 72, 99, 65, 45, 99, 31, 78, 7, 135, 3, 41, 108,
-    3, 95, 13, 19, 51, 160, 217, 200, 131, 141, 115, 183, 16, 254, 110, 45
-]);
-
-// Standard protocol fee recipients (from PumpSwap GlobalConfig) - 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
-pub const PUMPSWAP_PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
-    Pubkey::new_from_array([
-        80, 91, 86, 43, 240, 254, 69, 217, 123, 109, 178, 11, 165, 24, 224, 160,
-        197, 204, 48, 77, 217, 105, 172, 23, 142, 107, 116, 145, 130, 79, 179, 164
-    ])
-];
-
-/// Helper to manually deserialize PumpFun bonding curve (avoids struct alignment issues)
-fn deserialize_bonding_curve(data: &[u8]) -> Result<(u64, u64)> {
-    require!(data.len() >= 24, ErrorCode::InvalidPool);
-
-    // Read virtual_token_reserves (bytes 0-7)
-    let virtual_token_reserves = u64::from_le_bytes(
-        data[0..8].try_into().map_err(|_| ErrorCode::InvalidPool)?
-    );
-
-    // Read virtual_sol_reserves (bytes 8-15)
-    let virtual_sol_reserves = u64::from_le_bytes(
-        data[8..16].try_into().map_err(|_| ErrorCode::InvalidPool)?
-    );
-
-    #[cfg(feature = "verbose")]
-    msg!("Bonding curve: virtual_token={}, virtual_sol={}", virtual_token_reserves, virtual_sol_reserves);
-
-    Ok((virtual_token_reserves, virtual_sol_reserves))
-}
-
-// SPL Protocol fee recipient - 6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs
-pub const PROTOCOL_FEE_RECIPIENTS: [Pubkey; 1] = [
-    Pubkey::new_from_array([80, 91, 86, 43, 240, 254, 69, 217, 123, 109, 178, 11, 165, 24, 224, 160, 197, 204, 48, 77, 217, 105, 172, 23, 142, 107, 116, 145, 130, 79, 179, 164]),
-];
-
-// Mayhem Mode constants - MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e
-pub const MAYHEM_PROGRAM: Pubkey = Pubkey::new_from_array([
-    5, 42, 229, 215, 167, 218, 167, 36, 166, 234, 176, 167, 41, 84, 145, 133,
-    90, 212, 160, 103, 22, 96, 103, 76, 78, 3, 69, 89, 128, 61, 101, 163
-]);
-
-// Mayhem Fee Recipient (Token2022) - GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS
-pub const MAYHEM_FEE_RECIPIENT: Pubkey = Pubkey::new_from_array([
-    232, 147, 20, 31, 177, 142, 159, 21, 116, 216, 16, 225, 120, 225, 158, 48,
-    96, 78, 49, 117, 170, 46, 74, 50, 223, 200, 96, 7, 39, 209, 7, 9
-]);
-
-// Mayhem Agent Wallet - BwWK17cbHxwWBKZkUYvzxLcNQ1YVyaFezduWbtm2de6s
-pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
-    162, 139, 95, 210, 106, 180, 121, 166, 169, 204, 108, 191, 107, 11, 35, 235,
-    97, 136, 90, 55, 30, 1, 32, 172, 169, 19, 190, 239, 61, 19, 138, 120
-]);
-
-// ⚠️ TESTING MODE CONFIGURATION - CRITICAL SECURITY SETTING ⚠️
-// ══════════════════════════════════════════════════════════════════════════════
-// CURRENT: false (MAINNET PRODUCTION MODE)
-// ══════════════════════════════════════════════════════════════════════════════
-// When true (TESTING):
-//   - Disables minimum cycle interval check (allows rapid testing)
-//   - Disables minimum fees threshold (allows cycles with any amount)
-// When false (PRODUCTION):
-//   - Enforces minimum 60s between cycles
-//   - Requires minimum fees threshold to be met
-// NOTE: Random cycle timing (1/day per token) is controlled by TypeScript daemon
-//       The program no longer enforces AM/PM limits - only min interval
-// ══════════════════════════════════════════════════════════════════════════════
-// SECURITY: Use feature flag instead of runtime constant
-// Build with: anchor build -- --features testing (for devnet)
-// Build with: anchor build (for mainnet - testing disabled by default)
-#[cfg(feature = "testing")]
-pub const TESTING_MODE: bool = true;
-#[cfg(not(feature = "testing"))]
-pub const TESTING_MODE: bool = false;
-
-// Execute buy constants (module level to reduce stack usage)
-pub const RENT_EXEMPT_MINIMUM: u64 = 890_880;
-pub const SAFETY_BUFFER: u64 = 50_000;
-pub const ATA_RENT_RESERVE: u64 = 2_100_000;
-pub const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
-pub const MINIMUM_BUY_AMOUNT: u64 = 100_000;
-
-/// Helper function to collect creator fees CPI (extracted to reduce stack usage)
-#[inline(never)]
-fn collect_creator_fee_cpi<'info>(
-    dat_authority: &AccountInfo<'info>,
-    creator_vault: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    pump_event_authority: &AccountInfo<'info>,
-    pump_swap_program: &AccountInfo<'info>,
-    seeds: &[&[u8]],
-) -> Result<()> {
-    let instruction = Box::new(Instruction {
-        program_id: PUMP_PROGRAM,
-        accounts: vec![
-            AccountMeta::new(dat_authority.key(), false),
-            AccountMeta::new(creator_vault.key(), false),
-            AccountMeta::new_readonly(system_program.key(), false),
-            AccountMeta::new_readonly(pump_event_authority.key(), false),
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-        ],
-        data: PUMPFUN_COLLECT_FEE_DISCRIMINATOR.to_vec(),
-    });
-
-    let account_infos = Box::new([
-        dat_authority.to_account_info(),
-        creator_vault.to_account_info(),
-        system_program.to_account_info(),
-        pump_event_authority.to_account_info(),
-        pump_swap_program.to_account_info(),
-    ]);
-
-    invoke_signed(&*instruction, &*account_infos, &[seeds])?;
-    Ok(())
-}
-
-/// Helper function to collect creator fees from PumpSwap AMM via CPI
-/// This is used for tokens that have migrated from bonding curve to AMM
-/// The DAT authority PDA must be set as the coin_creator in PumpSwap
-#[inline(never)]
-fn collect_amm_creator_fee_cpi<'info>(
-    quote_mint: &AccountInfo<'info>,
-    quote_token_program: &AccountInfo<'info>,
-    dat_authority: &AccountInfo<'info>,  // coin_creator (signer via invoke_signed)
-    coin_creator_vault_authority: &AccountInfo<'info>,
-    coin_creator_vault_ata: &AccountInfo<'info>,
-    destination_token_account: &AccountInfo<'info>,
-    pump_swap_program: &AccountInfo<'info>,
-    seeds: &[&[u8]],
-) -> Result<()> {
-    // Build the collect_coin_creator_fee instruction
-    // Account order: quote_mint, quote_token_program, coin_creator (signer),
-    //                coin_creator_vault_authority, coin_creator_vault_ata, coin_creator_token_account
-    let instruction = Box::new(Instruction {
-        program_id: PUMPSWAP_PROGRAM,
-        accounts: vec![
-            AccountMeta::new_readonly(*quote_mint.key, false),
-            AccountMeta::new_readonly(*quote_token_program.key, false),
-            AccountMeta::new_readonly(*dat_authority.key, true),  // coin_creator = signer
-            AccountMeta::new_readonly(*coin_creator_vault_authority.key, false),
-            AccountMeta::new(*coin_creator_vault_ata.key, false),
-            AccountMeta::new(*destination_token_account.key, false),
-        ],
-        data: PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR.to_vec(),
-    });
-
-    let account_infos = Box::new([
-        quote_mint.to_account_info(),
-        quote_token_program.to_account_info(),
-        dat_authority.to_account_info(),
-        coin_creator_vault_authority.to_account_info(),
-        coin_creator_vault_ata.to_account_info(),
-        destination_token_account.to_account_info(),
-        pump_swap_program.to_account_info(),
-    ]);
-
-    invoke_signed(&*instruction, &*account_infos, &[seeds])?;
-    Ok(())
-}
-
-/// Helper function to calculate buy parameters for PumpFun
-/// Returns (max_sol_cost, desired_tokens)
-/// PumpFun buy instruction expects: token_amount (how many tokens we want) and max_sol_cost (max SOL we'll pay)
-#[inline(never)]
-fn calculate_buy_amount_and_slippage(
-    buy_amount: u64,
-    bonding_curve_data: &[u8],
-    max_fees_per_cycle: u64,
-    slippage_bps: u16, // Now actually used - max 500 bps (5%)
-) -> Result<(u64, u64)> {
-    // buy_amount already has rent subtracted, just cap it
-    let capped = buy_amount.min(max_fees_per_cycle);
-
-    // Validate bonding curve data size: 8-byte discriminator + 24 bytes for reserves
-    require!(bonding_curve_data.len() >= 32, ErrorCode::InvalidPool);
-
-    // Deserialize bonding curve manually (skip 8-byte discriminator)
-    let (virtual_token_reserves, virtual_sol_reserves) = deserialize_bonding_curve(&bonding_curve_data[8..])?;
-
-    // Minimum pool liquidity check: require at least 0.01 SOL in virtual reserves
-    const MIN_POOL_LIQUIDITY: u64 = 10_000_000; // 0.01 SOL
-    require!(
-        virtual_sol_reserves >= MIN_POOL_LIQUIDITY,
-        ErrorCode::InsufficientPoolLiquidity
-    );
-
-    // Require pool has tokens
-    require!(
-        virtual_token_reserves > 0,
-        ErrorCode::InsufficientPoolLiquidity
-    );
-
-    let max_safe = virtual_sol_reserves / 100;
-    let final_amount = capped.min(max_safe);
-
-    // Only attempt calculation if we have something to buy
-    if final_amount == 0 {
-        return Ok((0, 0));
-    }
-
-    // Calculate how many tokens we expect to receive with our SOL
-    // Use PumpFun's exact formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
-    let expected_tokens = calculate_tokens_out_pumpfun(
-        final_amount,
-        virtual_sol_reserves,
-        virtual_token_reserves,
-    )?;
-
-    // Apply configurable slippage tolerance (default 500 bps = 5%)
-    // slippage_bps is capped at 500 in update_parameters
-    let slippage_multiplier = 10000u128.saturating_sub(slippage_bps as u128);
-    let target_tokens = ((expected_tokens as u128) * slippage_multiplier / 10000) as u64;
-
-    #[cfg(feature = "verbose")]
-    msg!("Expected tokens: {}, Target tokens ({}% slippage): {}",
-         expected_tokens, slippage_bps as f64 / 100.0, target_tokens);
-
-    // Return (max_sol_cost, desired_token_amount)
-    Ok((final_amount, target_tokens))
-}
-
-/// Helper function to split fees for secondary tokens (extracted to reduce stack usage)
-/// HIGH-03 FIX: Added balance verification after transfer to ensure root_treasury received funds
-#[inline(never)]
-fn split_fees_to_root<'info>(
-    dat_authority: &AccountInfo<'info>,
-    root_treasury: &AccountInfo<'info>,
-    system_program: &AccountInfo<'info>,
-    total_lamports: u64,
-    fee_split_bps: u16,
-    seeds: &[&[u8]],
-) -> Result<u64> {
-    let sol_for_root = total_lamports.saturating_sub((total_lamports * fee_split_bps as u64) / 10000);
-
-    if sol_for_root > 0 {
-        // HIGH-03 FIX: Record balance before transfer for verification
-        let treasury_balance_before = root_treasury.lamports();
-
-        invoke_signed(
-            &anchor_lang::solana_program::system_instruction::transfer(
-                dat_authority.key,
-                root_treasury.key,
-                sol_for_root
-            ),
-            &[
-                dat_authority.to_account_info(),
-                root_treasury.to_account_info(),
-                system_program.to_account_info()
-            ],
-            &[seeds]
-        )?;
-
-        // HIGH-03 FIX: Verify transfer succeeded by checking balance increased
-        let treasury_balance_after = root_treasury.lamports();
-        require!(
-            treasury_balance_after >= treasury_balance_before.saturating_add(sol_for_root),
-            ErrorCode::InvalidParameter
-        );
-    }
-
-    Ok(sol_for_root)
-}
-
+// HELPERS - Math and CPI functions now in helpers/ module (see pub use helpers::*;)
 // NOTE: PumpSwap AMM buys are handled by the TypeScript orchestrator using @pump-fun/pump-swap-sdk
 // The program provides record_external_buy() to record the results after orchestrator completes the buy
 
@@ -466,54 +150,6 @@ fn execute_buy_secondary_cpi(ctx: &mut Context<ExecuteBuySecondary>, buy_amount:
     ctx.accounts.dat_asdf_account.reload()?;
     ctx.accounts.dat_state.pending_burn_amount = ctx.accounts.dat_asdf_account.amount;
     ctx.accounts.dat_state.last_cycle_sol = max_sol_cost;
-    Ok(())
-}
-
-/// Minimal CPI executor for PumpFun buy
-#[inline(never)]
-fn execute_pumpfun_cpi<'info>(
-    global_config: Pubkey,
-    fee_recipient: Pubkey,
-    mint: Pubkey,
-    pool: Pubkey,
-    pool_token_account: Pubkey,
-    user_token_account: Pubkey,
-    user: Pubkey,
-    max_sol_cost: u64,
-    desired_tokens: u64,
-    account_infos: &[AccountInfo<'info>],
-    seeds: &[&[u8]],
-) -> Result<()> {
-    let mut data = Vec::with_capacity(25);
-    data.extend_from_slice(&PUMPFUN_BUY_DISCRIMINATOR);
-    data.extend_from_slice(&desired_tokens.to_le_bytes());
-    data.extend_from_slice(&max_sol_cost.to_le_bytes());
-    data.push(0);
-
-    let ix = Instruction {
-        program_id: PUMP_PROGRAM,
-        accounts: vec![
-            AccountMeta::new_readonly(global_config, false),
-            AccountMeta::new(fee_recipient, false),
-            AccountMeta::new(mint, false),
-            AccountMeta::new(pool, false),
-            AccountMeta::new(pool_token_account, false),
-            AccountMeta::new(user_token_account, false),
-            AccountMeta::new(user, true),
-            AccountMeta::new_readonly(account_infos[7].key(), false), // system
-            AccountMeta::new_readonly(account_infos[8].key(), false), // token
-            AccountMeta::new(account_infos[9].key(), false), // creator_vault
-            AccountMeta::new_readonly(account_infos[10].key(), false), // event_auth
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-            AccountMeta::new_readonly(account_infos[12].key(), false), // global_vol
-            AccountMeta::new(account_infos[13].key(), false), // user_vol
-            AccountMeta::new_readonly(account_infos[14].key(), false), // fee_config
-            AccountMeta::new_readonly(account_infos[15].key(), false), // fee_program
-        ],
-        data,
-    };
-
-    invoke_signed(&ix, account_infos, &[seeds])?;
     Ok(())
 }
 
@@ -668,6 +304,8 @@ pub mod asdf_dat {
         state.pending_fee_split = None;       // No pending fee split change
         state.pending_fee_split_timestamp = 0;
         state.admin_operation_cooldown = 3600; // Default 1 hour cooldown
+        // HIGH-01 FIX: Separate timestamp for direct fee split changes
+        state.last_direct_fee_split_timestamp = 0;
 
         emit!(DATInitialized {
             admin: state.admin,
@@ -748,6 +386,7 @@ pub mod asdf_dat {
     // Update the fee split ratio (admin only)
     // Bounded between 1000 (10%) and 9000 (90%) to prevent extreme configurations
     // HIGH-02 FIX: Maximum 5% (500 bps) change per call to prevent instant rug
+    // HIGH-03 FIX: 1 hour cooldown between changes to prevent rapid manipulation
     // NOTE: For larger changes, use propose_fee_split + execute_fee_split (timelocked)
     pub fn update_fee_split(ctx: Context<AdminControl>, new_fee_split_bps: u16) -> Result<()> {
         require!(
@@ -756,14 +395,25 @@ pub mod asdf_dat {
         );
 
         let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        // HIGH-01 FIX: Enforce cooldown between DIRECT fee split changes
+        // Uses separate timestamp from propose_fee_split to prevent bypass attacks
+        let elapsed = clock.unix_timestamp.saturating_sub(state.last_direct_fee_split_timestamp);
+        require!(
+            elapsed >= state.admin_operation_cooldown,
+            ErrorCode::CycleTooSoon
+        );
+
         let old_fee_split_bps = state.fee_split_bps;
 
-        // HIGH-02 FIX: Limit instant changes to max 5% (500 bps) per call
+        // Limit instant changes to max 5% (500 bps) per call
         let delta = (new_fee_split_bps as i32 - old_fee_split_bps as i32).unsigned_abs() as u16;
         require!(delta <= 500, ErrorCode::FeeSplitDeltaTooLarge);
 
         state.fee_split_bps = new_fee_split_bps;
-        let clock = Clock::get()?;
+        // HIGH-01 FIX: Update SEPARATE timestamp for direct path
+        state.last_direct_fee_split_timestamp = clock.unix_timestamp;
 
         emit!(FeeSplitUpdated {
             old_bps: old_fee_split_bps,
@@ -782,6 +432,13 @@ pub mod asdf_dat {
     ) -> Result<()> {
         let token_stats = &mut ctx.accounts.token_stats;
         let clock = Clock::get()?;
+
+        // Rate limiting: minimum 10 seconds between updates per token
+        const MIN_FEE_UPDATE_INTERVAL: i64 = 10;
+        require!(
+            clock.unix_timestamp >= token_stats.last_fee_update_timestamp + MIN_FEE_UPDATE_INTERVAL,
+            ErrorCode::CycleTooSoon
+        );
 
         // Check pending fees cap (69 SOL max)
         let new_total = token_stats.pending_fees_lamports.saturating_add(amount_lamports);
@@ -862,10 +519,10 @@ pub mod asdf_dat {
         Ok(())
     }
 
-    /// PERMISSIONLESS - Register validated fees extracted from PumpFun transaction logs
-    /// Anyone can call this to commit fee data from off-chain validation
+    /// ADMIN ONLY - Register validated fees extracted from PumpFun transaction logs
+    /// Only admin can call this to commit validated fee data
     ///
-    /// Security: Protected by slot progression and fee caps
+    /// Security: Protected by admin check, slot progression, and fee caps
     pub fn register_validated_fees(
         ctx: Context<RegisterValidatedFees>,
         fee_amount: u64,
@@ -944,9 +601,16 @@ pub mod asdf_dat {
         let slot_delta = current_slot.saturating_sub(validator.last_validated_slot);
         require!(slot_delta > 1000, ErrorCode::ValidatorNotStale);
 
-        #[cfg(feature = "verbose")]
         let old_slot = validator.last_validated_slot;
         validator.last_validated_slot = current_slot;
+
+        emit!(ValidatorSlotSynced {
+            mint: validator.mint,
+            old_slot,
+            new_slot: current_slot,
+            slot_delta,
+            timestamp: clock.unix_timestamp,
+        });
 
         #[cfg(feature = "verbose")]
         msg!("Synced validator slot for {} from {} to {} (delta: {})",
@@ -990,7 +654,7 @@ pub mod asdf_dat {
 
         if current_size != OLD_SIZE {
             msg!("Unexpected TokenStats size: {}. Expected {} or {}", current_size, OLD_SIZE, NEW_SIZE);
-            return err!(ErrorCode::InvalidParameter);
+            return err!(ErrorCode::AccountSizeMismatch);
         }
 
         msg!("Migrating TokenStats from size {} to {}", OLD_SIZE, NEW_SIZE);
@@ -1026,7 +690,7 @@ pub mod asdf_dat {
             let mut lamports = token_stats_account.lamports.borrow_mut();
             **lamports = new_lamports;
         }
-        token_stats_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::InvalidParameter)?;
+        token_stats_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::AccountSizeMismatch)?;
 
         // Write data back with new fields
         let mut new_data = token_stats_account.try_borrow_mut_data()?;
@@ -1359,6 +1023,8 @@ pub mod asdf_dat {
     /// Execute buy on PumpSwap AMM pool (for migrated tokens)
     /// This instruction handles tokens that have graduated from bonding curve to AMM
     /// Requires WSOL in dat_wsol_account for the buy operation
+    ///
+    /// MEDIUM-01 FIX: Added slippage validation to ensure received tokens meet minimum threshold
     pub fn execute_buy_amm(
         ctx: Context<ExecuteBuyAMM>,
         desired_tokens: u64,     // Amount of tokens to buy
@@ -1366,6 +1032,11 @@ pub mod asdf_dat {
     ) -> Result<()> {
         // Check state conditions first (read-only)
         require!(ctx.accounts.dat_state.is_active && !ctx.accounts.dat_state.emergency_pause, ErrorCode::DATNotActive);
+
+        // MEDIUM-01 FIX: Validate max_sol_cost against configured limits
+        let max_fees = ctx.accounts.dat_state.max_fees_per_cycle;
+        let slippage_bps = ctx.accounts.dat_state.slippage_bps;
+        require!(max_sol_cost <= max_fees, ErrorCode::InvalidParameter);
 
         // Get bump before CPI
         let bump = ctx.accounts.dat_state.dat_authority_bump;
@@ -1385,6 +1056,13 @@ pub mod asdf_dat {
         let tokens_received = tokens_after.saturating_sub(tokens_before);
 
         msg!("AMM buy complete: received {} tokens", tokens_received);
+
+        // MEDIUM-01 FIX: Validate slippage - ensure we received minimum expected tokens
+        // Calculate minimum acceptable: desired_tokens * (1 - slippage_bps/10000)
+        let min_tokens = (desired_tokens as u128)
+            .saturating_mul((10000 - slippage_bps as u128))
+            .saturating_div(10000) as u64;
+        require!(tokens_received >= min_tokens, ErrorCode::SlippageExceeded);
 
         // Update state for burn tracking (mutable borrow after CPI)
         let state = &mut ctx.accounts.dat_state;
@@ -1536,7 +1214,7 @@ pub mod asdf_dat {
 
         // Validate slippage: max 5% (500 bps)
         if let Some(v) = new_slippage_bps {
-            require!(v <= 500, ErrorCode::InvalidParameter);
+            require!(v <= 500, ErrorCode::SlippageConfigTooHigh);
             state.slippage_bps = v;
         }
 
@@ -1602,10 +1280,18 @@ pub mod asdf_dat {
     }
 
     /// Cancel a pending admin transfer (called by current admin)
-    pub fn cancel_admin_transfer(ctx: Context<ProposeAdminTransfer>) -> Result<()> {
+    pub fn cancel_admin_transfer(ctx: Context<CancelAdminTransfer>) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
-        require!(state.pending_admin.is_some(), ErrorCode::InvalidParameter);
+        let clock = Clock::get()?;
+        // Constraint already validates pending_admin.is_some() in context
+        let cancelled_admin = state.pending_admin.ok_or(ErrorCode::NoPendingAdminTransfer)?;
         state.pending_admin = None;
+
+        emit!(AdminTransferCancelled {
+            admin: ctx.accounts.admin.key(),
+            cancelled_new_admin: cancelled_admin,
+            timestamp: clock.unix_timestamp,
+        });
         Ok(())
     }
 
@@ -1632,7 +1318,7 @@ pub mod asdf_dat {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
 
-        require!(state.pending_fee_split.is_some(), ErrorCode::InvalidParameter);
+        require!(state.pending_fee_split.is_some(), ErrorCode::NoPendingFeeSplit);
 
         let elapsed = clock.unix_timestamp.saturating_sub(state.pending_fee_split_timestamp);
         require!(
@@ -1641,7 +1327,7 @@ pub mod asdf_dat {
         );
 
         let new_fee_split = state.pending_fee_split
-            .ok_or(ErrorCode::InvalidParameter)?;
+            .ok_or(ErrorCode::NoPendingFeeSplit)?;
         let old_fee_split = state.fee_split_bps;
 
         state.fee_split_bps = new_fee_split;
@@ -1851,1075 +1537,11 @@ pub mod asdf_dat {
     }
 }
 
-// HELPERS
 
-/// Calculate tokens out using PumpFun's exact formula with virtual reserves
-/// Formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
-pub fn calculate_tokens_out_pumpfun(
-    sol_in: u64,
-    virtual_sol_reserves: u64,
-    virtual_token_reserves: u64,
-) -> Result<u64> {
-    // Input validation
-    require!(virtual_sol_reserves > 0, ErrorCode::InsufficientPoolLiquidity);
-    require!(virtual_token_reserves > 0, ErrorCode::InsufficientPoolLiquidity);
+// CONTEXTS - Account structs now in contexts module (see pub use contexts::*;)
 
-    let sol = sol_in as u128;
-    let vsol = virtual_sol_reserves as u128;
-    let vtoken = virtual_token_reserves as u128;
+// STATE - Now imported from state module (see pub use state::*;)
 
-    #[cfg(feature = "verbose")]
-    msg!("PumpFun calc: sol_in={}, virtual_sol={}, virtual_token={}", sol_in, virtual_sol_reserves, virtual_token_reserves);
+// EVENTS - Now imported from events module (see pub use events::*;)
 
-    // PumpFun formula: tokens_out = (sol_in * virtual_token_reserves) / (virtual_sol_reserves + sol_in)
-    let numerator = sol.saturating_mul(vtoken);
-    let denominator = vsol.saturating_add(sol);
-
-    require!(denominator > 0, ErrorCode::MathOverflow);
-
-    let tokens_out = numerator / denominator;
-    let result = tokens_out.min(u64::MAX as u128) as u64;
-
-    #[cfg(feature = "verbose")]
-    msg!("PumpFun calc result: {} tokens", result);
-
-    Ok(result)
-}
-
-pub fn calculate_tokens_out(sol_in: u64, quote_res: u64, base_res: u64, supply: u64) -> Result<u64> {
-    // Input validation
-    require!(quote_res > 0, ErrorCode::InsufficientPoolLiquidity);
-    require!(base_res > 0, ErrorCode::InsufficientPoolLiquidity);
-    require!(supply > 0, ErrorCode::InvalidPool);
-
-    let sol = sol_in as u128;
-    let quote = quote_res as u128;
-    let base = base_res as u128;
-    let sup = supply as u128;
-
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: sol_in={}, quote_res={}, base_res={}, supply={}", sol_in, quote_res, base_res, supply);
-
-    // Safe mcap calculation with overflow protection
-    let mcap = if base == 0 {
-        0
-    } else {
-        quote.saturating_mul(sup).saturating_div(base)
-    };
-
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: mcap={}", mcap);
-
-    let fee_bps = match mcap {
-        0..=85_000_000_000 => 125,
-        85_000_000_001..=300_000_000_000 => 120,
-        300_000_000_001..=500_000_000_000 => 115,
-        500_000_000_001..=700_000_000_000 => 110,
-        700_000_000_001..=900_000_000_000 => 105,
-        900_000_000_001..=2_000_000_000_000 => 100,
-        2_000_000_001..=3_000_000_000_000 => 95,
-        3_000_000_001..=4_000_000_000_000 => 90,
-        4_000_000_001..=4_500_000_000_000 => 85,
-        4_500_000_001..=5_000_000_000_000 => 80,
-        5_000_000_001..=6_000_000_000_000 => 80,
-        6_000_000_001..=7_000_000_000_000 => 75,
-        7_000_000_001..=8_000_000_000_000 => 70,
-        8_000_000_001..=9_000_000_000_000 => 65,
-        9_000_000_001..=10_000_000_000_000 => 60,
-        10_000_000_001..=11_000_000_000_000 => 55,
-        11_000_000_001..=12_000_000_000_000 => 53,
-        12_000_000_001..=13_000_000_000_000 => 50,
-        13_000_000_001..=14_000_000_000_000 => 48,
-        14_000_000_001..=15_000_000_000_000 => 45,
-        15_000_000_001..=16_000_000_000_000 => 43,
-        16_000_000_001..=17_000_000_000_000 => 40,
-        17_000_000_001..=18_000_000_000_000 => 38,
-        18_000_000_001..=19_000_000_000_000 => 35,
-        19_000_000_001..=20_000_000_000_000 => 33,
-        _ => 30,
-    };
-
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: fee_bps={}", fee_bps);
-
-    let with_fee = sol.checked_mul(10000 - fee_bps as u128).ok_or(ErrorCode::MathOverflow)?;
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: with_fee={}", with_fee);
-
-    let num = with_fee.checked_mul(base).ok_or(ErrorCode::MathOverflow)?;
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: num={}", num);
-
-    let quote_10k = quote.checked_mul(10000).ok_or(ErrorCode::MathOverflow)?;
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: quote_10k={}", quote_10k);
-
-    let denom = quote_10k.checked_add(with_fee).ok_or(ErrorCode::MathOverflow)?;
-    #[cfg(feature = "verbose")]
-    msg!("calculate_tokens_out: denom={}", denom);
-
-    // Prevent division by zero
-    require!(denom > 0, ErrorCode::MathOverflow);
-
-    let out = num.checked_div(denom).ok_or(ErrorCode::MathOverflow)?;
-    msg!("calculate_tokens_out: out={}", out);
-
-    Ok(out as u64)
-}
-
-// REMOVED: apply_slippage function - slippage now integrated in calculate_buy_amount_and_slippage
-
-/// Format token amount with decimals for readable logs
-/// Most tokens have 6 decimals, so we divide by 1_000_000
-pub fn format_tokens(amount: u64) -> (u64, u64) {
-    const DECIMALS: u64 = 1_000_000; // 6 decimals
-    let whole = amount / DECIMALS;
-    let fractional = amount % DECIMALS;
-    (whole, fractional)
-}
-
-// ACCOUNTS
-
-#[derive(Accounts)]
-pub struct Initialize<'info> {
-    #[account(init, payer = admin, space = 8 + DATState::LEN, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA
-    #[account(seeds = [DAT_AUTHORITY_SEED], bump)]
-    pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub admin: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct InitializeTokenStats<'info> {
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + TokenStats::LEN,
-        seeds = [TOKEN_STATS_SEED, mint.key().as_ref()],
-        bump
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-    /// CHECK: Token mint
-    pub mint: AccountInfo<'info>,
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct SetRootToken<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, root_token_stats.mint.as_ref()],
-        bump = root_token_stats.bump
-    )]
-    pub root_token_stats: Account<'info, TokenStats>,
-    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-}
-
-/// CollectFees - Collect creator fees from PumpFun bonding curve vault
-///
-/// SECURITY NOTES (HIGH-01, HIGH-02):
-/// - creator_vault: Validated by PumpFun program during CPI - the CPI will fail if
-///   the vault is not a valid creator vault PDA for the dat_authority. Seeds are
-///   ["creator-vault", dat_authority] verified by PUMP_PROGRAM.
-/// - root_treasury: Validated at runtime in collect_fees() via PDA derivation check.
-///   The function verifies the provided account matches the expected PDA derived from
-///   ["root_treasury", root_token_mint].
-#[derive(Accounts)]
-pub struct CollectFees<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, token_mint.key().as_ref()],
-        bump = token_stats.bump
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-    pub token_mint: InterfaceAccount<'info, Mint>,
-    /// CHECK: DAT authority PDA - receives SOL from creator vault
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// CHECK: Creator vault - validated by PumpFun program during CPI.
-    /// Seeds: ["creator-vault", creator_pubkey] where creator=dat_authority.
-    /// The CPI to collect_creator_fee will fail if this is not a valid vault.
-    /// NOTE: Vault is a native SOL account (System Program owner), NOT owned by PUMP_PROGRAM.
-    #[account(mut)]
-    pub creator_vault: AccountInfo<'info>,
-    /// CHECK: Event authority for PumpFun program
-    pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: PumpFun program (hardcoded address verified in CPI)
-    pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Root treasury PDA (optional) - validated at runtime in collect_fees()
-    /// via PDA derivation: ["root_treasury", root_token_mint]
-    #[account(mut)]
-    pub root_treasury: Option<AccountInfo<'info>>,
-    pub system_program: Program<'info, System>,
-}
-
-/// CollectFeesAMM - Collect creator fees from PumpSwap AMM
-/// Used for tokens that have migrated from bonding curve to AMM
-#[derive(Accounts)]
-pub struct CollectFeesAMM<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, token_mint.key().as_ref()],
-        bump = token_stats.bump
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-    pub token_mint: InterfaceAccount<'info, Mint>,
-    /// CHECK: DAT authority PDA - must be registered as coin_creator in PumpSwap
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// WSOL mint (So11111111111111111111111111111111111111112)
-    pub wsol_mint: InterfaceAccount<'info, Mint>,
-    /// DAT's WSOL token account (destination for collected fees)
-    #[account(
-        mut,
-        constraint = dat_wsol_account.mint == wsol_mint.key() @ ErrorCode::InvalidParameter,
-        constraint = dat_wsol_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
-    )]
-    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: PumpSwap creator vault authority PDA - seeds: ["creator_vault", dat_authority]
-    pub creator_vault_authority: AccountInfo<'info>,
-    /// CHECK: Creator vault ATA (source of WSOL fees)
-    #[account(mut)]
-    pub creator_vault_ata: AccountInfo<'info>,
-    /// CHECK: PumpSwap program
-    pub pump_swap_program: AccountInfo<'info>,
-    pub token_program: Interface<'info, TokenInterface>,
-}
-
-/// UnwrapWsol - Convert WSOL back to native SOL
-/// Call after collect_fees_amm to enable buyback with native SOL
-#[derive(Accounts)]
-pub struct UnwrapWsol<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: DAT authority PDA (receives unwrapped SOL)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// DAT's WSOL token account (will be closed)
-    #[account(
-        mut,
-        constraint = dat_wsol_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
-    )]
-    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
-    pub token_program: Interface<'info, TokenInterface>,
-}
-
-/// WrapWsol - Convert native SOL to WSOL for AMM buyback
-/// Call before execute_buy_amm when root token is on PumpSwap AMM
-#[derive(Accounts)]
-pub struct WrapWsol<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: DAT authority PDA (source of native SOL)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// DAT's WSOL token account (destination for wrapped SOL)
-    /// Must be owned by dat_authority and have WSOL mint
-    #[account(
-        mut,
-        token::mint = wsol_mint,
-        token::authority = dat_authority
-    )]
-    pub dat_wsol_account: InterfaceAccount<'info, TokenAccount>,
-    /// WSOL mint (So11111111111111111111111111111111111111112)
-    pub wsol_mint: InterfaceAccount<'info, Mint>,
-    pub token_program: Program<'info, token::Token>,
-    pub system_program: Program<'info, System>,
-}
-
-/// ExecuteBuy - Simplified to reduce stack usage (removed unused accounts)
-#[derive(Accounts)]
-pub struct ExecuteBuy<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA (holds native SOL for buying)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// DAT's token account for receiving bought tokens - validated mint and authority
-    #[account(
-        mut,
-        constraint = dat_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter,
-        constraint = dat_asdf_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
-    )]
-    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool (bonding curve) - validated by PumpFun program
-    #[account(mut, constraint = pool.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
-    pub pool: AccountInfo<'info>,
-    /// CHECK: Token mint (validation done by PumpFun)
-    #[account(mut)]
-    pub asdf_mint: AccountInfo<'info>,
-    #[account(mut)]
-    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Config
-    pub pump_global_config: AccountInfo<'info>,
-    /// CHECK: Recipient
-    #[account(mut)]
-    pub protocol_fee_recipient: AccountInfo<'info>,
-    /// CHECK: Creator vault (PDA from token creator)
-    #[account(mut)]
-    pub creator_vault: AccountInfo<'info>,
-    /// CHECK: Event auth
-    pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
-    pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Global volume accumulator (PDA)
-    pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
-    #[account(mut)]
-    pub user_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: Fee config (PDA)
-    pub fee_config: AccountInfo<'info>,
-    /// CHECK: Fee program
-    pub fee_program: AccountInfo<'info>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-}
-
-// REMOVED: ExecuteBuyAllocated - Merged into ExecuteBuy with allocated_lamports parameter
-
-#[derive(Accounts)]
-pub struct ExecuteBuySecondary<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA (holds native SOL for buying)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// DAT's token account - validated mint and authority
-    #[account(
-        mut,
-        constraint = dat_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter,
-        constraint = dat_asdf_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
-    )]
-    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Pool (bonding curve) - validated owner
-    #[account(mut, constraint = pool.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
-    pub pool: AccountInfo<'info>,
-    #[account(mut)]
-    pub asdf_mint: InterfaceAccount<'info, Mint>,
-    /// Pool's token account - validated mint matches
-    #[account(
-        mut,
-        constraint = pool_asdf_account.mint == asdf_mint.key() @ ErrorCode::InvalidParameter
-    )]
-    pub pool_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    /// CHECK: Config
-    pub pump_global_config: AccountInfo<'info>,
-    /// CHECK: Recipient
-    #[account(mut)]
-    pub protocol_fee_recipient: AccountInfo<'info>,
-    /// CHECK: Creator vault (PDA from token creator)
-    #[account(mut)]
-    pub creator_vault: AccountInfo<'info>,
-    /// CHECK: Event auth
-    pub pump_event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program - validated program ID via constraint
-    #[account(constraint = pump_swap_program.key() == PUMP_PROGRAM @ ErrorCode::InvalidParameter)]
-    pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Global volume accumulator (PDA)
-    pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
-    #[account(mut)]
-    pub user_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: Fee config (PDA)
-    pub fee_config: AccountInfo<'info>,
-    /// CHECK: Fee program
-    pub fee_program: AccountInfo<'info>,
-    /// CHECK: Root treasury PDA (REQUIRED for secondary tokens)
-    #[account(mut)]
-    pub root_treasury: Option<AccountInfo<'info>>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub system_program: Program<'info, System>,
-}
-
-/// ExecuteBuyAMM - For PumpSwap AMM pools (migrated tokens)
-/// Requires 23+ accounts as per PumpSwap AMM specification
-#[derive(Accounts)]
-pub struct ExecuteBuyAMM<'info> {
-    // DAT State accounts
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA authority (holds WSOL, acts as "user" in AMM)
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    /// DAT's token account for receiving bought tokens - validated mint and authority
-    #[account(
-        mut,
-        constraint = dat_token_account.mint == base_mint.key() @ ErrorCode::InvalidParameter,
-        constraint = dat_token_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
-    )]
-    pub dat_token_account: InterfaceAccount<'info, TokenAccount>,
-
-    // PumpSwap AMM Core accounts (1-9)
-    /// CHECK: AMM Pool account - owned by PumpSwap program
-    #[account(mut, constraint = pool.owner == &PUMP_SWAP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
-    pub pool: AccountInfo<'info>,
-    /// CHECK: PumpSwap global config
-    pub global_config: AccountInfo<'info>,
-    /// Base token mint (the token being bought)
-    pub base_mint: InterfaceAccount<'info, Mint>,
-    /// CHECK: Quote token mint (WSOL)
-    pub quote_mint: AccountInfo<'info>,
-    /// CHECK: DAT's WSOL account (user_quote_token_account)
-    #[account(mut)]
-    pub dat_wsol_account: AccountInfo<'info>,
-    /// CHECK: Pool's base token account
-    #[account(mut)]
-    pub pool_base_token_account: AccountInfo<'info>,
-    /// CHECK: Pool's quote token account (WSOL)
-    #[account(mut)]
-    pub pool_quote_token_account: AccountInfo<'info>,
-
-    // Protocol fee accounts (10-11)
-    /// CHECK: Protocol fee recipient
-    pub protocol_fee_recipient: AccountInfo<'info>,
-    /// CHECK: Protocol fee recipient's token account (PDA)
-    #[account(mut)]
-    pub protocol_fee_recipient_ata: AccountInfo<'info>,
-
-    // Program accounts (12-17)
-    /// Base token program (SPL Token or Token2022)
-    pub base_token_program: Interface<'info, TokenInterface>,
-    /// CHECK: Quote token program (always SPL Token for WSOL) - validated via constraint
-    #[account(constraint = quote_token_program.key() == anchor_spl::token::ID @ ErrorCode::InvalidParameter)]
-    pub quote_token_program: AccountInfo<'info>,
-    pub system_program: Program<'info, System>,
-    /// CHECK: Associated token program
-    pub associated_token_program: AccountInfo<'info>,
-    /// CHECK: PumpSwap event authority (PDA) - derived from program
-    pub event_authority: AccountInfo<'info>,
-    /// CHECK: PumpSwap AMM program - validated via constraint
-    #[account(constraint = pump_swap_program.key() == PUMP_SWAP_PROGRAM @ ErrorCode::InvalidParameter)]
-    pub pump_swap_program: AccountInfo<'info>,
-
-    // Creator fee accounts (18-19)
-    /// CHECK: Coin creator vault ATA (receives creator fees)
-    #[account(mut)]
-    pub coin_creator_vault_ata: AccountInfo<'info>,
-    /// CHECK: Coin creator vault authority (PDA)
-    pub coin_creator_vault_authority: AccountInfo<'info>,
-
-    // Volume tracking accounts (20-23)
-    /// CHECK: Global volume accumulator (PDA)
-    pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
-    #[account(mut)]
-    pub user_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: Fee config (PDA)
-    pub fee_config: AccountInfo<'info>,
-    /// CHECK: Fee program
-    pub fee_program: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
-pub struct FinalizeAllocatedCycle<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, token_stats.mint.as_ref()],
-        bump = token_stats.bump
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-
-    /// Admin signer required - only admin can finalize allocated cycles
-    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct BurnAndUpdate<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, asdf_mint.key().as_ref()],
-        bump = token_stats.bump
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-    /// CHECK: PDA
-    #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    #[account(mut)]
-    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut)]
-    pub asdf_mint: InterfaceAccount<'info, Mint>,
-    pub token_program: Interface<'info, TokenInterface>,
-}
-
-#[derive(Accounts)]
-pub struct RecordFailure<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    /// Admin signer required to prevent DoS attacks
-    pub admin: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct AdminControl<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    pub admin: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct UpdatePendingFees<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, mint.key().as_ref()],
-        bump,
-        constraint = token_stats.mint == mint.key() @ ErrorCode::MintMismatch
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-    /// CHECK: Token mint being tracked
-    pub mint: AccountInfo<'info>,
-    pub admin: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct InitializeValidator<'info> {
-    #[account(
-        init,
-        payer = payer,
-        space = 8 + ValidatorState::LEN,
-        seeds = [VALIDATOR_STATE_SEED, mint.key().as_ref()],
-        bump
-    )]
-    pub validator_state: Account<'info, ValidatorState>,
-
-    /// CHECK: Bonding curve account - verified by owner constraint
-    #[account(constraint = bonding_curve.owner == &PUMP_PROGRAM @ ErrorCode::InvalidBondingCurve)]
-    pub bonding_curve: AccountInfo<'info>,
-
-    /// CHECK: Token mint
-    pub mint: AccountInfo<'info>,
-
-    #[account(mut)]
-    pub payer: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-#[derive(Accounts)]
-pub struct RegisterValidatedFees<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-
-    /// Admin signer - only admin can register fees (CRITICAL security fix)
-    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-
-    #[account(
-        mut,
-        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
-        bump = validator_state.bump,
-    )]
-    pub validator_state: Account<'info, ValidatorState>,
-
-    #[account(
-        mut,
-        seeds = [TOKEN_STATS_SEED, validator_state.mint.as_ref()],
-        bump = token_stats.bump,
-        constraint = token_stats.mint == validator_state.mint @ ErrorCode::MintMismatch
-    )]
-    pub token_stats: Account<'info, TokenStats>,
-}
-
-/// Accounts for sync_validator_slot instruction (permissionless)
-#[derive(Accounts)]
-pub struct SyncValidatorSlot<'info> {
-    #[account(
-        mut,
-        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
-        bump = validator_state.bump,
-    )]
-    pub validator_state: Account<'info, ValidatorState>,
-
-    // NOTE: NO SIGNER REQUIRED - This is PERMISSIONLESS!
-    // Anyone can call this to sync a stale validator to current slot
-    // The instruction itself validates that sync is only allowed if stale
-}
-
-#[derive(Accounts)]
-pub struct ResetValidatorSlot<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-
-    #[account(
-        mut,
-        seeds = [VALIDATOR_STATE_SEED, validator_state.mint.as_ref()],
-        bump = validator_state.bump,
-    )]
-    pub validator_state: Account<'info, ValidatorState>,
-
-    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-}
-
-#[derive(Accounts)]
-pub struct MigrateTokenStats<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    #[account(mut)]
-    /// CHECK: Manual PDA verification and deserialization for migration
-    pub token_stats: AccountInfo<'info>,
-    /// CHECK: Mint address for PDA derivation
-    pub mint: AccountInfo<'info>,
-    pub admin: Signer<'info>,
-    pub system_program: Program<'info, System>,
-}
-
-/// ProposeAdminTransfer - Current admin proposes a new admin (two-step transfer)
-#[derive(Accounts)]
-pub struct ProposeAdminTransfer<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    pub admin: Signer<'info>,
-    /// CHECK: Proposed new admin (will need to accept)
-    pub new_admin: AccountInfo<'info>,
-}
-
-/// AcceptAdminTransfer - Proposed admin accepts the transfer (two-step transfer)
-#[derive(Accounts)]
-pub struct AcceptAdminTransfer<'info> {
-    #[account(
-        mut,
-        seeds = [DAT_STATE_SEED],
-        bump,
-        constraint = dat_state.pending_admin == Some(new_admin.key()) @ ErrorCode::UnauthorizedAccess
-    )]
-    pub dat_state: Account<'info, DATState>,
-    /// The proposed admin who is accepting the transfer
-    pub new_admin: Signer<'info>,
-}
-
-/// DEPRECATED: Use ProposeAdminTransfer + AcceptAdminTransfer instead
-/// Kept for backwards compatibility but now just calls propose_admin_transfer
-#[derive(Accounts)]
-pub struct TransferAdmin<'info> {
-    #[account(mut, seeds = [DAT_STATE_SEED], bump, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub dat_state: Account<'info, DATState>,
-    pub admin: Signer<'info>,
-    /// CHECK: New admin
-    pub new_admin: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
-pub struct CreatePumpfunToken<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    #[account(mut, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-    #[account(mut)]
-    pub mint: Signer<'info>,
-    /// CHECK: PDA
-    #[account(mut)]
-    pub mint_authority: AccountInfo<'info>,
-    /// CHECK: PDA
-    #[account(mut)]
-    pub bonding_curve: AccountInfo<'info>,
-    /// CHECK: ATA
-    #[account(mut)]
-    pub associated_bonding_curve: AccountInfo<'info>,
-    /// CHECK: Metadata
-    #[account(mut)]
-    pub metadata: AccountInfo<'info>,
-    /// CHECK: Global
-    #[account(mut)]
-    pub global: AccountInfo<'info>,
-    /// CHECK: Metaplex
-    pub mpl_token_metadata: AccountInfo<'info>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
-    /// CHECK: Rent
-    pub rent: AccountInfo<'info>,
-    /// CHECK: Event authority
-    pub event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
-    pub pump_program: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
-pub struct CreatePumpfunTokenMayhem<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-
-    /// CHECK: PDA - DAT Authority acts as token creator
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-
-    #[account(mut, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-
-    #[account(mut)]
-    pub mint: Signer<'info>,
-
-    /// CHECK: PDA from pump program (mint-authority seed)
-    pub mint_authority: AccountInfo<'info>,
-
-    /// CHECK: Bonding curve PDA (82 bytes for Mayhem Mode - 81 + 1 for is_mayhem_mode flag)
-    #[account(mut)]
-    pub bonding_curve: AccountInfo<'info>,
-
-    /// CHECK: Associated bonding curve token account (Token2022 ATA)
-    #[account(mut)]
-    pub associated_bonding_curve: AccountInfo<'info>,
-
-    /// CHECK: Global config PDA from pump program
-    pub global: AccountInfo<'info>,
-
-    pub system_program: Program<'info, System>,
-
-    /// CHECK: Token2022 program (not legacy Token program!)
-    pub token_2022_program: AccountInfo<'info>,
-
-    pub associated_token_program: Program<'info, AssociatedToken>,
-
-    /// CHECK: Mayhem program - handles AI agent trading
-    #[account(mut)]
-    pub mayhem_program: AccountInfo<'info>,
-
-    /// CHECK: Global params PDA from mayhem program
-    pub global_params: AccountInfo<'info>,
-
-    /// CHECK: SOL vault PDA from mayhem program
-    #[account(mut)]
-    pub sol_vault: AccountInfo<'info>,
-
-    /// CHECK: Mayhem state PDA (derived from mint)
-    #[account(mut)]
-    pub mayhem_state: AccountInfo<'info>,
-
-    /// CHECK: Mayhem token vault (Token2022 ATA)
-    #[account(mut)]
-    pub mayhem_token_vault: AccountInfo<'info>,
-
-    /// CHECK: Event authority PDA
-    pub event_authority: AccountInfo<'info>,
-
-    /// CHECK: Main pump program (6EF8r...)
-    pub pump_program: AccountInfo<'info>,
-}
-
-// STATE
-
-#[account]
-pub struct DATState {
-    pub admin: Pubkey,
-    pub asdf_mint: Pubkey,
-    pub wsol_mint: Pubkey,
-    pub pool_address: Pubkey,
-    pub pump_swap_program: Pubkey,
-    pub total_burned: u64,
-    pub total_sol_collected: u64,
-    pub total_buybacks: u32,
-    pub failed_cycles: u32,
-    pub consecutive_failures: u8,
-    pub is_active: bool,
-    pub emergency_pause: bool,
-    pub last_cycle_timestamp: i64,
-    pub initialized_at: i64,
-    pub last_am_execution: i64,
-    pub last_pm_execution: i64,
-    pub last_cycle_sol: u64,
-    pub last_cycle_burned: u64,
-    pub min_fees_threshold: u64,
-    pub max_fees_per_cycle: u64,
-    pub slippage_bps: u16,
-    pub min_cycle_interval: i64,
-    pub dat_authority_bump: u8,
-    pub current_fee_recipient_index: u8,
-    pub last_known_price: u64,
-    pub pending_burn_amount: u64,
-    pub root_token_mint: Option<Pubkey>,  // Token principal qui reçoit 44.8% des autres
-    pub fee_split_bps: u16,                // Basis points: 5520 = 55.2% keep, 44.8% to root
-    pub last_sol_sent_to_root: u64,        // Track SOL sent to root in last cycle (for stats update)
-    // Security audit additions (v2)
-    pub pending_admin: Option<Pubkey>,     // Two-step admin transfer: proposed new admin
-    pub pending_fee_split: Option<u16>,    // Timelock: proposed fee split change
-    pub pending_fee_split_timestamp: i64,  // Timelock: when fee split was proposed
-    pub admin_operation_cooldown: i64,     // Timelock: cooldown period in seconds (default 3600 = 1hr)
-}
-
-impl DATState {
-    // Size calculation:
-    // - 5 Pubkeys: 32 * 5 = 160 bytes
-    // - 14 u64/i64: 8 * 14 = 112 bytes (includes last_sol_sent_to_root)
-    // - 2 u32: 4 * 2 = 8 bytes
-    // - 5 u8/bool: 1 * 5 = 5 bytes
-    // - 2 u16: 2 * 2 = 4 bytes (slippage_bps, fee_split_bps)
-    // - 1 Option<Pubkey>: 33 bytes (root_token_mint)
-    // - NEW: 1 Option<Pubkey>: 33 bytes (pending_admin)
-    // - NEW: 1 Option<u16>: 3 bytes (pending_fee_split)
-    // - NEW: 2 i64: 8 * 2 = 16 bytes (pending_fee_split_timestamp, admin_operation_cooldown)
-    // Total: 160 + 112 + 8 + 5 + 4 + 33 + 33 + 3 + 16 = 374 bytes
-    pub const LEN: usize = 32 * 5 + 8 * 16 + 4 * 2 + 1 * 5 + 2 * 2 + 33 + 33 + 3;
-}
-
-// Per-token statistics tracking
-#[account]
-pub struct TokenStats {
-    pub mint: Pubkey,              // The token mint this stats account tracks
-    pub total_burned: u64,         // Total tokens burned for this specific token
-    pub total_sol_collected: u64,  // Total SOL collected/generated by this token
-    pub total_sol_used: u64,       // Total SOL actually used for buybacks
-    pub total_sol_sent_to_root: u64,      // SOL sent to root token (if secondary)
-    pub total_sol_received_from_others: u64, // SOL received from other tokens (if root)
-    pub total_buybacks: u64,       // Number of buyback cycles for this token
-    pub last_cycle_timestamp: i64, // Last cycle execution timestamp
-    pub last_cycle_sol: u64,       // SOL collected in last cycle
-    pub last_cycle_burned: u64,    // Tokens burned in last cycle
-    pub is_root_token: bool,       // Whether this is the root token
-    pub bump: u8,                  // PDA bump seed
-    // NEW: Precise per-token fee tracking for multi-token ecosystems
-    pub pending_fees_lamports: u64,      // Accumulated fees not yet collected (tracking attribution)
-    pub last_fee_update_timestamp: i64,  // Timestamp of last fee update
-    pub cycles_participated: u64,        // Number of ecosystem cycles this token participated in
-}
-
-impl TokenStats {
-    pub const LEN: usize = 32 + 8 * 12 + 1 + 1; // Pubkey(32) + u64(12) + bool(1) + u8(1) = 130
-}
-
-/// Validator state for trustless per-token fee attribution
-/// Tracks fees validated from PumpFun transaction logs
-#[account]
-pub struct ValidatorState {
-    pub mint: Pubkey,                      // Token mint being tracked
-    pub bonding_curve: Pubkey,             // Associated PumpFun bonding curve
-    pub last_validated_slot: u64,          // Last slot that was validated
-    pub total_validated_lamports: u64,     // Cumulative fees validated historically
-    pub total_validated_count: u64,        // Number of validation batches
-    pub fee_rate_bps: u16,                 // Expected fee rate (50 = 0.5%)
-    pub bump: u8,                          // PDA bump seed
-    pub _reserved: [u8; 32],               // Reserved for future use
-}
-
-impl ValidatorState {
-    pub const LEN: usize = 32 + 32 + 8 + 8 + 8 + 2 + 1 + 32; // 123 bytes
-}
-
-// EVENTS
-
-#[event]
-pub struct DATInitialized {
-    pub admin: Pubkey,
-    pub dat_authority: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct TokenStatsInitialized {
-    pub mint: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct CycleCompleted {
-    pub cycle_number: u32,
-    pub tokens_burned: u64,
-    pub sol_used: u64,
-    pub total_burned: u64,
-    pub total_sol_collected: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct CycleFailed {
-    pub failed_count: u32,
-    pub consecutive_failures: u8,
-    pub error_code: u32,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct StatusChanged {
-    pub is_active: bool,
-    pub emergency_pause: bool,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct EmergencyAction {
-    pub action: String,
-    pub admin: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct AdminTransferProposed {
-    pub current_admin: Pubkey,
-    pub proposed_admin: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct AdminTransferred {
-    pub old_admin: Pubkey,
-    pub new_admin: Pubkey,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct TokenCreated {
-    pub mint: Pubkey,
-    pub bonding_curve: Pubkey,
-    pub creator: Pubkey,
-    pub name: String,
-    pub symbol: String,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct RootTokenSet {
-    pub root_mint: Pubkey,
-    pub fee_split_bps: u16,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct FeeSplitUpdated {
-    pub old_bps: u16,
-    pub new_bps: u16,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct FeesRedirectedToRoot {
-    pub from_token: Pubkey,
-    pub to_root: Pubkey,
-    pub amount: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct RootTreasuryCollected {
-    pub root_mint: Pubkey,
-    pub amount: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct PendingFeesUpdated {
-    pub mint: Pubkey,
-    pub amount: u64,
-    pub total_pending: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct ValidatorInitialized {
-    pub mint: Pubkey,
-    pub bonding_curve: Pubkey,
-    pub slot: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct ValidatorSlotReset {
-    pub mint: Pubkey,
-    pub old_slot: u64,
-    pub new_slot: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct ValidatedFeesRegistered {
-    pub mint: Pubkey,
-    pub fee_amount: u64,
-    pub end_slot: u64,
-    pub tx_count: u32,
-    pub total_pending: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct BuyExecuted {
-    pub tokens_bought: u64,
-    pub sol_spent: u64,
-    pub timestamp: i64,
-}
-
-#[event]
-pub struct AmmFeesCollected {
-    pub mint: Pubkey,
-    pub wsol_amount: u64,
-    pub timestamp: i64,
-}
-
-// ERRORS
-
-#[error_code]
-pub enum ErrorCode {
-    #[msg("DAT not active")]
-    DATNotActive,
-    #[msg("Insufficient fees")]
-    InsufficientFees,
-    #[msg("Unauthorized")]
-    UnauthorizedAccess,
-    #[msg("Cycle too soon")]
-    CycleTooSoon,
-    #[msg("Invalid parameter")]
-    InvalidParameter,
-    #[msg("Math overflow")]
-    MathOverflow,
-    #[msg("Already executed")]
-    AlreadyExecutedThisPeriod,
-    #[msg("Slippage exceeded")]
-    SlippageExceeded,
-    #[msg("Not coin creator")]
-    NotCoinCreator,
-    #[msg("Price impact too high")]
-    PriceImpactTooHigh,
-    #[msg("Rate too low")]
-    RateTooLow,
-    #[msg("Vault not initialized")]
-    VaultNotInitialized,
-    #[msg("No pending burn")]
-    NoPendingBurn,
-    #[msg("Invalid pool data")]
-    InvalidPool,
-    #[msg("Invalid root token")]
-    InvalidRootToken,
-    #[msg("Invalid root treasury")]
-    InvalidRootTreasury,
-    #[msg("Invalid fee split basis points")]
-    InvalidFeeSplit,
-    #[msg("Fee split change exceeds maximum delta (500 bps per call)")]
-    FeeSplitDeltaTooLarge,
-    #[msg("Insufficient pool liquidity")]
-    InsufficientPoolLiquidity,
-    #[msg("Stale validation - slot already processed")]
-    StaleValidation,
-    #[msg("Slot range too large")]
-    SlotRangeTooLarge,
-    #[msg("Validator not stale - sync not needed")]
-    ValidatorNotStale,
-    #[msg("Fee amount exceeds maximum for slot range")]
-    FeeTooHigh,
-    #[msg("Transaction count exceeds maximum for slot range")]
-    TooManyTransactions,
-    #[msg("Invalid bonding curve account")]
-    InvalidBondingCurve,
-    #[msg("Mint mismatch between accounts")]
-    MintMismatch,
-    #[msg("Pending fees would exceed maximum (69 SOL)")]
-    PendingFeesOverflow,
-}
+// ERRORS - Now imported from errors module (see pub use errors::*;)

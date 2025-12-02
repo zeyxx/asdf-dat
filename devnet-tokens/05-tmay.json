@@ -1,0 +1,15 @@
+{
+  "mint": "98c8YbkoxFMvQi9Vd4TdQndj7gYWTiEZNM19BAngniKH",
+  "bondingCurve": "hXGuSdwLdLzULBUQDixG22XRPkAC83fd1WGU73WJE9N",
+  "creator": "84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68",
+  "name": "Test Mayhem",
+  "symbol": "TMAY",
+  "uri": "https://pump.fun/tmay",
+  "isRoot": false,
+  "mayhemMode": true,
+  "tokenProgram": "Token2022",
+  "poolType": "bonding_curve",
+  "network": "devnet",
+  "timestamp": "2025-12-02T07:37:24.392Z",
+  "transaction": "5f9jPBoX4yxfi2g8xY6cLeSbkVEeRg24QTDusjy8cB78NTfh82rCWD2KHeL2C4ypYBwRCoJ4GgZWGcDxxiJSBrRo"
+}

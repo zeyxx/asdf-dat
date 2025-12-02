@@ -59,6 +59,9 @@ export interface MonitorConfig {
   minPollInterval?: number;  // Minimum poll interval (default: 3000 = 3s)
   maxPollInterval?: number;  // Maximum poll interval (default: 30000 = 30s)
   adaptivePolling?: boolean; // Enable adaptive polling (default: true)
+  // Resilience config
+  maxSignatures?: number;    // Max signatures to keep in memory for deduplication (default: 10000)
+  requireChecksum?: boolean; // Require valid checksum on state load (default: false for backwards compatibility)
 }
 
 // State persistence interface
@@ -67,6 +70,8 @@ interface DaemonState {
   lastUpdated: string;
   version: number;
   checksum?: string; // SHA-256 of lastSignatures for integrity verification
+  // HIGH-03 FIX: Persist processedSignatures to prevent double-counting on restart
+  processedSignatures?: string[]; // Last N signatures for deduplication across restarts
 }
 
 // Maximum age for state file (24 hours)
@@ -119,7 +124,8 @@ export class PumpFunFeeMonitor {
   private lastSignatures: Map<string, string>;  // keyed by mint -> last processed signature
   private processedSignatures: Set<string>;  // Deduplication: track all processed signatures
   private signatureQueue: string[];  // FIFO queue for memory-bounded cleanup
-  private readonly MAX_SIGNATURES = 10000;  // Maximum signatures to keep in memory
+  private maxSignatures: number;  // Configurable: Maximum signatures to keep in memory
+  private requireChecksum: boolean; // Configurable: Require valid checksum on state load
   private pollInterval: number;
   private updateInterval: number;
   private verbose: boolean;
@@ -161,6 +167,9 @@ export class PumpFunFeeMonitor {
     this.maxPollInterval = config.maxPollInterval || 30000;  // 30s maximum
     this.adaptivePolling = config.adaptivePolling !== false; // default true
     this.currentPollInterval = this.pollInterval;
+    // Resilience config
+    this.maxSignatures = config.maxSignatures || 10000;      // Default 10k signatures
+    this.requireChecksum = config.requireChecksum || false;  // Default false for backwards compat
 
     // Initialize token map (keyed by mint)
     for (const token of config.tokens) {
@@ -192,11 +201,15 @@ export class PumpFunFeeMonitor {
           continue;
         }
 
-        // Validate checksum if present
-        if (state.checksum) {
+        // Validate checksum if present OR if required
+        if (state.checksum || this.requireChecksum) {
+          if (!state.checksum && this.requireChecksum) {
+            this.log(`⚠️ ${file}: checksum required but not present (rejecting state)`);
+            continue;
+          }
           const expectedChecksum = calculateChecksum(state.lastSignatures);
           if (state.checksum !== expectedChecksum) {
-            this.log(`⚠️ ${file}: checksum mismatch (corrupted state)`);
+            this.log(`⚠️ ${file}: checksum mismatch (corrupted state) - expected ${expectedChecksum.slice(0, 8)}..., got ${state.checksum?.slice(0, 8)}...`);
             continue;
           }
         }
@@ -217,8 +230,17 @@ export class PumpFunFeeMonitor {
           }
         }
 
+        // HIGH-03 FIX: Restore processedSignatures for deduplication across restarts
+        let processedCount = 0;
+        if (state.processedSignatures && Array.isArray(state.processedSignatures)) {
+          for (const sig of state.processedSignatures) {
+            this.processedSignatures.add(sig);
+            processedCount++;
+          }
+        }
+
         const source = file === backupFile ? 'backup' : 'state';
-        this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures)`);
+        this.log(`📂 Loaded ${source} from ${file} (${restoredCount}/${Object.keys(state.lastSignatures).length} signatures, ${processedCount} processed)`);
 
         // If loaded from backup, immediately save to restore main file
         if (file === backupFile) {
@@ -242,11 +264,15 @@ export class PumpFunFeeMonitor {
   private saveState(): void {
     try {
       const signaturesObj = Object.fromEntries(this.lastSignatures);
+      // HIGH-03 FIX: Persist last 1000 processedSignatures for deduplication across restarts
+      const processedSigsArray = Array.from(this.processedSignatures).slice(-1000);
+
       const state: DaemonState = {
         lastSignatures: signaturesObj,
         lastUpdated: new Date().toISOString(),
         version: STATE_VERSION,
         checksum: calculateChecksum(signaturesObj),
+        processedSignatures: processedSigsArray,
       };
 
       const stateJson = JSON.stringify(state, null, 2);
@@ -285,8 +311,9 @@ export class PumpFunFeeMonitor {
     this.log("🔍 Starting PumpFun Fee Monitor v2 (Balance Polling)...");
     this.log(`📊 Monitoring ${this.tokens.size} tokens (limit: ${this.txLimit} TX/poll)`);
     if (this.adaptivePolling) {
-      this.log(`🔄 Adaptive polling enabled (${this.minPollInterval/1000}s - ${this.maxPollInterval/1000}s)`);
+      this.log(`🔄 Adaptive polling enabled (${this.minPollInterval/1000}s - ${this.maxPollInterval/1000}s, exponential backoff)`);
     }
+    this.log(`🛡️ Resilience: maxSignatures=${this.maxSignatures}, requireChecksum=${this.requireChecksum}`);
 
     // Initialize last known signatures for tokens WITHOUT persisted state
     let loadedCount = 0;
@@ -369,13 +396,18 @@ export class PumpFunFeeMonitor {
           this.consecutiveErrors++;
           this.consecutiveSuccess = 0;
 
-          // Increase interval on errors (back off)
-          if (this.consecutiveErrors >= 2) {
-            this.currentPollInterval = Math.min(
-              this.maxPollInterval,
-              this.currentPollInterval * 1.5
-            );
-            this.log(`⚠️ Backing off poll interval to ${(this.currentPollInterval/1000).toFixed(1)}s due to errors`);
+          // Exponential backoff: interval = baseInterval * 2^errors (capped at maxInterval)
+          // This provides much faster recovery after brief issues while
+          // aggressively backing off during sustained outages
+          const backoffMultiplier = Math.pow(2, Math.min(this.consecutiveErrors, 6)); // Cap at 2^6 = 64x
+          const newInterval = Math.min(
+            this.maxPollInterval,
+            this.pollInterval * backoffMultiplier
+          );
+
+          if (newInterval > this.currentPollInterval) {
+            this.currentPollInterval = newInterval;
+            this.log(`⚠️ Exponential backoff: poll interval now ${(this.currentPollInterval/1000).toFixed(1)}s (${this.consecutiveErrors} consecutive errors)`);
           }
         }
 
@@ -528,9 +560,9 @@ export class PumpFunFeeMonitor {
       this.signatureQueue.push(sig.signature);
     }
 
-    // Memory cleanup: remove oldest signatures when exceeding limit
+    // Memory cleanup: remove oldest signatures when exceeding limit (rotating window)
     // Done outside loop for efficiency (batch cleanup)
-    while (this.signatureQueue.length > this.MAX_SIGNATURES) {
+    while (this.signatureQueue.length > this.maxSignatures) {
       const oldest = this.signatureQueue.shift();
       if (oldest) {
         this.processedSignatures.delete(oldest);
@@ -812,6 +844,45 @@ export class PumpFunFeeMonitor {
   public async forceFlush(): Promise<FlushResult> {
     this.log("🔄 Force flush triggered by cycle orchestrator");
     return await this.flushPendingFees();
+  }
+
+  /**
+   * Register a new token for monitoring (hot-reload)
+   * Called by auto-discovery or manual registration endpoint
+   * @param token Token configuration to register
+   * @returns true if registered successfully, false if already exists
+   */
+  public registerToken(token: TokenConfig): boolean {
+    const mintKey = token.mint.toBase58();
+
+    // Check if already registered
+    if (this.tokens.has(mintKey)) {
+      this.log(`⚠️ Token ${token.symbol} already registered (${mintKey.slice(0, 8)}...)`);
+      return false;
+    }
+
+    // Register the token
+    this.tokens.set(mintKey, token);
+    this.pendingFees.set(mintKey, 0n);
+
+    // Initialize lastSignature if we have state from a previous run
+    if (!this.lastSignatures.has(mintKey)) {
+      this.lastSignatures.set(mintKey, '');
+    }
+
+    this.log(`✅ Registered new token: ${token.symbol} (${mintKey.slice(0, 8)}...)`);
+
+    // Save state immediately to persist new token
+    this.saveState();
+
+    return true;
+  }
+
+  /**
+   * Get list of registered token mints
+   */
+  public getRegisteredTokens(): string[] {
+    return Array.from(this.tokens.keys());
   }
 
   /**

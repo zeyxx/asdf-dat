@@ -11,6 +11,17 @@
 
 ---
 
+## 🎯 Vision
+
+**Phase 1** (Now): Proof of concept - single ecosystem, automated buy→burn→treasury cycle
+**Phase 2** (2026): SaaS platform - any creator can deploy their own DAT
+
+> "Solana is complex. Rust is technical. Pump.fun is borderline magic.
+> But that's OK. We build clean, modular, stable, and future-ready.
+> This is fine." 🔥🐶
+
+---
+
 ## 😤 The Problem
 
 Creator fees on Pump.fun exist, but most projects ignore them. Value leaks out instead of compounding back. And when you have multiple tokens in an ecosystem? Good luck coordinating anything.
@@ -42,6 +53,12 @@ DAT automates the entire cycle:
 ```
 
 **Result**: Every trade creates buying pressure. Every cycle reduces supply. Automatic. Trustless. Relentless. 📈
+
+### 💡 Why It Matters
+
+- **For holders**: Every trade = automatic buyback pressure
+- **For creators**: Set it and forget it. Treasury works 24/7.
+- **For the ecosystem**: Aligned incentives. Less rugs. More trust.
 
 ---
 
@@ -250,6 +267,17 @@ See [Security Notes](docs/DEVELOPER_GUIDE.md#security) for details.
 4. Submit a PR with clear description
 
 **Code Standards**: See `CLAUDE.md` for development guidelines.
+
+---
+
+## 🌐 Community
+
+Building in public. Join the conversation.
+
+- 🐦 **Twitter**: [@ASDFASDFA552](https://x.com/ASDFASDFA552)
+- 👥 **Community**: [ASDF Community](https://x.com/i/communities/1942343109159051272)
+
+*Phase 1 is live. Mainnet stats coming soon.*
 
 ---
 

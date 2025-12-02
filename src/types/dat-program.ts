@@ -44,6 +44,11 @@ export interface DATState {
   rootTokenMint: PublicKey | null;
   feeSplitBps: number;
   lastSolSentToRoot: BN;
+  // Security audit additions (v2)
+  pendingAdmin: PublicKey | null;
+  pendingFeeSplit: number | null;
+  pendingFeeSplitTimestamp: BN;
+  adminOperationCooldown: BN;
 }
 
 /**
