@@ -5,7 +5,7 @@
   "name": "Fresh Root",
   "symbol": "FROOT",
   "uri": "https://pump.fun/froot",
-  "isRoot": true,
+  "isRoot": false,
   "mayhemMode": false,
   "tokenProgram": "SPL",
   "poolType": "bonding_curve",

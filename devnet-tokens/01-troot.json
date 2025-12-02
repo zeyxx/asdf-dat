@@ -1,0 +1,15 @@
+{
+  "mint": "9to1vZ8rxSPPSHxn3fxfgpnHLqG81YzKx61Krwi55nSR",
+  "bondingCurve": "Fn3YUUgUggHqkyQM4ZaDY3oFgfag4p6DGFNxXTHwbUt",
+  "creator": "84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68",
+  "name": "Test Root",
+  "symbol": "TROOT",
+  "uri": "https://pump.fun/troot",
+  "isRoot": true,
+  "mayhemMode": false,
+  "tokenProgram": "SPL",
+  "poolType": "bonding_curve",
+  "network": "devnet",
+  "timestamp": "2025-12-02T07:35:43.611Z",
+  "transaction": "43vNHYfmg54bcgdJpSqLBraWzpeQwiehugaoHuDCNkAJJjnk2ic3JBqbtBt2bJ6aWeypXarP1Y3Yzq3k2ybvkJuP"
+}

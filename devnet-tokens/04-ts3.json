@@ -1,0 +1,15 @@
+{
+  "mint": "FGdwHxF1bfoHXr4vJDB717edXnkHAbPJnCmUtxDA1VUE",
+  "bondingCurve": "8J4nrDJ44fLzK2Ewz5iVQrzsTZYLN8df8PVJF26uzas",
+  "creator": "84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68",
+  "name": "Test Sec 3",
+  "symbol": "TS3",
+  "uri": "https://pump.fun/ts3",
+  "isRoot": false,
+  "mayhemMode": false,
+  "tokenProgram": "SPL",
+  "poolType": "bonding_curve",
+  "network": "devnet",
+  "timestamp": "2025-12-02T07:36:16.852Z",
+  "transaction": "Eh42muELpSeNiySGNkm3mwssPq8pQHcgs2fn7fHWofW2Qrg7ZL32Yjz9FHuM8jrFSfdKrgfEzZQCmFW9jPSoXWx"
+}

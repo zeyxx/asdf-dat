@@ -1,0 +1,15 @@
+{
+  "mint": "EkjXpPm8zUxaNTbBQABnS5eGLGhBNxSDdz4xSMgPKPAS",
+  "bondingCurve": "E9KXYQPnAJ3c9N9drcYMM484waM2wD5Ja18jx82rtpis",
+  "creator": "84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68",
+  "name": "Test Sec 2",
+  "symbol": "TS2",
+  "uri": "https://pump.fun/ts2",
+  "isRoot": false,
+  "mayhemMode": false,
+  "tokenProgram": "SPL",
+  "poolType": "bonding_curve",
+  "network": "devnet",
+  "timestamp": "2025-12-02T07:36:07.302Z",
+  "transaction": "27QrJcXmocZmkRGnGGpkkURboyirBNaK87T258k9Z2pi55dAQbbavFipVimcYePAEyipzzkNn347CWKZwQew3iHT"
+}
