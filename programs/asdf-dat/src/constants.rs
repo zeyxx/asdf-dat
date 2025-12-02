@@ -158,8 +158,8 @@ pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42
 /// Minimum fees required to claim (0.01 SOL)
 pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
 
-/// Maximum fees per cycle (1 SOL)
-pub const MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;
+/// Maximum fees per cycle (69420 SOL - effectively unlimited, market decides via slippage)
+pub const MAX_FEES_PER_CYCLE: u64 = 69_420_000_000_000;
 
 /// Initial slippage tolerance (5%)
 pub const INITIAL_SLIPPAGE_BPS: u16 = 500;

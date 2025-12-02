@@ -402,8 +402,8 @@ mod tests {
 
         #[test]
         fn test_max_fees_per_cycle() {
-            // 1 SOL = 1,000,000,000 lamports
-            assert_eq!(MAX_FEES_PER_CYCLE, 1_000_000_000);
+            // 69420 SOL - effectively unlimited, market decides via slippage
+            assert_eq!(MAX_FEES_PER_CYCLE, 69_420_000_000_000);
         }
 
         #[test]
@@ -640,7 +640,7 @@ mod tests {
             assert!(just_above >= MIN_FEES_TO_CLAIM, "Above threshold should pass");
         }
 
-        /// Test MAX_FEES_PER_CYCLE boundary (1 SOL)
+        /// Test MAX_FEES_PER_CYCLE boundary (69420 SOL - effectively unlimited)
         #[test]
         fn test_max_fees_per_cycle_boundary() {
             let just_below: u64 = MAX_FEES_PER_CYCLE - 1;
