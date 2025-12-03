@@ -1,6 +1,8 @@
 # ASDF-DAT Architecture
 
-Technical system design for the Decentralized Autonomous Treasury.
+Optimistic Burn Protocol - Technical Design
+
+Single daemon executes. Chain proves. Anyone verifies.
 
 ---
 
@@ -341,9 +343,9 @@ This is why the daemon is necessary - we can't determine per-token fees from vau
 ### Key Constants
 
 ```rust
-// Thresholds
-MIN_FEES_TO_CLAIM: u64 = 10_000_000;      // 0.01 SOL
-MAX_FEES_PER_CYCLE: u64 = 1_000_000_000;  // 1 SOL
+// Flush thresholds
+FLUSH_THRESHOLD: u64 = 10_000_000;        // 0.01 SOL - minimum to flush
+MAX_FEES_PER_CYCLE: u64 = 69_420_000_000_000;  // Market-driven via slippage
 MIN_FEES_FOR_SPLIT: u64 = 5_500_000;      // 0.0055 SOL
 
 // Safety

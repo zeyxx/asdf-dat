@@ -383,6 +383,33 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// Update ASDF mint address (admin only, TESTING mode only)
+    /// Used for devnet testing where the initial mint may be incorrect.
+    /// This instruction is DISABLED on mainnet (TESTING_MODE = false).
+    #[cfg(feature = "testing")]
+    pub fn update_asdf_mint(ctx: Context<AdminControl>, new_asdf_mint: Pubkey) -> Result<()> {
+        let state = &mut ctx.accounts.dat_state;
+        let clock = Clock::get()?;
+
+        // Update the mint
+        let old_mint = state.asdf_mint;
+        state.asdf_mint = new_asdf_mint;
+
+        msg!(
+            "ASDF mint updated: {} -> {} (TESTING MODE ONLY)",
+            old_mint,
+            new_asdf_mint
+        );
+
+        emit!(AsdfMintUpdated {
+            old_mint,
+            new_mint: new_asdf_mint,
+            timestamp: clock.unix_timestamp,
+        });
+
+        Ok(())
+    }
+
     // Update the fee split ratio (admin only)
     // Bounded between 1000 (10%) and 9000 (90%) to prevent extreme configurations
     // HIGH-02 FIX: Maximum 5% (500 bps) change per call to prevent instant rug
@@ -1550,6 +1577,253 @@ pub mod asdf_dat {
             symbol,
             timestamp: Clock::get()?.unix_timestamp,
         });
+
+        Ok(())
+    }
+
+    /// Transfer 1% dev sustainability fee
+    /// Called at the end of each batch transaction, after burn succeeds
+    /// 1% today = 99% burns forever
+    pub fn transfer_dev_fee(ctx: Context<TransferDevFee>, secondary_share: u64) -> Result<()> {
+        // Calculate 1% of secondary share
+        let dev_fee = secondary_share
+            .checked_mul(DEV_FEE_BPS as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        if dev_fee > 0 {
+            let bump = ctx.accounts.dat_state.dat_authority_bump;
+            let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[bump]];
+
+            invoke_signed(
+                &anchor_lang::solana_program::system_instruction::transfer(
+                    ctx.accounts.dat_authority.key,
+                    ctx.accounts.dev_wallet.key,
+                    dev_fee,
+                ),
+                &[
+                    ctx.accounts.dat_authority.to_account_info(),
+                    ctx.accounts.dev_wallet.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+                &[seeds],
+            )?;
+
+            msg!("Dev sustainability fee: {} lamports", dev_fee);
+        }
+
+        Ok(())
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // EXTERNAL APP INTEGRATION
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    /// Initialize the self-sustaining rebate pool
+    /// Called once during protocol setup
+    pub fn initialize_rebate_pool(ctx: Context<InitializeRebatePool>) -> Result<()> {
+        let rebate_pool = &mut ctx.accounts.rebate_pool;
+        let clock = Clock::get()?;
+
+        rebate_pool.bump = ctx.bumps.rebate_pool;
+        rebate_pool.total_deposited = 0;
+        rebate_pool.total_distributed = 0;
+        rebate_pool.rebates_count = 0;
+        rebate_pool.last_rebate_timestamp = 0;
+        rebate_pool.last_rebate_slot = 0;
+        rebate_pool.unique_recipients = 0;
+        rebate_pool._reserved = [0u8; 32];
+
+        emit!(RebatePoolInitialized {
+            rebate_pool: ctx.accounts.rebate_pool.key(),
+            rebate_pool_ata: Pubkey::default(), // ATA created separately
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Rebate pool initialized");
+        Ok(())
+    }
+
+    /// External app deposits $ASDF fees with automatic split
+    /// Split: 99.448% → DAT ATA (burn), 0.552% → Rebate Pool ATA (rebates)
+    ///
+    /// Architecture:
+    /// - Payer transfers full amount
+    /// - 99.448% goes to DAT ATA (included in ROOT cycle single burn)
+    /// - 0.552% goes to Rebate Pool ATA (self-sustaining fund)
+    /// - UserStats.pending_contribution tracks full amount for rebate calculation
+    pub fn deposit_fee_asdf(
+        ctx: Context<DepositFeeAsdf>,
+        amount: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+
+        // Validate minimum deposit
+        require!(amount >= MIN_DEPOSIT_SOL_EQUIV, ErrorCode::DepositBelowMinimum);
+
+        // Calculate split (99.448% burn, 0.552% rebate)
+        // Using BPS: 9945 / 10000 = 99.45%
+        let burn_amount = amount
+            .checked_mul(BURN_SHARE_BPS as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+        let rebate_pool_amount = amount.saturating_sub(burn_amount);
+
+        // Transfer 99.448% → DAT ATA (for burn)
+        token_interface::transfer(
+            CpiContext::new(
+                ctx.accounts.token_program.to_account_info(),
+                token_interface::Transfer {
+                    from: ctx.accounts.payer_token_account.to_account_info(),
+                    to: ctx.accounts.dat_asdf_account.to_account_info(),
+                    authority: ctx.accounts.payer.to_account_info(),
+                },
+            ),
+            burn_amount,
+        )?;
+
+        // Transfer 0.552% → Rebate Pool ATA (for rebates)
+        if rebate_pool_amount > 0 {
+            token_interface::transfer(
+                CpiContext::new(
+                    ctx.accounts.token_program.to_account_info(),
+                    token_interface::Transfer {
+                        from: ctx.accounts.payer_token_account.to_account_info(),
+                        to: ctx.accounts.rebate_pool_ata.to_account_info(),
+                        authority: ctx.accounts.payer.to_account_info(),
+                    },
+                ),
+                rebate_pool_amount,
+            )?;
+        }
+
+        // Update rebate pool stats
+        let rebate_pool = &mut ctx.accounts.rebate_pool;
+        rebate_pool.total_deposited = rebate_pool.total_deposited.saturating_add(rebate_pool_amount);
+
+        // Get keys before mutable borrow
+        let user_key = ctx.accounts.user.key();
+        let user_stats_key = ctx.accounts.user_stats.key();
+
+        // Initialize or update user stats
+        let user_stats = &mut ctx.accounts.user_stats;
+
+        // Check if newly initialized (user == default)
+        if user_stats.user == Pubkey::default() {
+            user_stats.bump = ctx.bumps.user_stats;
+            user_stats.user = user_key;
+            user_stats.pending_contribution = 0;
+            user_stats.total_contributed = 0;
+            user_stats.total_rebate = 0;
+
+            emit!(UserStatsInitialized {
+                user: user_key,
+                user_stats: user_stats_key,
+                timestamp: clock.unix_timestamp,
+            });
+        }
+
+        // Track full amount for rebate calculation
+        user_stats.pending_contribution = user_stats.pending_contribution.saturating_add(amount);
+        user_stats.last_update_timestamp = clock.unix_timestamp;
+        user_stats.last_update_slot = clock.slot;
+
+        emit!(FeeAsdfDeposited {
+            user: user_key,
+            amount,
+            burn_amount,
+            rebate_pool_amount,
+            pending_contribution: user_stats.pending_contribution,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Fee deposited: {} total ({} burn, {} rebate pool)",
+            amount, burn_amount, rebate_pool_amount);
+
+        Ok(())
+    }
+
+    /// Process user rebate - transfer from pool to selected user
+    /// Called as LAST instruction in ROOT cycle batch
+    ///
+    /// NOTE: This instruction does NOT burn. The burn happens in the single
+    /// ROOT cycle burn instruction which includes all DAT ATA balance
+    /// (buyback + user deposits 99.448%).
+    ///
+    /// This instruction only:
+    /// 1. Validates user eligibility (pending >= threshold)
+    /// 2. Calculates rebate amount (0.552% of pending)
+    /// 3. Transfers rebate from pool → user ATA
+    /// 4. Resets pending and updates stats
+    pub fn process_user_rebate(ctx: Context<ProcessUserRebate>) -> Result<()> {
+        let clock = Clock::get()?;
+        let user_stats = &mut ctx.accounts.user_stats;
+
+        // Validate: pending >= threshold
+        require!(
+            user_stats.pending_contribution >= REBATE_THRESHOLD_SOL_EQUIV,
+            ErrorCode::BelowRebateThreshold
+        );
+
+        let pending = user_stats.pending_contribution;
+
+        // Calculate rebate amount (0.552% of pending)
+        let rebate_amount = pending
+            .checked_mul(REBATE_SHARE_BPS as u64)
+            .ok_or(ErrorCode::MathOverflow)?
+            .checked_div(10000)
+            .ok_or(ErrorCode::MathOverflow)?;
+
+        // Validate pool has sufficient funds
+        require!(
+            ctx.accounts.rebate_pool_ata.amount >= rebate_amount,
+            ErrorCode::RebatePoolInsufficient
+        );
+
+        // Transfer rebate from pool → user ATA
+        let rebate_pool_bump = ctx.accounts.rebate_pool.bump;
+        let seeds: &[&[u8]] = &[REBATE_POOL_SEED, &[rebate_pool_bump]];
+
+        token_interface::transfer(
+            CpiContext::new_with_signer(
+                ctx.accounts.token_program.to_account_info(),
+                token_interface::Transfer {
+                    from: ctx.accounts.rebate_pool_ata.to_account_info(),
+                    to: ctx.accounts.user_ata.to_account_info(),
+                    authority: ctx.accounts.rebate_pool.to_account_info(),
+                },
+                &[seeds],
+            ),
+            rebate_amount,
+        )?;
+
+        // Update user stats
+        user_stats.pending_contribution = 0;
+        user_stats.total_contributed = user_stats.total_contributed.saturating_add(pending);
+        user_stats.total_rebate = user_stats.total_rebate.saturating_add(rebate_amount);
+        user_stats.last_update_timestamp = clock.unix_timestamp;
+        user_stats.last_update_slot = clock.slot;
+
+        // Update rebate pool stats
+        let rebate_pool = &mut ctx.accounts.rebate_pool;
+        rebate_pool.total_distributed = rebate_pool.total_distributed.saturating_add(rebate_amount);
+        rebate_pool.rebates_count = rebate_pool.rebates_count.saturating_add(1);
+        rebate_pool.last_rebate_timestamp = clock.unix_timestamp;
+        rebate_pool.last_rebate_slot = clock.slot;
+
+        emit!(UserRebateProcessed {
+            user: ctx.accounts.user.key(),
+            pending_burned: pending,
+            rebate_amount,
+            total_contributed: user_stats.total_contributed,
+            total_rebate: user_stats.total_rebate,
+            timestamp: clock.unix_timestamp,
+        });
+
+        msg!("Rebate processed: {} pending → {} rebate to user",
+            pending, rebate_amount);
 
         Ok(())
     }

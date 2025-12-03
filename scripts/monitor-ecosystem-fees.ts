@@ -1,8 +1,10 @@
 /**
- * Ecosystem Fee Monitor Daemon
+ * Fee Attribution Daemon
  *
- * Background service that continuously monitors all ecosystem tokens
- * and tracks their fee accumulation in real-time.
+ * Optimistic Burn Protocol - monitors trading activity and attributes
+ * fees to individual tokens from the shared creator vault.
+ *
+ * Chain records everything. This daemon executes. Anyone can verify.
  *
  * Usage:
  *   npx ts-node scripts/monitor-ecosystem-fees.ts [options]
@@ -12,27 +14,20 @@
  *   --verbose                   Enable verbose logging
  *   --auto-discover             Enable periodic token discovery
  *
- * Examples:
- *   npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet
- *   npx ts-node scripts/monitor-ecosystem-fees.ts --network mainnet --auto-discover
- *
- * PM2 Usage:
- *   pm2 start scripts/monitor-ecosystem-fees.ts --name "fee-monitor" -- --network mainnet
- *
  * API Endpoints (port 3030):
  *   POST /flush           - Force flush pending fees
  *   POST /register-token  - Register new token (hot-reload)
  *   GET /tokens           - List registered tokens
- *   GET /status           - Basic daemon status
- *   GET /metrics          - Prometheus format metrics
+ *   GET /status           - Daemon status
+ *   GET /metrics          - Prometheus format
  *   GET /health           - Health check
  *
- * This script:
- * 1. Loads all ecosystem tokens from configuration
- * 2. Starts PumpFunFeeMonitor for each token
- * 3. Runs continuously, flushing fees every 30 seconds
- * 4. Optionally discovers new tokens periodically (--auto-discover)
- * 5. Handles graceful shutdown on SIGINT/SIGTERM
+ * Flow:
+ * 1. Loads ecosystem tokens from configuration
+ * 2. Polls each token's bonding curve/pool for transactions
+ * 3. Extracts vault balance deltas and attributes to correct token
+ * 4. Updates TokenStats.pending_fees on-chain
+ * 5. State persists to .daemon-state.json for crash recovery
  */
 
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";

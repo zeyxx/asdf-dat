@@ -131,6 +131,14 @@ pub struct RootTokenSet {
     pub timestamp: i64,
 }
 
+/// Emitted when ASDF mint is updated (TESTING mode only)
+#[event]
+pub struct AsdfMintUpdated {
+    pub old_mint: Pubkey,
+    pub new_mint: Pubkey,
+    pub timestamp: i64,
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // FEE EVENTS
 // ══════════════════════════════════════════════════════════════════════════════
@@ -208,5 +216,47 @@ pub struct ValidatedFeesRegistered {
     pub end_slot: u64,
     pub tx_count: u32,
     pub total_pending: u64,
+    pub timestamp: i64,
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXTERNAL APP INTEGRATION EVENTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Emitted when rebate pool is initialized
+#[event]
+pub struct RebatePoolInitialized {
+    pub rebate_pool: Pubkey,
+    pub rebate_pool_ata: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Emitted when user stats are initialized
+#[event]
+pub struct UserStatsInitialized {
+    pub user: Pubkey,
+    pub user_stats: Pubkey,
+    pub timestamp: i64,
+}
+
+/// Emitted when $ASDF fee is deposited via external app
+#[event]
+pub struct FeeAsdfDeposited {
+    pub user: Pubkey,
+    pub amount: u64,
+    pub burn_amount: u64,
+    pub rebate_pool_amount: u64,
+    pub pending_contribution: u64,
+    pub timestamp: i64,
+}
+
+/// Emitted when user rebate is processed
+#[event]
+pub struct UserRebateProcessed {
+    pub user: Pubkey,
+    pub pending_burned: u64,
+    pub rebate_amount: u64,
+    pub total_contributed: u64,
+    pub total_rebate: u64,
     pub timestamp: i64,
 }

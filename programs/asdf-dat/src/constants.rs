@@ -4,10 +4,10 @@ use anchor_lang::prelude::*;
 // MAINNET TOKEN ADDRESSES
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// $ASDF token mint (mainnet)
+/// $ASDF token mint (mainnet): 9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump
 pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([
-    140, 47, 4, 227, 97, 106, 121, 165, 182, 1, 57, 199, 219, 179, 84, 96,
-    133, 60, 197, 80, 154, 74, 254, 48, 216, 94, 192, 158, 146, 118, 39, 244
+    133, 131, 1, 60, 248, 103, 229, 16, 174, 94, 254, 95, 44, 230, 127, 216,
+    209, 16, 36, 3, 140, 127, 58, 109, 149, 250, 73, 0, 212, 5, 39, 95
 ]);
 
 /// Wrapped SOL mint
@@ -111,6 +111,21 @@ pub const MAYHEM_AGENT_WALLET: Pubkey = Pubkey::new_from_array([
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DEV SUSTAINABILITY
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Dev sustainability wallet: dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4
+/// Receives 1% of secondary burns - keeps infrastructure running
+/// 1% today = 99% burns forever
+pub const DEV_WALLET: Pubkey = Pubkey::new_from_array([
+    9, 97, 12, 254, 90, 14, 23, 86, 57, 91, 82, 93, 3, 190, 97, 174,
+    236, 104, 14, 8, 135, 85, 242, 4, 180, 76, 160, 246, 199, 117, 11, 155
+]);
+
+/// Dev fee in basis points (100 = 1%)
+pub const DEV_FEE_BPS: u16 = 100;
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PDA SEEDS
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -133,6 +148,32 @@ pub const VALIDATOR_STATE_SEED: &[u8] = b"validator_v1";
 pub const PUMPSWAP_CREATOR_VAULT_SEED: &[u8] = b"creator_vault";
 
 // ══════════════════════════════════════════════════════════════════════════════
+// EXTERNAL APP INTEGRATION (Phase 2 Ready)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// UserStats PDA seed (tracks external app user contributions)
+pub const USER_STATS_SEED: &[u8] = b"user_stats_v1";
+
+/// RebatePool PDA seed (self-sustaining rebate fund)
+pub const REBATE_POOL_SEED: &[u8] = b"rebate_pool";
+
+/// Burn share in basis points (99.448% → burn via DAT ATA)
+/// The remaining 0.552% goes to rebate pool
+pub const BURN_SHARE_BPS: u16 = 9945; // 99.45% (rounded)
+
+/// Rebate share in basis points (0.552% → rebate pool)
+/// Self-sustaining: always funded by deposits
+pub const REBATE_SHARE_BPS: u16 = 55; // 0.55% (rounded)
+
+/// Minimum deposit in lamports (~0.01 SOL equivalent in $ASDF)
+/// Calculated at runtime using PumpSwap pool price
+pub const MIN_DEPOSIT_SOL_EQUIV: u64 = 10_000_000; // 0.01 SOL
+
+/// Rebate eligibility threshold in lamports (~0.07 SOL equivalent in $ASDF)
+/// Users must contribute this much to be eligible for rebate lottery
+pub const REBATE_THRESHOLD_SOL_EQUIV: u64 = 70_000_000; // 0.07 SOL
+
+// ══════════════════════════════════════════════════════════════════════════════
 // INSTRUCTION DISCRIMINATORS (8-byte hashes)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -152,30 +193,34 @@ pub const PUMPSWAP_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 23
 pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42, 181, 139, 43, 66];
 
 // ══════════════════════════════════════════════════════════════════════════════
-// OPERATIONAL THRESHOLDS
+// FLUSH THRESHOLDS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Minimum fees required to claim (0.01 SOL)
-pub const MIN_FEES_TO_CLAIM: u64 = 10_000_000;
+/// Flush threshold - minimum fees before cycle executes (0.01 SOL)
+/// Accumulate until threshold to reduce transaction costs
+pub const FLUSH_THRESHOLD: u64 = 10_000_000;
 
-/// Maximum fees per cycle (69420 SOL - effectively unlimited, market decides via slippage)
+/// Alias for backward compatibility
+pub const MIN_FEES_TO_CLAIM: u64 = FLUSH_THRESHOLD;
+
+/// Maximum fees per flush - effectively unlimited (69420 SOL)
+/// Market-driven cap via slippage protection instead of artificial limits
 pub const MAX_FEES_PER_CYCLE: u64 = 69_420_000_000_000;
 
-/// Initial slippage tolerance (5%)
+/// Slippage protection (5%) - prevents unfavorable execution
 pub const INITIAL_SLIPPAGE_BPS: u16 = 500;
 
-/// Minimum interval between cycles (60 seconds)
+/// Minimum interval between flushes (60 seconds)
+/// Prevents spam while allowing responsive execution
 pub const MIN_CYCLE_INTERVAL: i64 = 60;
 
 /// Maximum pending fees per token (69 SOL)
-/// Rationale: 69 SOL represents ~6900 trades with 0.01 SOL fee each,
-/// well beyond typical accumulation between daemon flushes.
-/// This limit prevents excessive accumulation, potential overflow,
-/// and ensures proportional distribution remains fair.
+/// ~6900 trades at 0.01 SOL each - well beyond typical daemon sync interval
+/// Prevents accumulation overflow and ensures fair distribution
 pub const MAX_PENDING_FEES: u64 = 69_000_000_000;
 
 // ══════════════════════════════════════════════════════════════════════════════
-// EXECUTE BUY CONSTANTS (module level to reduce stack usage)
+// BURN CYCLE RESERVES
 // ══════════════════════════════════════════════════════════════════════════════
 
 /// Rent exempt minimum for token accounts (~0.00089 SOL)
@@ -187,7 +232,8 @@ pub const SAFETY_BUFFER: u64 = 50_000;
 /// ATA rent reserve (~0.0021 SOL)
 pub const ATA_RENT_RESERVE: u64 = 2_100_000;
 
-/// Minimum fees required before split (~0.0055 SOL)
+/// Minimum fees before split is worthwhile (~0.0055 SOL)
+/// Below this, transaction costs exceed value
 pub const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
 
 /// Minimum buy amount (~0.0001 SOL)

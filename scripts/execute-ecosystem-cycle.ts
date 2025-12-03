@@ -1,31 +1,30 @@
 /**
- * Execute Ecosystem Cycle - Complete orchestration of hierarchical token buyback
+ * Flush Orchestrator
  *
- * This script orchestrates the complete ecosystem cycle:
- * 1. Query pending fees from all secondary tokens
- * 2. Collect all fees from creator vault (once)
- * 3. Calculate proportional distribution
- * 4. Execute buy for each secondary token with allocated amount
- * 5. Finalize each secondary token (reset pending_fees, increment cycles)
- * 6. Execute root token cycle with accumulated fees
+ * Optimistic Burn Protocol - executes the complete flush cycle:
+ * Collect fees → Buy tokens → Burn → Verify
  *
- * Architecture: Root token receives 44.8% from all secondaries
+ * Flow:
+ * 1. Query pending_fees from all TokenStats
+ * 2. Collect fees from shared creator vault
+ * 3. Calculate proportional distribution (55.2% secondary / 44.8% root)
+ * 4. Execute buyback for each token with allocated amount
+ * 5. Burn acquired tokens
+ * 6. Update on-chain state (reset pending_fees, increment cycles)
  *
  * Usage:
  *   npx ts-node scripts/execute-ecosystem-cycle.ts [options]
  *
  * Options:
  *   --network devnet|mainnet   Select network (default: devnet)
- *   --dry-run                  Preview cycle without executing (outputs JSON + console report)
- *
- * Examples:
- *   npx ts-node scripts/execute-ecosystem-cycle.ts --network devnet
- *   npx ts-node scripts/execute-ecosystem-cycle.ts --network mainnet --dry-run
+ *   --dry-run                  Preview without executing
  *
  * Requirements:
- *   - All tokens must be initialized with TokenStats
- *   - Root token must be configured (set_root_token)
- *   - Fee monitoring should be running (to populate pending_fees)
+ *   - TokenStats initialized for all tokens
+ *   - Root token configured (set_root_token)
+ *   - Fee daemon running (to populate pending_fees)
+ *
+ * Verify on-chain: all burns recorded, supply reduced, cycle count incremented.
  */
 
 import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction, Commitment } from '@solana/web3.js';
@@ -44,6 +43,14 @@ import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, is
 import { ExecutionLock, LockError } from '../lib/execution-lock';
 import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
 import { validateAlertingEnv } from '../lib/env-validator';
+import {
+  deriveRebatePoolPda,
+  deriveUserStatsPda,
+  getEligibleUsers,
+  selectUserForRebate,
+  calculateRebateAmount,
+} from '../lib/user-pool';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 
 // ============================================================================
 // Constants & Configuration
@@ -54,6 +61,8 @@ const DAT_STATE_SEED = Buffer.from('dat_v3');
 const DAT_AUTHORITY_SEED = Buffer.from('auth_v3');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 const ROOT_TREASURY_SEED = Buffer.from('root_treasury');
+const USER_STATS_SEED = Buffer.from('user_stats_v1');
+const REBATE_POOL_SEED = Buffer.from('rebate_pool');
 
 // PumpFun Bonding Curve Program
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
@@ -69,6 +78,11 @@ const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nas
 const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+
+// Dev sustainability wallet - receives 1% of secondary burns
+// 1% today = 99% burns forever
+const DEV_WALLET = new PublicKey('dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4');
+const DEV_FEE_BPS = 100; // 1%
 
 // ============================================================================
 // Scalability Constants (aligned with lib.rs execute_buy)
@@ -1850,8 +1864,24 @@ async function executeSecondaryWithAllocation(
 
     instructions.push(burnIx);
 
+    // Dev sustainability fee - 1% of secondary share (after split)
+    // This is the 99/1 split: 99% burned, 1% keeps infrastructure running
+    log('  📦', 'Building dev fee instruction...', colors.cyan);
+    const secondaryShareLamports = Math.floor(allocation.allocation * SECONDARY_KEEP_RATIO);
+    const devFeeIx = await program.methods
+      .transferDevFee(new BN(secondaryShareLamports))
+      .accounts({
+        datState,
+        datAuthority,
+        devWallet: DEV_WALLET,
+        systemProgram: SystemProgram.programId,
+      })
+      .instruction();
+
+    instructions.push(devFeeIx);
+
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn + devFee)...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
@@ -2246,8 +2276,80 @@ async function executeRootCycle(
 
     instructions.push(burnIx);
 
+    // Process user rebate (if eligible user exists)
+    // This is the LAST instruction in the ROOT cycle batch
+    let selectedUserForRebate = null;
+    try {
+      log('  🎲', 'Checking for eligible rebate users...', colors.cyan);
+
+      // Get eligible users
+      const eligibleUsers = await getEligibleUsers(program, program.programId);
+
+      if (eligibleUsers.length > 0) {
+        // Get current slot for random selection
+        const currentSlot = await program.provider.connection.getSlot();
+        selectedUserForRebate = selectUserForRebate(eligibleUsers, currentSlot);
+
+        if (selectedUserForRebate) {
+          log('  🎯', `Selected user for rebate: ${selectedUserForRebate.pubkey.toBase58().slice(0, 8)}...`, colors.cyan);
+          log('  💰', `Pending: ${selectedUserForRebate.pendingContribution.toNumber() / 1e9} $ASDF`, colors.cyan);
+
+          // Derive rebate pool accounts
+          const [rebatePool] = deriveRebatePoolPda(program.programId);
+          // IMPORTANT: Rebate pool uses ASDF mint from DAT state, NOT root token mint
+          // On devnet: root=TROOT, but asdfMint=FROOT in DAT state
+          const datStateAccount = await getTypedAccounts(program).datState.fetch(datState);
+          const asdfMint = datStateAccount.asdfMint;
+
+          // Get rebate pool ATA
+          const rebatePoolAta = await getAssociatedTokenAddress(
+            asdfMint,
+            rebatePool,
+            true // Allow owner off curve (PDA)
+          );
+
+          // Get user ATA
+          const userAta = await getAssociatedTokenAddress(
+            asdfMint,
+            selectedUserForRebate.pubkey,
+            false
+          );
+
+          // Calculate rebate amount (0.552% of pending)
+          const rebateAmount = calculateRebateAmount(selectedUserForRebate.pendingContribution);
+          log('  🎁', `Rebate amount: ${rebateAmount.toNumber() / 1e9} $ASDF`, colors.cyan);
+
+          // Build process_user_rebate instruction
+          const rebateIx = await program.methods
+            .processUserRebate()
+            .accounts({
+              datState,
+              rebatePool,
+              rebatePoolAta,
+              userStats: selectedUserForRebate.statsPda,
+              user: selectedUserForRebate.pubkey,
+              userAta,
+              admin: adminKeypair.publicKey,
+              tokenProgram,
+            })
+            .instruction();
+
+          instructions.push(rebateIx);
+          log('  📦', 'Added process_user_rebate instruction to batch', colors.cyan);
+        }
+      } else {
+        log('  ℹ️', 'No eligible users for rebate this cycle', colors.cyan);
+      }
+    } catch (error) {
+      // Rebate processing is optional - don't fail the whole cycle
+      log('  ⚠️', `Rebate check failed (non-fatal): ${(error as Error).message}`, colors.yellow);
+    }
+
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
+    const batchDesc = selectedUserForRebate
+      ? 'compute + collect + buy + finalize + burn + rebate'
+      : 'compute + collect + buy + finalize + burn';
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: ${batchDesc})...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
