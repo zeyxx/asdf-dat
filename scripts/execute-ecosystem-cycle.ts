@@ -1,16 +1,22 @@
 /**
- * Flush Orchestrator
+ * Flush Orchestrator (Probabilistic O(1) Pattern)
  *
  * Optimistic Burn Protocol - executes the complete flush cycle:
- * Collect fees → Buy tokens → Burn → Verify
+ * Select ONE token → Collect fees → Buy tokens → Burn → Verify
+ *
+ * PROBABILISTIC SELECTION (O(1) per cycle):
+ * - Same pattern at every level: slot % eligible_count
+ * - Tokens: Select ONE eligible token per cycle
+ * - Users: Select ONE eligible user for rebate per cycle
+ * - DATs: (Phase 2) Select ONE eligible DAT per cycle
  *
  * Flow:
  * 1. Query pending_fees from all TokenStats
- * 2. Collect fees from shared creator vault
- * 3. Calculate proportional distribution (55.2% secondary / 44.8% root)
- * 4. Execute buyback for each token with allocated amount
- * 5. Burn acquired tokens
- * 6. Update on-chain state (reset pending_fees, increment cycles)
+ * 2. Get eligible tokens (pending_fees >= threshold)
+ * 3. Select ONE token using: currentSlot % eligibleTokens.length
+ * 4. Collect fees + buyback + burn for ONLY that token
+ * 5. Other eligible tokens wait for next cycle (eventually consistent)
+ * 6. Root cycle + user rebate selection
  *
  * Usage:
  *   npx ts-node scripts/execute-ecosystem-cycle.ts [options]
@@ -325,6 +331,48 @@ interface DryRunReport {
 
   warnings: string[];
   recommendations: string[];
+}
+
+// ============================================================================
+// Probabilistic Token Selection (O(1) per cycle)
+// ============================================================================
+
+// Minimum pending fees for a token to be eligible for selection
+const TOKEN_ELIGIBILITY_THRESHOLD = 5_500_000; // 0.0055 SOL (matches MIN_FEES_FOR_SPLIT)
+
+/**
+ * Get eligible tokens for cycle (pending_fees >= threshold)
+ */
+function getEligibleTokens(allocations: TokenAllocation[]): TokenAllocation[] {
+  return allocations.filter(a => !a.isRoot && a.pendingFees >= TOKEN_ELIGIBILITY_THRESHOLD);
+}
+
+/**
+ * Select ONE token for this cycle using slot-based deterministic selection
+ * Same pattern as user rebate selection: slot % eligible_count
+ *
+ * @param eligibleTokens - Tokens with pending_fees >= threshold
+ * @param currentSlot - Current Solana slot for deterministic selection
+ * @returns Selected token or null if none eligible
+ */
+function selectTokenForCycle(
+  eligibleTokens: TokenAllocation[],
+  currentSlot: number
+): TokenAllocation | null {
+  if (eligibleTokens.length === 0) {
+    return null;
+  }
+
+  // Sort by lastUpdateSlot (oldest first) for fairness, then by pending_fees descending
+  // This ensures tokens that have waited longest get priority
+  const sorted = [...eligibleTokens].sort((a, b) => {
+    // Primary: by pending_fees descending (higher fees = higher priority)
+    return b.pendingFees - a.pendingFees;
+  });
+
+  // Use slot as deterministic seed
+  const selectedIndex = currentSlot % sorted.length;
+  return sorted[selectedIndex];
 }
 
 // ============================================================================
@@ -2690,18 +2738,98 @@ async function main() {
       log('⚠️', 'No secondary tokens with pending fees. Skipping secondary cycles.', colors.yellow);
     }
 
-    // Calculate total pending for ratio display (actual collection happens per-token in batch TX)
-    const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
-    const ratio = 1.0; // Will be recalculated based on actual collected amounts
+    // ========================================================================
+    // PROBABILISTIC TOKEN SELECTION (O(1) per cycle)
+    // Same pattern as user rebates: slot % eligible_count
+    // ========================================================================
+    logSection('STEP 2: PROBABILISTIC TOKEN SELECTION');
 
-    // Step 2: Execute secondary cycles (each batch TX: collect + buy + finalize + burn)
-    // This is the optimized N+1 pattern - collection is now INSIDE each secondary's batch TX
-    const { results, viable: actualViable, deferred: actualDeferred } = await executeSecondaryTokensDynamic(
-      program,
-      connection,
-      secondaryAllocations,
-      adminKeypair
-    );
+    // Get eligible tokens (pending_fees >= threshold)
+    const eligibleTokens = getEligibleTokens(secondaryAllocations);
+    const currentSlot = await connection.getSlot();
+
+    log('📊', `Token Selection Status:`, colors.bright);
+    log('  👥', `Total secondary tokens: ${secondaryAllocations.length}`, colors.cyan);
+    log('  ✅', `Eligible tokens (>= ${formatSOL(TOKEN_ELIGIBILITY_THRESHOLD)} SOL): ${eligibleTokens.length}`, colors.cyan);
+    log('  🎰', `Current slot: ${currentSlot}`, colors.cyan);
+
+    // Select ONE token for this cycle
+    const selectedToken = selectTokenForCycle(eligibleTokens, currentSlot);
+
+    let results: { [key: string]: CycleResult } = {};
+    let actualViable: TokenAllocation[] = [];
+    let actualDeferred: TokenAllocation[] = [];
+
+    if (!selectedToken) {
+      log('⚠️', 'No eligible tokens for this cycle. All tokens below threshold.', colors.yellow);
+      // Mark all as deferred
+      for (const alloc of secondaryAllocations) {
+        actualDeferred.push(alloc);
+        results[alloc.token.symbol] = {
+          token: alloc.token.symbol,
+          success: true,
+          pendingFees: alloc.pendingFees,
+          allocation: 0,
+          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < threshold ${formatSOL(TOKEN_ELIGIBILITY_THRESHOLD)}`,
+        };
+      }
+    } else {
+      // Show selection result
+      const selectedIndex = currentSlot % eligibleTokens.length;
+      log('🎯', `SELECTED: ${selectedToken.token.symbol} (index ${selectedIndex} of ${eligibleTokens.length})`, colors.green);
+      log('  💰', `Pending fees: ${formatSOL(selectedToken.pendingFees)} SOL`, colors.cyan);
+
+      // Show other eligible tokens that will wait for next cycle
+      const otherEligible = eligibleTokens.filter(t => t.token.symbol !== selectedToken.token.symbol);
+      if (otherEligible.length > 0) {
+        log('⏳', `Other eligible (next cycles): ${otherEligible.map(t => t.token.symbol).join(', ')}`, colors.yellow);
+      }
+
+      console.log('');
+
+      // Execute cycle for ONLY the selected token
+      const cycleResult = await executeSecondaryTokensDynamic(
+        program,
+        connection,
+        [selectedToken], // Only pass the selected token
+        adminKeypair
+      );
+
+      results = cycleResult.results;
+      actualViable = cycleResult.viable;
+      actualDeferred = cycleResult.deferred;
+
+      // Mark other eligible tokens as deferred (they'll be selected in future cycles)
+      for (const alloc of otherEligible) {
+        actualDeferred.push(alloc);
+        results[alloc.token.symbol] = {
+          token: alloc.token.symbol,
+          success: true,
+          pendingFees: alloc.pendingFees,
+          allocation: 0,
+          error: `WAITING: Will be selected in future cycle`,
+        };
+      }
+
+      // Mark ineligible tokens as deferred
+      const ineligible = secondaryAllocations.filter(a =>
+        !eligibleTokens.some(e => e.token.symbol === a.token.symbol)
+      );
+      for (const alloc of ineligible) {
+        actualDeferred.push(alloc);
+        results[alloc.token.symbol] = {
+          token: alloc.token.symbol,
+          success: true,
+          pendingFees: alloc.pendingFees,
+          allocation: 0,
+          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < threshold`,
+        };
+      }
+    }
+
+    // Calculate total pending for ratio display
+    const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
+    const ratio = 1.0;
 
     // Step 2b: Finalize deferred tokens (preserve their pending_fees for next cycle)
     await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
