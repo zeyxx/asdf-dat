@@ -389,3 +389,5 @@ If doubt exists, ask first.
 
 *Flush. Burn. Verify.*
 *This is fine.* 🔥🐕
+- organic always win.
+- ASDF - Optimistic Burn Protocol
