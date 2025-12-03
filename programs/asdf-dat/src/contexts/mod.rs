@@ -691,3 +691,147 @@ pub struct TransferDevFee<'info> {
 
     pub system_program: Program<'info, System>,
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXTERNAL APP INTEGRATION CONTEXTS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// InitializeRebatePool - Initialize the self-sustaining rebate pool
+/// Called once during protocol setup
+#[derive(Accounts)]
+pub struct InitializeRebatePool<'info> {
+    #[account(
+        init,
+        payer = admin,
+        space = 8 + RebatePool::LEN,
+        seeds = [REBATE_POOL_SEED],
+        bump
+    )]
+    pub rebate_pool: Account<'info, RebatePool>,
+
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// Admin must authorize initialization
+    #[account(
+        mut,
+        constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess
+    )]
+    pub admin: Signer<'info>,
+
+    pub system_program: Program<'info, System>,
+}
+
+/// DepositFeeAsdf - External app deposits $ASDF fees with automatic split
+/// Split: 99.448% → DAT ATA (burn), 0.552% → Rebate Pool ATA (rebates)
+#[derive(Accounts)]
+pub struct DepositFeeAsdf<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// CHECK: DAT authority PDA
+    #[account(seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+
+    /// Rebate pool state (for tracking deposits)
+    #[account(
+        mut,
+        seeds = [REBATE_POOL_SEED],
+        bump = rebate_pool.bump
+    )]
+    pub rebate_pool: Account<'info, RebatePool>,
+
+    /// User stats - initialized if needed
+    /// Protocol pays rent via dat_authority
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = 8 + UserStats::LEN,
+        seeds = [USER_STATS_SEED, user.key().as_ref()],
+        bump
+    )]
+    pub user_stats: Account<'info, UserStats>,
+
+    /// The user whose contribution is being tracked
+    /// CHECK: Any valid pubkey (user being credited)
+    pub user: AccountInfo<'info>,
+
+    /// Payer's $ASDF token account (source of deposit)
+    #[account(
+        mut,
+        constraint = payer_token_account.mint == dat_state.asdf_mint @ ErrorCode::MintMismatch
+    )]
+    pub payer_token_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// DAT's $ASDF token account (receives 99.448% for burn)
+    #[account(
+        mut,
+        constraint = dat_asdf_account.mint == dat_state.asdf_mint @ ErrorCode::MintMismatch,
+        constraint = dat_asdf_account.owner == dat_authority.key() @ ErrorCode::InvalidParameter
+    )]
+    pub dat_asdf_account: InterfaceAccount<'info, TokenAccount>,
+
+    /// Rebate pool's $ASDF ATA (receives 0.552% for rebates)
+    #[account(
+        mut,
+        constraint = rebate_pool_ata.mint == dat_state.asdf_mint @ ErrorCode::MintMismatch
+    )]
+    pub rebate_pool_ata: InterfaceAccount<'info, TokenAccount>,
+
+    /// Transaction payer (can be builder or protocol)
+    #[account(mut)]
+    pub payer: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+    pub system_program: Program<'info, System>,
+}
+
+/// ProcessUserRebate - Transfer rebate from pool to selected user
+/// Called as LAST instruction in ROOT cycle batch
+/// NOTE: Does NOT burn - burn is done in single ROOT cycle burn instruction
+#[derive(Accounts)]
+pub struct ProcessUserRebate<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// Rebate pool authority PDA
+    #[account(
+        mut,
+        seeds = [REBATE_POOL_SEED],
+        bump = rebate_pool.bump
+    )]
+    pub rebate_pool: Account<'info, RebatePool>,
+
+    /// Rebate pool's $ASDF ATA (source of rebate funds)
+    #[account(
+        mut,
+        constraint = rebate_pool_ata.mint == dat_state.asdf_mint @ ErrorCode::MintMismatch
+    )]
+    pub rebate_pool_ata: InterfaceAccount<'info, TokenAccount>,
+
+    /// Selected user's stats
+    #[account(
+        mut,
+        seeds = [USER_STATS_SEED, user.key().as_ref()],
+        bump = user_stats.bump,
+        constraint = user_stats.user == user.key() @ ErrorCode::InvalidParameter
+    )]
+    pub user_stats: Account<'info, UserStats>,
+
+    /// CHECK: User receiving rebate
+    pub user: AccountInfo<'info>,
+
+    /// User's $ASDF ATA (destination for rebate)
+    #[account(
+        mut,
+        constraint = user_ata.mint == dat_state.asdf_mint @ ErrorCode::MintMismatch,
+        constraint = user_ata.owner == user.key() @ ErrorCode::InvalidParameter
+    )]
+    pub user_ata: InterfaceAccount<'info, TokenAccount>,
+
+    /// Admin authorization for rebate processing
+    #[account(constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
+
+    pub token_program: Interface<'info, TokenInterface>,
+}

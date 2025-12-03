@@ -4,10 +4,10 @@ use anchor_lang::prelude::*;
 // MAINNET TOKEN ADDRESSES
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// $ASDF token mint (mainnet)
+/// $ASDF token mint (mainnet): 9zB5wRarXMj86MymwLumSKA1Dx35zPqqKfcZtK1Spump
 pub const ASDF_MINT: Pubkey = Pubkey::new_from_array([
-    140, 47, 4, 227, 97, 106, 121, 165, 182, 1, 57, 199, 219, 179, 84, 96,
-    133, 60, 197, 80, 154, 74, 254, 48, 216, 94, 192, 158, 146, 118, 39, 244
+    133, 131, 1, 60, 248, 103, 229, 16, 174, 94, 254, 95, 44, 230, 127, 216,
+    209, 16, 36, 3, 140, 127, 58, 109, 149, 250, 73, 0, 212, 5, 39, 95
 ]);
 
 /// Wrapped SOL mint
@@ -146,6 +146,32 @@ pub const VALIDATOR_STATE_SEED: &[u8] = b"validator_v1";
 
 /// PumpSwap Creator Vault seed (note: underscore, not hyphen)
 pub const PUMPSWAP_CREATOR_VAULT_SEED: &[u8] = b"creator_vault";
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EXTERNAL APP INTEGRATION (Phase 2 Ready)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// UserStats PDA seed (tracks external app user contributions)
+pub const USER_STATS_SEED: &[u8] = b"user_stats_v1";
+
+/// RebatePool PDA seed (self-sustaining rebate fund)
+pub const REBATE_POOL_SEED: &[u8] = b"rebate_pool";
+
+/// Burn share in basis points (99.448% → burn via DAT ATA)
+/// The remaining 0.552% goes to rebate pool
+pub const BURN_SHARE_BPS: u16 = 9945; // 99.45% (rounded)
+
+/// Rebate share in basis points (0.552% → rebate pool)
+/// Self-sustaining: always funded by deposits
+pub const REBATE_SHARE_BPS: u16 = 55; // 0.55% (rounded)
+
+/// Minimum deposit in lamports (~0.01 SOL equivalent in $ASDF)
+/// Calculated at runtime using PumpSwap pool price
+pub const MIN_DEPOSIT_SOL_EQUIV: u64 = 10_000_000; // 0.01 SOL
+
+/// Rebate eligibility threshold in lamports (~0.07 SOL equivalent in $ASDF)
+/// Users must contribute this much to be eligible for rebate lottery
+pub const REBATE_THRESHOLD_SOL_EQUIV: u64 = 70_000_000; // 0.07 SOL
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INSTRUCTION DISCRIMINATORS (8-byte hashes)

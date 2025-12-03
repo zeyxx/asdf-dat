@@ -102,4 +102,20 @@ pub enum ErrorCode {
 
     #[msg("Invalid dev wallet address")]
     InvalidDevWallet,
+
+    // External App Integration errors
+    #[msg("Deposit below minimum threshold")]
+    DepositBelowMinimum,
+
+    #[msg("User pending contribution below rebate threshold")]
+    BelowRebateThreshold,
+
+    #[msg("Invalid rebate pool")]
+    InvalidRebatePool,
+
+    #[msg("Rebate pool insufficient funds")]
+    RebatePoolInsufficient,
+
+    #[msg("User stats not found")]
+    UserStatsNotFound,
 }

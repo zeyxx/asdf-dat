@@ -694,6 +694,177 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "depositFeeAsdf",
+      "docs": [
+        "External app deposits $ASDF fees with automatic split",
+        "Split: 99.448% → DAT ATA (burn), 0.552% → Rebate Pool ATA (rebates)",
+        "",
+        "Architecture:",
+        "- Payer transfers full amount",
+        "- 99.448% goes to DAT ATA (included in ROOT cycle single burn)",
+        "- 0.552% goes to Rebate Pool ATA (self-sustaining fund)",
+        "- UserStats.pending_contribution tracks full amount for rebate calculation"
+      ],
+      "discriminator": [
+        46,
+        188,
+        111,
+        45,
+        29,
+        66,
+        46,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rebatePool",
+          "docs": [
+            "Rebate pool state (for tracking deposits)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  98,
+                  97,
+                  116,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "userStats",
+          "docs": [
+            "User stats - initialized if needed",
+            "Protocol pays rent via dat_authority"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "docs": [
+            "The user whose contribution is being tracked"
+          ]
+        },
+        {
+          "name": "payerTokenAccount",
+          "docs": [
+            "Payer's $ASDF token account (source of deposit)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "datAsdfAccount",
+          "docs": [
+            "DAT's $ASDF token account (receives 99.448% for burn)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "rebatePoolAta",
+          "docs": [
+            "Rebate pool's $ASDF ATA (receives 0.552% for rebates)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "payer",
+          "docs": [
+            "Transaction payer (can be builder or protocol)"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "emergencyPause",
       "discriminator": [
         21,
@@ -1325,6 +1496,80 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "initializeRebatePool",
+      "docs": [
+        "Initialize the self-sustaining rebate pool",
+        "Called once during protocol setup"
+      ],
+      "discriminator": [
+        111,
+        130,
+        48,
+        237,
+        239,
+        39,
+        126,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "rebatePool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  98,
+                  97,
+                  116,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin must authorize initialization"
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initializeTokenStats",
       "discriminator": [
         234,
@@ -1492,6 +1737,141 @@ export type AsdfDat = {
         {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "processUserRebate",
+      "docs": [
+        "Process user rebate - transfer from pool to selected user",
+        "Called as LAST instruction in ROOT cycle batch",
+        "",
+        "NOTE: This instruction does NOT burn. The burn happens in the single",
+        "ROOT cycle burn instruction which includes all DAT ATA balance",
+        "(buyback + user deposits 99.448%).",
+        "",
+        "This instruction only:",
+        "1. Validates user eligibility (pending >= threshold)",
+        "2. Calculates rebate amount (0.552% of pending)",
+        "3. Transfers rebate from pool → user ATA",
+        "4. Resets pending and updates stats"
+      ],
+      "discriminator": [
+        134,
+        186,
+        58,
+        80,
+        169,
+        72,
+        254,
+        185
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rebatePool",
+          "docs": [
+            "Rebate pool authority PDA"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  98,
+                  97,
+                  116,
+                  101,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "rebatePoolAta",
+          "docs": [
+            "Rebate pool's $ASDF ATA (source of rebate funds)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "userStats",
+          "docs": [
+            "Selected user's stats"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  115,
+                  95,
+                  118,
+                  49
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user"
+        },
+        {
+          "name": "userAta",
+          "docs": [
+            "User's $ASDF ATA (destination for rebate)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "admin",
+          "docs": [
+            "Admin authorization for rebate processing"
+          ],
+          "signer": true
+        },
+        {
+          "name": "tokenProgram"
         }
       ],
       "args": []
@@ -2506,6 +2886,19 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "rebatePool",
+      "discriminator": [
+        111,
+        211,
+        11,
+        147,
+        116,
+        127,
+        107,
+        35
+      ]
+    },
+    {
       "name": "tokenStats",
       "discriminator": [
         7,
@@ -2516,6 +2909,19 @@ export type AsdfDat = {
         79,
         202,
         236
+      ]
+    },
+    {
+      "name": "userStats",
+      "discriminator": [
+        176,
+        223,
+        136,
+        27,
+        122,
+        79,
+        32,
+        227
       ]
     },
     {
@@ -2586,6 +2992,19 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "asdfMintUpdated",
+      "discriminator": [
+        167,
+        181,
+        14,
+        29,
+        112,
+        208,
+        150,
+        125
+      ]
+    },
+    {
       "name": "buyExecuted",
       "discriminator": [
         183,
@@ -2651,6 +3070,19 @@ export type AsdfDat = {
       ]
     },
     {
+      "name": "feeAsdfDeposited",
+      "discriminator": [
+        134,
+        114,
+        111,
+        126,
+        181,
+        127,
+        78,
+        87
+      ]
+    },
+    {
       "name": "feeSplitUpdated",
       "discriminator": [
         125,
@@ -2687,6 +3119,19 @@ export type AsdfDat = {
         52,
         54,
         125
+      ]
+    },
+    {
+      "name": "rebatePoolInitialized",
+      "discriminator": [
+        102,
+        97,
+        217,
+        218,
+        41,
+        0,
+        198,
+        109
       ]
     },
     {
@@ -2752,6 +3197,32 @@ export type AsdfDat = {
         163,
         165,
         233
+      ]
+    },
+    {
+      "name": "userRebateProcessed",
+      "discriminator": [
+        24,
+        144,
+        32,
+        83,
+        183,
+        13,
+        190,
+        77
+      ]
+    },
+    {
+      "name": "userStatsInitialized",
+      "discriminator": [
+        225,
+        137,
+        106,
+        139,
+        37,
+        103,
+        119,
+        126
       ]
     },
     {
@@ -2957,6 +3428,31 @@ export type AsdfDat = {
       "code": 6029,
       "name": "invalidDevWallet",
       "msg": "Invalid dev wallet address"
+    },
+    {
+      "code": 6030,
+      "name": "depositBelowMinimum",
+      "msg": "Deposit below minimum threshold"
+    },
+    {
+      "code": 6031,
+      "name": "belowRebateThreshold",
+      "msg": "User pending contribution below rebate threshold"
+    },
+    {
+      "code": 6032,
+      "name": "invalidRebatePool",
+      "msg": "Invalid rebate pool"
+    },
+    {
+      "code": 6033,
+      "name": "rebatePoolInsufficient",
+      "msg": "Rebate pool insufficient funds"
+    },
+    {
+      "code": 6034,
+      "name": "userStatsNotFound",
+      "msg": "User stats not found"
     }
   ],
   "types": [
@@ -3044,6 +3540,29 @@ export type AsdfDat = {
           {
             "name": "wsolAmount",
             "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "asdfMintUpdated",
+      "docs": [
+        "Emitted when ASDF mint is updated (TESTING mode only)"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "oldMint",
+            "type": "pubkey"
+          },
+          {
+            "name": "newMint",
+            "type": "pubkey"
           },
           {
             "name": "timestamp",
@@ -3443,6 +3962,41 @@ export type AsdfDat = {
       }
     },
     {
+      "name": "feeAsdfDeposited",
+      "docs": [
+        "Emitted when $ASDF fee is deposited via external app"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "burnAmount",
+            "type": "u64"
+          },
+          {
+            "name": "rebatePoolAmount",
+            "type": "u64"
+          },
+          {
+            "name": "pendingContribution",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "feeSplitUpdated",
       "docs": [
         "Emitted when fee split ratio is updated"
@@ -3511,6 +4065,114 @@ export type AsdfDat = {
           {
             "name": "totalPending",
             "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebatePool",
+      "docs": [
+        "Rebate Pool authority PDA for external app integration",
+        "",
+        "Self-sustaining model: automatically funded by 0.552% of each $ASDF deposit.",
+        "The rebate pool ATA holds $ASDF tokens for distributing rebates to users.",
+        "",
+        "Architecture:",
+        "- PDA: [\"rebate_pool\"] - Authority that can sign for ATA transfers",
+        "- ATA: getATA(rebate_pool_pda, ASDF_MINT) - Holds rebate funds",
+        "",
+        "Funding flow:",
+        "- deposit_fee_asdf() splits: 99.448% → DAT ATA, 0.552% → Rebate Pool ATA",
+        "- process_user_rebate() transfers from pool → user ATA",
+        "",
+        "PDA Seeds: [\"rebate_pool\"]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "totalDeposited",
+            "docs": [
+              "Total $ASDF deposited to pool (lifetime)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "totalDistributed",
+            "docs": [
+              "Total $ASDF distributed as rebates (lifetime)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "rebatesCount",
+            "docs": [
+              "Number of rebates processed (lifetime)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lastRebateTimestamp",
+            "docs": [
+              "Timestamp of last rebate distribution"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "lastRebateSlot",
+            "docs": [
+              "Slot of last rebate distribution"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "uniqueRecipients",
+            "docs": [
+              "Total users who received rebates (unique count)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Reserved for future use"
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "rebatePoolInitialized",
+      "docs": [
+        "Emitted when rebate pool is initialized"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "rebatePool",
+            "type": "pubkey"
+          },
+          {
+            "name": "rebatePoolAta",
+            "type": "pubkey"
           },
           {
             "name": "timestamp",
@@ -3752,6 +4414,132 @@ export type AsdfDat = {
         "fields": [
           {
             "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "userRebateProcessed",
+      "docs": [
+        "Emitted when user rebate is processed"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "pendingBurned",
+            "type": "u64"
+          },
+          {
+            "name": "rebateAmount",
+            "type": "u64"
+          },
+          {
+            "name": "totalContributed",
+            "type": "u64"
+          },
+          {
+            "name": "totalRebate",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "userStats",
+      "docs": [
+        "User contribution statistics for external app integration",
+        "",
+        "Tracks individual user contributions from external apps paying in $ASDF.",
+        "Users accumulate pending_contribution until selected in rebate lottery.",
+        "",
+        "PDA Seeds: [\"user_stats_v1\", user_pubkey]"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump seed"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "user",
+            "docs": [
+              "The user's wallet address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pendingContribution",
+            "docs": [
+              "$ASDF pending contribution (awaiting rebate processing)",
+              "Reset to 0 when user is selected for rebate"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "totalContributed",
+            "docs": [
+              "Lifetime total $ASDF contributed"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "totalRebate",
+            "docs": [
+              "Lifetime total $ASDF rebate received"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "lastUpdateTimestamp",
+            "docs": [
+              "Proof-of-history: timestamp of last modification",
+              "Updated on every deposit or rebate processing"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "lastUpdateSlot",
+            "docs": [
+              "Proof-of-history: slot of last modification",
+              "Additional verification for chronological order"
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "userStatsInitialized",
+      "docs": [
+        "Emitted when user stats are initialized"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "userStats",
             "type": "pubkey"
           },
           {

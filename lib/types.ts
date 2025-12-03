@@ -84,6 +84,44 @@ export interface ValidatorState {
 }
 
 /**
+ * UserStats account - External app user contribution tracking
+ * Rust struct: programs/asdf-dat/src/state/user_stats.rs
+ */
+export interface UserStats {
+  bump: number;
+  user: PublicKey;
+  pendingContribution: BN;
+  totalContributed: BN;
+  totalRebate: BN;
+  lastUpdateTimestamp: BN;
+  lastUpdateSlot: BN;
+}
+
+/**
+ * RebatePool account - Self-sustaining rebate fund
+ * Rust struct: programs/asdf-dat/src/state/rebate_pool.rs
+ */
+export interface RebatePool {
+  bump: number;
+  totalDeposited: BN;
+  totalDistributed: BN;
+  rebatesCount: BN;
+  lastRebateTimestamp: BN;
+  lastRebateSlot: BN;
+  uniqueRecipients: BN;
+}
+
+/**
+ * User eligible for rebate lottery
+ */
+export interface EligibleUser {
+  pubkey: PublicKey;
+  statsPda: PublicKey;
+  pendingContribution: BN;
+  lastUpdateSlot: BN;
+}
+
+/**
  * Token configuration from JSON files (devnet-token-*.json)
  */
 export interface TokenConfig {
@@ -154,6 +192,8 @@ export interface TypedAccountFetcher {
   datState: { fetch: (pda: PublicKey) => Promise<DATState> };
   tokenStats: { fetch: (pda: PublicKey) => Promise<TokenStats> };
   validatorState: { fetch: (pda: PublicKey) => Promise<ValidatorState> };
+  userStats: { fetch: (pda: PublicKey) => Promise<UserStats> };
+  rebatePool: { fetch: (pda: PublicKey) => Promise<RebatePool> };
 }
 
 /**

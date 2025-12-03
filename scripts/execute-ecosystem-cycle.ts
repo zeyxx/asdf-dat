@@ -43,6 +43,14 @@ import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep } f
 import { ExecutionLock, LockError } from '../lib/execution-lock';
 import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
 import { validateAlertingEnv } from '../lib/env-validator';
+import {
+  deriveRebatePoolPda,
+  deriveUserStatsPda,
+  getEligibleUsers,
+  selectUserForRebate,
+  calculateRebateAmount,
+} from '../lib/user-pool';
+import { getAssociatedTokenAddress } from '@solana/spl-token';
 
 // ============================================================================
 // Constants & Configuration
@@ -53,6 +61,8 @@ const DAT_STATE_SEED = Buffer.from('dat_v3');
 const DAT_AUTHORITY_SEED = Buffer.from('auth_v3');
 const TOKEN_STATS_SEED = Buffer.from('token_stats_v1');
 const ROOT_TREASURY_SEED = Buffer.from('root_treasury');
+const USER_STATS_SEED = Buffer.from('user_stats_v1');
+const REBATE_POOL_SEED = Buffer.from('rebate_pool');
 
 // PumpFun Bonding Curve Program
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
@@ -2141,8 +2151,80 @@ async function executeRootCycle(
 
     instructions.push(burnIx);
 
+    // Process user rebate (if eligible user exists)
+    // This is the LAST instruction in the ROOT cycle batch
+    let selectedUserForRebate = null;
+    try {
+      log('  🎲', 'Checking for eligible rebate users...', colors.cyan);
+
+      // Get eligible users
+      const eligibleUsers = await getEligibleUsers(program, program.programId);
+
+      if (eligibleUsers.length > 0) {
+        // Get current slot for random selection
+        const currentSlot = await program.provider.connection.getSlot();
+        selectedUserForRebate = selectUserForRebate(eligibleUsers, currentSlot);
+
+        if (selectedUserForRebate) {
+          log('  🎯', `Selected user for rebate: ${selectedUserForRebate.pubkey.toBase58().slice(0, 8)}...`, colors.cyan);
+          log('  💰', `Pending: ${selectedUserForRebate.pendingContribution.toNumber() / 1e9} $ASDF`, colors.cyan);
+
+          // Derive rebate pool accounts
+          const [rebatePool] = deriveRebatePoolPda(program.programId);
+          // IMPORTANT: Rebate pool uses ASDF mint from DAT state, NOT root token mint
+          // On devnet: root=TROOT, but asdfMint=FROOT in DAT state
+          const datStateAccount = await getTypedAccounts(program).datState.fetch(datState);
+          const asdfMint = datStateAccount.asdfMint;
+
+          // Get rebate pool ATA
+          const rebatePoolAta = await getAssociatedTokenAddress(
+            asdfMint,
+            rebatePool,
+            true // Allow owner off curve (PDA)
+          );
+
+          // Get user ATA
+          const userAta = await getAssociatedTokenAddress(
+            asdfMint,
+            selectedUserForRebate.pubkey,
+            false
+          );
+
+          // Calculate rebate amount (0.552% of pending)
+          const rebateAmount = calculateRebateAmount(selectedUserForRebate.pendingContribution);
+          log('  🎁', `Rebate amount: ${rebateAmount.toNumber() / 1e9} $ASDF`, colors.cyan);
+
+          // Build process_user_rebate instruction
+          const rebateIx = await program.methods
+            .processUserRebate()
+            .accounts({
+              datState,
+              rebatePool,
+              rebatePoolAta,
+              userStats: selectedUserForRebate.statsPda,
+              user: selectedUserForRebate.pubkey,
+              userAta,
+              admin: adminKeypair.publicKey,
+              tokenProgram,
+            })
+            .instruction();
+
+          instructions.push(rebateIx);
+          log('  📦', 'Added process_user_rebate instruction to batch', colors.cyan);
+        }
+      } else {
+        log('  ℹ️', 'No eligible users for rebate this cycle', colors.cyan);
+      }
+    } catch (error) {
+      // Rebate processing is optional - don't fail the whole cycle
+      log('  ⚠️', `Rebate check failed (non-fatal): ${(error as Error).message}`, colors.yellow);
+    }
+
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn)...`, colors.cyan);
+    const batchDesc = selectedUserForRebate
+      ? 'compute + collect + buy + finalize + burn + rebate'
+      : 'compute + collect + buy + finalize + burn';
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: ${batchDesc})...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
