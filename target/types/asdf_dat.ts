@@ -2600,6 +2600,55 @@ export type AsdfDat = {
       "args": []
     },
     {
+      "name": "updateAsdfMint",
+      "docs": [
+        "Update ASDF mint address (admin only, TESTING mode only)",
+        "Used for devnet testing where the initial mint may be incorrect.",
+        "This instruction is DISABLED on mainnet (TESTING_MODE = false)."
+      ],
+      "discriminator": [
+        24,
+        163,
+        206,
+        170,
+        254,
+        128,
+        72,
+        182
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "newAsdfMint",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "updateFeeSplit",
       "discriminator": [
         120,

@@ -157,13 +157,16 @@ pub const USER_STATS_SEED: &[u8] = b"user_stats_v1";
 /// RebatePool PDA seed (self-sustaining rebate fund)
 pub const REBATE_POOL_SEED: &[u8] = b"rebate_pool";
 
-/// Burn share in basis points (99.448% → burn via DAT ATA)
-/// The remaining 0.552% goes to rebate pool
-pub const BURN_SHARE_BPS: u16 = 9945; // 99.45% (rounded)
+/// Burn share (99.448% → burn via DAT ATA)
+/// Using ÷100000 for exact precision
+pub const BURN_SHARE: u32 = 99448; // 99.448% exact
 
-/// Rebate share in basis points (0.552% → rebate pool)
+/// Rebate share (0.552% → rebate pool)
 /// Self-sustaining: always funded by deposits
-pub const REBATE_SHARE_BPS: u16 = 55; // 0.55% (rounded)
+pub const REBATE_SHARE: u32 = 552; // 0.552% exact
+
+/// Denominator for share calculations (enables exact 99.448%/0.552% split)
+pub const SHARE_DENOMINATOR: u64 = 100000;
 
 /// Minimum deposit in lamports (~0.01 SOL equivalent in $ASDF)
 /// Calculated at runtime using PumpSwap pool price

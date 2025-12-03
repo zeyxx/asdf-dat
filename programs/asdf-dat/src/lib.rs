@@ -1663,11 +1663,11 @@ pub mod asdf_dat {
         require!(amount >= MIN_DEPOSIT_SOL_EQUIV, ErrorCode::DepositBelowMinimum);
 
         // Calculate split (99.448% burn, 0.552% rebate)
-        // Using BPS: 9945 / 10000 = 99.45%
+        // Using ÷100000 for exact precision
         let burn_amount = amount
-            .checked_mul(BURN_SHARE_BPS as u64)
+            .checked_mul(BURN_SHARE as u64)
             .ok_or(ErrorCode::MathOverflow)?
-            .checked_div(10000)
+            .checked_div(SHARE_DENOMINATOR)
             .ok_or(ErrorCode::MathOverflow)?;
         let rebate_pool_amount = amount.saturating_sub(burn_amount);
 
@@ -1771,9 +1771,9 @@ pub mod asdf_dat {
 
         // Calculate rebate amount (0.552% of pending)
         let rebate_amount = pending
-            .checked_mul(REBATE_SHARE_BPS as u64)
+            .checked_mul(REBATE_SHARE as u64)
             .ok_or(ErrorCode::MathOverflow)?
-            .checked_div(10000)
+            .checked_div(SHARE_DENOMINATOR)
             .ok_or(ErrorCode::MathOverflow)?;
 
         // Validate pool has sufficient funds

@@ -65,6 +65,64 @@ Secondary    Root Token
 
 ---
 
+## External App Rebate System
+
+External applications can deposit $ASDF tokens for burn with user rebates.
+
+### Fee Split (Exact Precision)
+
+```
+External App Deposit
+        │
+        ▼
+    Split (÷100000)
+        │
+   ┌────┴────┐
+   │         │
+   ▼         ▼
+99.448%    0.552%
+  Burn     Rebate Pool
+```
+
+**Constants** (programs/asdf-dat/src/constants.rs):
+```rust
+BURN_SHARE: u32 = 99448;        // 99.448% → burn via DAT ATA
+REBATE_SHARE: u32 = 552;        // 0.552% → rebate pool
+SHARE_DENOMINATOR: u64 = 100000; // Enables exact precision
+```
+
+### Accounts
+
+**RebatePool** - Self-sustaining rebate fund
+- PDA: `["rebate_pool"]`
+- Tracks: total_deposited, total_distributed, rebates_count
+
+**UserStats** - Per-user contribution tracking
+- PDA: `["user_stats_v1", user_pubkey]`
+- Tracks: pending_contribution, total_contributed, total_rebate
+
+### Instructions
+
+1. **deposit_fee_asdf** - External app deposits $ASDF
+   - Splits: 99.448% → DAT ATA, 0.552% → Rebate Pool
+   - Creates/updates UserStats with pending contribution
+   - Minimum: 0.01 SOL equivalent
+
+2. **process_user_rebate** - Distribute rebate to eligible user
+   - Eligibility: pending_contribution >= 0.07 SOL equivalent
+   - Rebate: 0.552% of pending contribution
+   - Selection: Deterministic (slot-based, not cryptographic random)
+
+### User Selection
+
+Selection uses slot-based deterministic algorithm (Phase 1):
+```typescript
+selectedIndex = currentSlot % eligibleUsers.length;
+```
+Note: Predictable selection is acceptable for Phase 1 with small rebate amounts. Oracle randomness planned for Phase 2.
+
+---
+
 ## Pump.fun Integration
 
 ### Creator Fees (Dynamic)
@@ -124,6 +182,8 @@ ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui
 | Token Stats | `["token_stats_v1", mint]` |
 | Root Treasury | `["root_treasury", root_mint]` |
 | Validator State | `["validator_v1", mint, bonding_curve]` |
+| Rebate Pool | `["rebate_pool"]` |
+| User Stats | `["user_stats_v1", user_pubkey]` |
 
 ### Key Accounts
 
