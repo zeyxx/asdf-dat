@@ -20,7 +20,41 @@ export interface TokenMetrics {
   lastCycleTimestamp: number;
   pendingFees: number;        // lamports
   sentToRoot: number;         // lamports (for secondaries)
+  // Per-token error tracking
+  errorCount: number;
+  lastError?: string;
+  lastErrorTimestamp?: number;
+  lastErrorCategory?: string;
+  consecutiveFailures: number;
 }
+
+export interface LatencyMetrics {
+  samples: number[];          // Last N samples in ms
+  p50: number;
+  p95: number;
+  p99: number;
+  min: number;
+  max: number;
+  count: number;
+}
+
+export type OperationType =
+  | 'rpc_call'
+  | 'buy_instruction'
+  | 'burn_instruction'
+  | 'collect_instruction'
+  | 'poll_token'
+  | 'cycle_complete'
+  | 'rebate_process';
+
+export type ErrorCategory =
+  | 'rpc'
+  | 'transaction'
+  | 'slippage'
+  | 'timeout'
+  | 'insufficient_funds'
+  | 'program_error'
+  | 'unknown';
 
 export interface DaemonMetrics {
   startTime: number;
@@ -54,6 +88,10 @@ export class MonitoringService {
   public cycleMetrics: CycleMetrics;    // Public for direct access in orchestrator
   private cycleTimes: number[] = [];
   private readonly MAX_CYCLE_TIMES = 100;
+
+  // Latency tracking per operation type
+  private operationLatencies: Map<OperationType, LatencyMetrics> = new Map();
+  private readonly MAX_LATENCY_SAMPLES = 100;
 
   constructor() {
     const now = Date.now();
@@ -99,6 +137,8 @@ export class MonitoringService {
         lastCycleTimestamp: 0,
         pendingFees: 0,
         sentToRoot: 0,
+        errorCount: 0,
+        consecutiveFailures: 0,
       });
       this.daemonMetrics.tokensMonitored = this.tokenMetrics.size;
     }
@@ -159,6 +199,117 @@ export class MonitoringService {
 
   recordError(): void {
     this.daemonMetrics.errorCount++;
+  }
+
+  // ============================================================================
+  // Per-Token Error Tracking
+  // ============================================================================
+
+  /**
+   * Record an error for a specific token
+   */
+  recordTokenError(mint: string, category: ErrorCategory, message: string): void {
+    const metrics = this.tokenMetrics.get(mint);
+    if (metrics) {
+      metrics.errorCount++;
+      metrics.consecutiveFailures++;
+      metrics.lastError = message;
+      metrics.lastErrorTimestamp = Date.now();
+      metrics.lastErrorCategory = category;
+    }
+    // Also increment global error count
+    this.daemonMetrics.errorCount++;
+  }
+
+  /**
+   * Clear consecutive failures for a token (call on success)
+   */
+  recordTokenSuccess(mint: string): void {
+    const metrics = this.tokenMetrics.get(mint);
+    if (metrics) {
+      metrics.consecutiveFailures = 0;
+    }
+  }
+
+  /**
+   * Get error rate for a specific token
+   */
+  getTokenErrorRate(mint: string): number {
+    const metrics = this.tokenMetrics.get(mint);
+    if (!metrics || metrics.cyclesExecuted === 0) return 0;
+    return metrics.errorCount / (metrics.cyclesExecuted + metrics.errorCount);
+  }
+
+  // ============================================================================
+  // Latency Tracking
+  // ============================================================================
+
+  /**
+   * Initialize latency metrics for an operation type
+   */
+  private initLatencyMetrics(operation: OperationType): LatencyMetrics {
+    return {
+      samples: [],
+      p50: 0,
+      p95: 0,
+      p99: 0,
+      min: Infinity,
+      max: 0,
+      count: 0,
+    };
+  }
+
+  /**
+   * Calculate percentile from sorted array
+   */
+  private percentile(sorted: number[], p: number): number {
+    if (sorted.length === 0) return 0;
+    const idx = Math.ceil((p / 100) * sorted.length) - 1;
+    return sorted[Math.max(0, idx)];
+  }
+
+  /**
+   * Record latency for an operation
+   */
+  recordOperationLatency(operation: OperationType, latencyMs: number): void {
+    let metrics = this.operationLatencies.get(operation);
+    if (!metrics) {
+      metrics = this.initLatencyMetrics(operation);
+      this.operationLatencies.set(operation, metrics);
+    }
+
+    // Add sample
+    metrics.samples.push(latencyMs);
+    metrics.count++;
+
+    // Maintain max samples
+    if (metrics.samples.length > this.MAX_LATENCY_SAMPLES) {
+      metrics.samples.shift();
+    }
+
+    // Update min/max
+    metrics.min = Math.min(metrics.min, latencyMs);
+    metrics.max = Math.max(metrics.max, latencyMs);
+
+    // Recalculate percentiles
+    const sorted = [...metrics.samples].sort((a, b) => a - b);
+    metrics.p50 = this.percentile(sorted, 50);
+    metrics.p95 = this.percentile(sorted, 95);
+    metrics.p99 = this.percentile(sorted, 99);
+  }
+
+  /**
+   * Get latency metrics for an operation
+   */
+  getOperationLatency(operation: OperationType): LatencyMetrics | undefined {
+    return this.operationLatencies.get(operation);
+  }
+
+  /**
+   * Get all latency metrics
+   */
+  getAllLatencyMetrics(): Map<OperationType, LatencyMetrics> {
+    return this.operationLatencies;
   }
 
   // ============================================================================
@@ -286,6 +437,44 @@ export class MonitoringService {
       lines.push(`asdf_token_sent_to_root_lamports{mint="${mint}",symbol="${m.symbol}"} ${m.sentToRoot}`);
     }
 
+    // Per-token error metrics
+    lines.push('# HELP asdf_token_error_count Errors per token');
+    lines.push('# TYPE asdf_token_error_count counter');
+    for (const [mint, m] of this.tokenMetrics) {
+      lines.push(`asdf_token_error_count{mint="${mint}",symbol="${m.symbol}"} ${m.errorCount}`);
+    }
+
+    lines.push('# HELP asdf_token_consecutive_failures Consecutive failures per token');
+    lines.push('# TYPE asdf_token_consecutive_failures gauge');
+    for (const [mint, m] of this.tokenMetrics) {
+      lines.push(`asdf_token_consecutive_failures{mint="${mint}",symbol="${m.symbol}"} ${m.consecutiveFailures}`);
+    }
+
+    // Latency percentiles per operation
+    lines.push('# HELP asdf_operation_latency_p50_ms 50th percentile latency');
+    lines.push('# TYPE asdf_operation_latency_p50_ms gauge');
+    for (const [op, lat] of this.operationLatencies) {
+      lines.push(`asdf_operation_latency_p50_ms{operation="${op}"} ${lat.p50.toFixed(2)}`);
+    }
+
+    lines.push('# HELP asdf_operation_latency_p95_ms 95th percentile latency');
+    lines.push('# TYPE asdf_operation_latency_p95_ms gauge');
+    for (const [op, lat] of this.operationLatencies) {
+      lines.push(`asdf_operation_latency_p95_ms{operation="${op}"} ${lat.p95.toFixed(2)}`);
+    }
+
+    lines.push('# HELP asdf_operation_latency_p99_ms 99th percentile latency');
+    lines.push('# TYPE asdf_operation_latency_p99_ms gauge');
+    for (const [op, lat] of this.operationLatencies) {
+      lines.push(`asdf_operation_latency_p99_ms{operation="${op}"} ${lat.p99.toFixed(2)}`);
+    }
+
+    lines.push('# HELP asdf_operation_latency_count Total latency samples per operation');
+    lines.push('# TYPE asdf_operation_latency_count counter');
+    for (const [op, lat] of this.operationLatencies) {
+      lines.push(`asdf_operation_latency_count{operation="${op}"} ${lat.count}`);
+    }
+
     return lines.join('\n');
   }
 
@@ -330,7 +519,26 @@ export class MonitoringService {
         lastCycleISO: m.lastCycleTimestamp
           ? new Date(m.lastCycleTimestamp).toISOString()
           : null,
+        lastErrorISO: m.lastErrorTimestamp
+          ? new Date(m.lastErrorTimestamp).toISOString()
+          : null,
+        errorRate: m.cyclesExecuted > 0
+          ? (m.errorCount / (m.cyclesExecuted + m.errorCount) * 100).toFixed(2) + '%'
+          : 'N/A',
       })),
+      latencies: Object.fromEntries(
+        Array.from(this.operationLatencies.entries()).map(([op, lat]) => [
+          op,
+          {
+            p50: lat.p50,
+            p95: lat.p95,
+            p99: lat.p99,
+            min: lat.min === Infinity ? 0 : lat.min,
+            max: lat.max,
+            count: lat.count,
+          },
+        ])
+      ),
     };
   }
 

@@ -39,13 +39,16 @@ import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl
 import * as fs from 'fs';
 import * as path from 'path';
 import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../lib/network-config';
+import { getCycleLogger } from '../lib/logger';
+import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../lib/tracing-context';
+import { monitoring, OperationType } from '../lib/monitoring';
 import {
   getBcCreatorVault,
   getAmmCreatorVaultAta,
   deriveAmmCreatorVaultAuthority,
 } from '../lib/amm-utils';
 import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
-import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError } from '../lib/rpc-utils';
+import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError, getRecommendedPriorityFee } from '../lib/rpc-utils';
 import { ExecutionLock, LockError } from '../lib/execution-lock';
 import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
 import { validateAlertingEnv } from '../lib/env-validator';
@@ -114,17 +117,19 @@ const MIN_AFTER_SPLIT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE +
 const MIN_ALLOCATION_SECONDARY = Math.ceil(MIN_AFTER_SPLIT / SECONDARY_KEEP_RATIO);
 // = 3,140,880 / 0.552 = 5,690,000 lamports (~0.00569 SOL)
 
-// TX Fee reserve: Each secondary cycle requires buy + finalize + burn = 3 TX
-// On devnet with compute budget: ~0.006-0.007 SOL total
-const TX_FEE_RESERVE_PER_TOKEN = 7_000_000; // ~0.007 SOL for TX fees
+// MARKET-REGULATED THRESHOLD: TX_COST × 19 = 0.1 SOL
+// Eligibility = Efficiency: Only process when economically meaningful
+// At 0.1 SOL threshold, only 5% goes to TX fees (ratio 20:1)
+const TX_FEE_RESERVE_PER_TOKEN = 100_000_000; // 0.1 SOL - unified threshold
 
-// MIN_CYCLE_INTERVAL: Must match lib.rs MIN_CYCLE_INTERVAL (60 seconds)
-// The program enforces this cooldown between cycles
-const MIN_CYCLE_INTERVAL_SECONDS = 60;
+// Total actual cost per secondary token (threshold-based)
+// Note: With 0.1 SOL threshold, MIN_ALLOCATION_SECONDARY is always satisfied
+const TOTAL_COST_PER_SECONDARY = TX_FEE_RESERVE_PER_TOKEN;
+// = 100,000,000 lamports (0.1 SOL)
 
-// Total actual cost per secondary token (allocation + TX fees)
-const TOTAL_COST_PER_SECONDARY = MIN_ALLOCATION_SECONDARY + TX_FEE_RESERVE_PER_TOKEN;
-// = 5,690,000 + 7,000,000 = 12,690,000 lamports (~0.0127 SOL)
+// OPERATIONAL BUFFER: Always maintain this balance for management operations
+// This is SACRED - never let admin wallet drop below this
+const OPERATIONAL_BUFFER = 190_000_000; // 0.19 SOL
 
 // ANSI colors
 const colors = {
@@ -152,6 +157,102 @@ interface DeadLetterEntry {
   pendingFees: number;
   allocation: number;
   retryCount: number;
+  nextRetryAt?: string;  // ISO timestamp for auto-retry
+  status?: 'pending' | 'resolved' | 'expired';
+}
+
+const MAX_DLQ_RETRIES = 5;
+const DLQ_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Calculate next retry time with exponential backoff
+ */
+function getNextRetryTime(retryCount: number): Date {
+  const baseDelayMs = 5 * 60 * 1000; // 5 minutes
+  const delay = baseDelayMs * Math.pow(2, retryCount - 1); // 5min, 10min, 20min, 40min, 80min
+  return new Date(Date.now() + delay);
+}
+
+/**
+ * Process dead-letter queue: retry transient errors automatically
+ * Called at the start of each cycle
+ */
+function processDeadLetterQueue(): { retryable: string[]; expired: string[] } {
+  const retryable: string[] = [];
+  const expired: string[] = [];
+
+  if (!fs.existsSync(DEAD_LETTER_FILE)) {
+    return { retryable, expired };
+  }
+
+  let entries: DeadLetterEntry[];
+  try {
+    entries = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
+  } catch {
+    return { retryable, expired };
+  }
+
+  const now = Date.now();
+  let modified = false;
+
+  for (const entry of entries) {
+    // Skip already resolved/expired
+    if (entry.status === 'resolved' || entry.status === 'expired') {
+      continue;
+    }
+
+    const entryAge = now - new Date(entry.timestamp).getTime();
+
+    // Check if entry has expired (24h)
+    if (entryAge > DLQ_EXPIRY_MS) {
+      entry.status = 'expired';
+      expired.push(entry.token);
+      modified = true;
+      continue;
+    }
+
+    // Check if max retries exceeded
+    if (entry.retryCount >= MAX_DLQ_RETRIES) {
+      entry.status = 'expired';
+      expired.push(entry.token);
+      modified = true;
+      continue;
+    }
+
+    // Check if transient and ready for retry
+    if (entry.isTransient && entry.nextRetryAt) {
+      const retryTime = new Date(entry.nextRetryAt).getTime();
+      if (now >= retryTime) {
+        retryable.push(entry.mint);
+      }
+    }
+  }
+
+  // Save if modified
+  if (modified) {
+    fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
+  }
+
+  return { retryable, expired };
+}
+
+/**
+ * Mark dead-letter entry as resolved
+ */
+function markDeadLetterResolved(mint: string): void {
+  if (!fs.existsSync(DEAD_LETTER_FILE)) return;
+
+  try {
+    const entries: DeadLetterEntry[] = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
+    const entry = entries.find(e => e.mint === mint && e.status !== 'resolved');
+    if (entry) {
+      entry.status = 'resolved';
+      fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
+      log('✅', `DLQ: Marked ${entry.token} as resolved`, colors.green);
+    }
+  } catch {
+    // Ignore errors
+  }
 }
 
 /**
@@ -164,15 +265,18 @@ function appendToDeadLetter(
   allocation: number,
   retryCount: number
 ): void {
+  const isTransient = isRetryableError(error);
   const entry: DeadLetterEntry = {
     timestamp: new Date().toISOString(),
     token: token.symbol,
     mint: token.mint.toBase58(),
     error: error.message,
-    isTransient: isRetryableError(error),
+    isTransient,
     pendingFees,
     allocation,
     retryCount,
+    nextRetryAt: isTransient ? getNextRetryTime(retryCount).toISOString() : undefined,
+    status: 'pending',
   };
 
   let entries: DeadLetterEntry[] = [];
@@ -196,6 +300,18 @@ function appendToDeadLetter(
 }
 
 /**
+ * Check if error is CycleTooSoon (time threshold not met)
+ * This is NOT a failure - just means token isn't ready yet
+ */
+function isCycleTooSoonError(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  return message.includes('cycletoosoon') ||
+    message.includes('cycle too soon') ||
+    message.includes('6003') ||
+    message.includes('cycle_too_soon');
+}
+
+/**
  * Execute token cycle with retry logic for transient errors
  */
 async function executeTokenWithRetry(
@@ -212,6 +328,18 @@ async function executeTokenWithRetry(
       return await executeFn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
+
+      // CycleTooSoon = time threshold not met (graceful skip, not failure)
+      if (isCycleTooSoonError(lastError)) {
+        log('⏳', `${token.symbol}: Time threshold not met (CycleTooSoon) - will retry next cycle`, colors.yellow);
+        return {
+          token: token.symbol,
+          success: true, // Not a failure, just not ready
+          pendingFees,
+          allocation: 0,
+          error: 'DEFERRED: Time threshold not met (CycleTooSoon)',
+        };
+      }
 
       // Check if it's a transient error worth retrying
       if (!isRetryableError(lastError)) {
@@ -337,14 +465,17 @@ interface DryRunReport {
 // Probabilistic Token Selection (O(1) per cycle)
 // ============================================================================
 
-// Minimum pending fees for a token to be eligible for selection
-const TOKEN_ELIGIBILITY_THRESHOLD = 5_500_000; // 0.0055 SOL (matches MIN_FEES_FOR_SPLIT)
+// BREAKEVEN ECONOMICS: Token eligible only if processing is profitable
+// No arbitrary threshold - market decides when token is ready
+// Eligible when: pending_fees >= processing_cost (TX_FEE_RESERVE_PER_TOKEN)
 
 /**
- * Get eligible tokens for cycle (pending_fees >= threshold)
+ * Get eligible tokens for cycle using breakeven economics
+ * A token is eligible when its pending_fees cover the processing cost
+ * This is libertarian (no arbitrary threshold) and scalable (auto-adjusts with gas)
  */
 function getEligibleTokens(allocations: TokenAllocation[]): TokenAllocation[] {
-  return allocations.filter(a => !a.isRoot && a.pendingFees >= TOKEN_ELIGIBILITY_THRESHOLD);
+  return allocations.filter(a => !a.isRoot && a.pendingFees >= TX_FEE_RESERVE_PER_TOKEN);
 }
 
 /**
@@ -363,16 +494,11 @@ function selectTokenForCycle(
     return null;
   }
 
-  // Sort by lastUpdateSlot (oldest first) for fairness, then by pending_fees descending
-  // This ensures tokens that have waited longest get priority
-  const sorted = [...eligibleTokens].sort((a, b) => {
-    // Primary: by pending_fees descending (higher fees = higher priority)
-    return b.pendingFees - a.pendingFees;
-  });
-
-  // Use slot as deterministic seed
-  const selectedIndex = currentSlot % sorted.length;
-  return sorted[selectedIndex];
+  // UNIFORM SELECTION: No sorting bias
+  // Each eligible token has equal probability: 1/N
+  // Slot-based deterministic selection ensures reproducibility
+  const selectedIndex = currentSlot % eligibleTokens.length;
+  return eligibleTokens[selectedIndex];
 }
 
 // ============================================================================
@@ -591,14 +717,30 @@ function printDryRunSummary(report: DryRunReport): void {
 // Helper Functions
 // ============================================================================
 
-function log(icon: string, message: string, color = colors.reset) {
-  console.log(`${color}${icon} ${message}${colors.reset}`);
+// Structured logger for file output and trace context
+const logger = getCycleLogger();
+
+/**
+ * Dual logging: Console (visual) + Structured (file/trace)
+ * Keeps visual feedback while adding structured logging
+ */
+function log(icon: string, message: string, color = colors.reset, data?: Record<string, unknown>) {
+  // Console output for real-time feedback
+  const tracePrefix = getCurrentTraceId() ? `[${getCurrentTraceId()}] ` : '';
+  console.log(`${color}${tracePrefix}${icon} ${message}${colors.reset}`);
+
+  // Structured logger (captures trace context automatically)
+  const cleanMessage = `${icon} ${message}`.replace(/[\x1b\[\]0-9;m]/g, ''); // Strip ANSI
+  logger.info(cleanMessage, data);
 }
 
 function logSection(title: string) {
   console.log(`\n${colors.bright}${colors.cyan}${'='.repeat(80)}`);
   console.log(`  ${title}`);
   console.log(`${'='.repeat(80)}${colors.reset}\n`);
+
+  // Structured log for section
+  logger.info(`=== ${title} ===`);
 }
 
 function formatSOL(lamports: number): string {
@@ -647,49 +789,6 @@ function loadAndValidateWallet(walletPath: string): Keypair {
     return Keypair.fromSecretKey(new Uint8Array(walletData));
   } catch (error) {
     throw new Error(`Invalid keypair: ${(error as Error).message}`);
-  }
-}
-
-/**
- * Check MIN_CYCLE_INTERVAL and wait if necessary
- * The program enforces a cooldown between cycles - this function checks it upfront
- * and waits if needed, rather than letting the TX fail with CycleTooSoon
- */
-async function waitForCycleCooldown(program: Program<Idl>): Promise<void> {
-  const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
-  const state = await getTypedAccounts(program).datState.fetch(datState);
-
-  const lastCycleTimestamp = state.lastCycleTimestamp.toNumber();
-  const minCycleInterval = state.minCycleInterval.toNumber();
-
-  // CRITICAL FIX: Use Solana clock instead of local time
-  // The program uses Clock::get()?.unix_timestamp, so we must match it
-  const connection = program.provider.connection;
-  const slot = await connection.getSlot();
-  const blockTime = await connection.getBlockTime(slot);
-  const currentTime = blockTime || Math.floor(Date.now() / 1000);
-
-  const timeSinceLastCycle = currentTime - lastCycleTimestamp;
-  // Add 2s buffer to account for clock drift between check and TX execution
-  const waitTime = minCycleInterval - timeSinceLastCycle + 2;
-
-  if (waitTime > 0) {
-    log('⏳', `Cycle cooldown active. Last cycle: ${new Date(lastCycleTimestamp * 1000).toISOString()}`, colors.yellow);
-    log('⏳', `Waiting ${waitTime}s for MIN_CYCLE_INTERVAL (${minCycleInterval}s)...`, colors.yellow);
-
-    // Wait with progress updates every 10 seconds
-    let remaining = waitTime;
-    while (remaining > 0) {
-      const waitChunk = Math.min(remaining, 10);
-      await sleep(waitChunk * 1000);
-      remaining -= waitChunk;
-      if (remaining > 0) {
-        log('⏳', `${remaining}s remaining...`, colors.yellow);
-      }
-    }
-    log('✅', 'Cooldown complete. Proceeding with cycle execution.', colors.green);
-  } else {
-    log('✅', `Cycle cooldown OK (${timeSinceLastCycle}s since last cycle, min: ${minCycleInterval}s)`, colors.green);
   }
 }
 
@@ -1532,13 +1631,6 @@ async function executeSecondaryTokensDynamic(
     // Update allocation with calculated share
     allocation.allocation = allocation.calculatedShare;
 
-    // Wait for cooldown before processing (if not first token)
-    // The program enforces MIN_CYCLE_INTERVAL globally between collect_fees calls
-    if (!isFirstToken) {
-      log('⏳', `Waiting for cooldown before ${allocation.token.symbol}...`, colors.yellow);
-      await waitForCycleCooldown(program);
-    }
-
     log('🔄', `Processing ${allocation.token.symbol}:`, colors.cyan);
     log('  💰', `Allocated share: ${formatSOL(allocation.calculatedShare)} SOL`, colors.cyan);
     if (isFirstToken) {
@@ -1654,9 +1746,14 @@ async function executeSecondaryWithAllocation(
     // Build instructions array for batch transaction
     const instructions: TransactionInstruction[] = [];
 
+    // Get dynamic priority fee for better inclusion during congestion
+    const priorityFee = await getRecommendedPriorityFee(program.provider.connection);
+    log('  💰', `Priority fee: ${priorityFee.toLocaleString()} microlamports`, colors.cyan);
+
     // Add compute budget for complex batch transaction (collect + buy + finalize + burn)
     instructions.push(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 500_000 })
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 500_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityFee })
     );
 
     // Derive pump event authority for collect_fees
@@ -2152,9 +2249,14 @@ async function executeRootCycle(
     // Build instructions array for batch transaction
     const instructions: TransactionInstruction[] = [];
 
+    // Get dynamic priority fee for better inclusion during congestion
+    const priorityFee = await getRecommendedPriorityFee(program.provider.connection);
+    log('  💰', `Priority fee: ${priorityFee.toLocaleString()} microlamports`, colors.cyan);
+
     // Add compute budget for complex batch transaction
     instructions.push(
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityFee })
     );
 
     if (isAmm) {
@@ -2650,6 +2752,32 @@ async function main() {
   log('⚙️', `Commitment: ${commitment} (${onMainnet ? 'MAINNET' : 'DEVNET'})`, colors.cyan);
   console.log('');
 
+  // Process dead-letter queue for auto-retry of transient errors
+  const dlqStatus = processDeadLetterQueue();
+  if (dlqStatus.retryable.length > 0) {
+    log('🔄', `DLQ: ${dlqStatus.retryable.length} entries ready for retry`, colors.yellow);
+  }
+  if (dlqStatus.expired.length > 0) {
+    log('⏰', `DLQ: ${dlqStatus.expired.length} entries expired (manual review needed)`, colors.red);
+  }
+
+  // CHECK: Operational buffer (0.19 SOL minimum must remain after cycle)
+  const adminBalance = await connection.getBalance(adminKeypair.publicKey);
+  const estimatedCycleCost = TX_FEE_RESERVE_PER_TOKEN * 3; // Rough estimate: 1 secondary + 1 root + buffer
+  const remainingAfterCycle = adminBalance - estimatedCycleCost;
+
+  log('💰', `Admin balance: ${formatSOL(adminBalance)} SOL`, colors.cyan);
+
+  if (remainingAfterCycle < OPERATIONAL_BUFFER) {
+    log('❌', `INSUFFICIENT BUFFER: ${formatSOL(remainingAfterCycle)} would remain < ${formatSOL(OPERATIONAL_BUFFER)} required`, colors.red);
+    log('ℹ️', `Top up admin wallet to at least ${formatSOL(OPERATIONAL_BUFFER + estimatedCycleCost)} SOL`, colors.yellow);
+    executionLock.release();
+    process.exit(1);
+  }
+
+  log('✅', `Buffer OK: ${formatSOL(remainingAfterCycle)} will remain (>= ${formatSOL(OPERATIONAL_BUFFER)} required)`, colors.green);
+  console.log('');
+
   // Initialize alerting (reuse existing singleton if daemon already initialized it)
   const alertingEnv = validateAlertingEnv();
   const alerting = initAlerting({
@@ -2692,11 +2820,6 @@ async function main() {
       // 2. On-chain state might be stale but still valid
       // 3. Failed tokens will be skipped naturally if pending_fees = 0
     }
-
-    // Pre-flight: Check MIN_CYCLE_INTERVAL and wait if necessary
-    // This prevents CycleTooSoon errors by waiting upfront
-    logSection('PRE-FLIGHT: CYCLE COOLDOWN CHECK');
-    await waitForCycleCooldown(program);
 
     // Pre-flight: Wait for daemon synchronization (optional, 30s timeout)
     // This helps ensure all tokens have their pending_fees populated
@@ -2750,7 +2873,7 @@ async function main() {
 
     log('📊', `Token Selection Status:`, colors.bright);
     log('  👥', `Total secondary tokens: ${secondaryAllocations.length}`, colors.cyan);
-    log('  ✅', `Eligible tokens (>= ${formatSOL(TOKEN_ELIGIBILITY_THRESHOLD)} SOL): ${eligibleTokens.length}`, colors.cyan);
+    log('  ✅', `Eligible tokens (>= ${formatSOL(TX_FEE_RESERVE_PER_TOKEN)} SOL processing cost): ${eligibleTokens.length}`, colors.cyan);
     log('  🎰', `Current slot: ${currentSlot}`, colors.cyan);
 
     // Select ONE token for this cycle
@@ -2770,7 +2893,7 @@ async function main() {
           success: true,
           pendingFees: alloc.pendingFees,
           allocation: 0,
-          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < threshold ${formatSOL(TOKEN_ELIGIBILITY_THRESHOLD)}`,
+          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < processing cost ${formatSOL(TX_FEE_RESERVE_PER_TOKEN)}`,
         };
       }
     } else {
@@ -2834,14 +2957,13 @@ async function main() {
     // Step 2b: Finalize deferred tokens (preserve their pending_fees for next cycle)
     await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
 
-    // Step 2c: Wait for cooldown before root cycle (if any secondary was processed)
-    // The program enforces MIN_CYCLE_INTERVAL globally, so we need to wait after secondary cycles
-    if (actualViable.length > 0) {
-      logSection('PRE-ROOT: CYCLE COOLDOWN CHECK');
-      await waitForCycleCooldown(program);
-    }
+    // Step 3: Execute ROOT cycle (INDEPENDENT & SACRED)
+    // Root always executes regardless of secondary outcomes
+    // Root has its own cooldown check - not dependent on secondary processing
+    logSection('ROOT CYCLE (INDEPENDENT)');
 
-    // Step 3: Execute root cycle (batch TX: collect + buy + burn)
+    // ROOT executes independently - no cooldown wait
+    // If CycleTooSoon, handled gracefully in executeRootCycle
     const rootResult = await executeRootCycle(program, rootToken, adminKeypair);
     results[rootToken.symbol] = rootResult;
 
@@ -2917,7 +3039,20 @@ async function main() {
 
 // Run if executed directly
 if (require.main === module) {
-  main().catch(console.error);
+  // Wrap entire execution in trace context for observability
+  withNewTrace('ecosystem-cycle', async () => {
+    const traceId = getCurrentTraceId();
+    console.log(`\n[Trace: ${traceId}] Starting ecosystem cycle...\n`);
+    logger.info('Ecosystem cycle started', { traceId });
+
+    await main();
+
+    logger.info('Ecosystem cycle completed', { traceId });
+  }).catch((error) => {
+    logger.error('Ecosystem cycle failed', { error: (error as Error).message });
+    console.error(error);
+    process.exit(1);
+  });
 }
 
 export { main as executeEcosystemCycle };

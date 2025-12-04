@@ -396,8 +396,8 @@ mod tests {
 
         #[test]
         fn test_min_fees_to_claim() {
-            // 0.01 SOL = 10,000,000 lamports
-            assert_eq!(MIN_FEES_TO_CLAIM, 10_000_000);
+            // 0.1 SOL = 100,000,000 lamports (market-regulated: TX_COST × 19)
+            assert_eq!(MIN_FEES_TO_CLAIM, 100_000_000);
         }
 
         #[test]
@@ -469,10 +469,10 @@ mod tests {
             assert_eq!(to_root, 0, "Zero split should send 0 to root");
         }
 
-        /// Test fee split at MIN_FEES_FOR_SPLIT threshold (0.0055 SOL)
+        /// Test fee split at MIN_FEES_FOR_SPLIT threshold (0.1 SOL)
         #[test]
         fn test_fee_split_at_min_threshold() {
-            let min_fees_for_split: u64 = 5_500_000; // 0.0055 SOL
+            let min_fees_for_split: u64 = 100_000_000; // 0.1 SOL (market-regulated)
             let fee_split_bps: u16 = 5520;
 
             let keep = (min_fees_for_split as u128 * fee_split_bps as u128 / 10000) as u64;
@@ -480,8 +480,8 @@ mod tests {
 
             // Verify no loss at minimum threshold
             assert_eq!(keep + to_root, min_fees_for_split);
-            // keep should be ~0.003036 SOL
-            assert!(keep > 3_000_000, "Keep should be > 0.003 SOL");
+            // keep should be ~0.0552 SOL (55.2% of 0.1 SOL)
+            assert!(keep > 50_000_000, "Keep should be > 0.05 SOL");
         }
 
         /// Test fee split with MAX_PENDING_FEES (69 SOL) - no overflow
@@ -628,12 +628,12 @@ mod tests {
     mod boundary_tests {
         use super::*;
 
-        /// Test MIN_FEES_TO_CLAIM boundary (0.01 SOL)
+        /// Test MIN_FEES_TO_CLAIM boundary (0.1 SOL - market-regulated)
         #[test]
         fn test_min_fees_to_claim_boundary() {
-            let just_below: u64 = MIN_FEES_TO_CLAIM - 1; // 9,999,999 lamports
-            let exactly: u64 = MIN_FEES_TO_CLAIM;         // 10,000,000 lamports
-            let just_above: u64 = MIN_FEES_TO_CLAIM + 1;  // 10,000,001 lamports
+            let just_below: u64 = MIN_FEES_TO_CLAIM - 1; // 99,999,999 lamports
+            let exactly: u64 = MIN_FEES_TO_CLAIM;         // 100,000,000 lamports
+            let just_above: u64 = MIN_FEES_TO_CLAIM + 1;  // 100,000,001 lamports
 
             assert!(just_below < MIN_FEES_TO_CLAIM, "Below threshold should fail");
             assert!(exactly >= MIN_FEES_TO_CLAIM, "Exactly threshold should pass");
@@ -1105,7 +1105,7 @@ mod tests {
         #[test]
         fn test_error_insufficient_fees() {
             let pending_fees: u64 = 5_000_000; // 0.005 SOL
-            let min_threshold: u64 = MIN_FEES_TO_CLAIM; // 0.01 SOL
+            let min_threshold: u64 = MIN_FEES_TO_CLAIM; // 0.1 SOL (market-regulated)
 
             assert!(pending_fees < min_threshold, "Should trigger InsufficientFees");
         }

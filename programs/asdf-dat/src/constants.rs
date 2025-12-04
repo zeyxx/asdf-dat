@@ -168,13 +168,13 @@ pub const REBATE_SHARE: u32 = 552; // 0.552% exact
 /// Denominator for share calculations (enables exact 99.448%/0.552% split)
 pub const SHARE_DENOMINATOR: u64 = 100000;
 
-/// Minimum deposit in lamports (~0.01 SOL equivalent in $ASDF)
-/// Calculated at runtime using PumpSwap pool price
-pub const MIN_DEPOSIT_SOL_EQUIV: u64 = 10_000_000; // 0.01 SOL
+/// Minimum deposit in lamports (~0.1 SOL equivalent in $ASDF)
+/// Market-regulated: TX_COST × 19 = efficiency threshold
+pub const MIN_DEPOSIT_SOL_EQUIV: u64 = 100_000_000; // 0.1 SOL
 
-/// Rebate eligibility threshold in lamports (~0.07 SOL equivalent in $ASDF)
-/// Users must contribute this much to be eligible for rebate lottery
-pub const REBATE_THRESHOLD_SOL_EQUIV: u64 = 70_000_000; // 0.07 SOL
+/// Rebate eligibility threshold in lamports (~0.1 SOL in rebate pool)
+/// Market-regulated: TX_COST × 19 = efficiency threshold
+pub const REBATE_THRESHOLD_SOL_EQUIV: u64 = 100_000_000; // 0.1 SOL
 
 // ══════════════════════════════════════════════════════════════════════════════
 // INSTRUCTION DISCRIMINATORS (8-byte hashes)
@@ -199,9 +199,9 @@ pub const PUMPSWAP_COLLECT_CREATOR_FEE_DISCRIMINATOR: [u8; 8] = [160, 57, 89, 42
 // FLUSH THRESHOLDS
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Flush threshold - minimum fees before cycle executes (0.01 SOL)
-/// Accumulate until threshold to reduce transaction costs
-pub const FLUSH_THRESHOLD: u64 = 10_000_000;
+/// Flush threshold - minimum fees before cycle executes (0.1 SOL)
+/// Market-regulated: TX_COST × 19 = efficiency threshold (5% max to fees)
+pub const FLUSH_THRESHOLD: u64 = 100_000_000;
 
 /// Alias for backward compatibility
 pub const MIN_FEES_TO_CLAIM: u64 = FLUSH_THRESHOLD;
@@ -235,9 +235,9 @@ pub const SAFETY_BUFFER: u64 = 50_000;
 /// ATA rent reserve (~0.0021 SOL)
 pub const ATA_RENT_RESERVE: u64 = 2_100_000;
 
-/// Minimum fees before split is worthwhile (~0.0055 SOL)
-/// Below this, transaction costs exceed value
-pub const MIN_FEES_FOR_SPLIT: u64 = 5_500_000;
+/// Minimum fees before split is worthwhile (~0.1 SOL)
+/// Market-regulated: aligned with FLUSH_THRESHOLD for consistency
+pub const MIN_FEES_FOR_SPLIT: u64 = 100_000_000;
 
 /// Minimum buy amount (~0.0001 SOL)
 pub const MINIMUM_BUY_AMOUNT: u64 = 100_000;

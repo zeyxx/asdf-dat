@@ -314,12 +314,31 @@ const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
 
 type CircuitState = 'closed' | 'open' | 'half-open';
 
+export interface CircuitBreakerMetrics {
+  state: CircuitState;
+  stateCode: number;            // 0=closed, 1=open, 2=half-open
+  failureCount: number;
+  successCount: number;
+  totalTransitions: number;
+  timeInOpenStateMs: number;    // Cumulative time spent in open state
+  lastTransitionTimestamp?: number;
+  lastFailureTimestamp?: number;
+  openEvents: number;           // How many times circuit opened
+}
+
 export class CircuitBreaker {
   private state: CircuitState = 'closed';
   private failureCount = 0;
   private successCount = 0;
   private lastFailureTime = 0;
   private config: CircuitBreakerConfig;
+
+  // Metrics tracking
+  private totalTransitions = 0;
+  private timeInOpenStateMs = 0;
+  private openStateStartTime = 0;
+  private lastTransitionTimestamp = 0;
+  private openEvents = 0;
 
   constructor(config: Partial<CircuitBreakerConfig> = {}) {
     this.config = { ...DEFAULT_CIRCUIT_BREAKER_CONFIG, ...config };
@@ -330,7 +349,7 @@ export class CircuitBreaker {
     if (this.state === 'open') {
       const timeSinceFailure = Date.now() - this.lastFailureTime;
       if (timeSinceFailure >= this.config.resetTimeoutMs) {
-        this.state = 'half-open';
+        this.transitionTo('half-open');
         this.successCount = 0;
       } else {
         throw new CircuitBreakerOpenError(this.lastFailureTime + this.config.resetTimeoutMs);
@@ -351,14 +370,12 @@ export class CircuitBreaker {
     if (this.state === 'half-open') {
       this.successCount++;
       if (this.successCount >= this.config.halfOpenSuccessThreshold) {
-        this.state = 'closed';
+        this.transitionTo('closed');
         this.failureCount = 0;
-        this.lastFailureTime = 0; // Reset failure time when circuit closes
+        this.lastFailureTime = 0;
       }
     } else {
       this.failureCount = 0;
-      // Also reset lastFailureTime on success in closed state
-      // This prevents premature re-opening after sustained success
       this.lastFailureTime = 0;
     }
   }
@@ -368,16 +385,64 @@ export class CircuitBreaker {
     this.lastFailureTime = Date.now();
 
     if (this.state === 'half-open' || this.failureCount >= this.config.failureThreshold) {
-      this.state = 'open';
+      this.transitionTo('open');
     }
+  }
+
+  private transitionTo(newState: CircuitState): void {
+    if (this.state === newState) return;
+
+    const now = Date.now();
+
+    // Track time spent in open state
+    if (this.state === 'open' && this.openStateStartTime > 0) {
+      this.timeInOpenStateMs += now - this.openStateStartTime;
+      this.openStateStartTime = 0;
+    }
+
+    // Track opening events
+    if (newState === 'open') {
+      this.openStateStartTime = now;
+      this.openEvents++;
+    }
+
+    this.state = newState;
+    this.totalTransitions++;
+    this.lastTransitionTimestamp = now;
   }
 
   getState(): CircuitState {
     return this.state;
   }
 
+  getMetrics(): CircuitBreakerMetrics {
+    const stateCodeMap: Record<CircuitState, number> = {
+      closed: 0,
+      open: 1,
+      'half-open': 2,
+    };
+
+    // Calculate current open time if still in open state
+    let currentOpenTime = this.timeInOpenStateMs;
+    if (this.state === 'open' && this.openStateStartTime > 0) {
+      currentOpenTime += Date.now() - this.openStateStartTime;
+    }
+
+    return {
+      state: this.state,
+      stateCode: stateCodeMap[this.state],
+      failureCount: this.failureCount,
+      successCount: this.successCount,
+      totalTransitions: this.totalTransitions,
+      timeInOpenStateMs: currentOpenTime,
+      lastTransitionTimestamp: this.lastTransitionTimestamp || undefined,
+      lastFailureTimestamp: this.lastFailureTime || undefined,
+      openEvents: this.openEvents,
+    };
+  }
+
   reset(): void {
-    this.state = 'closed';
+    this.transitionTo('closed');
     this.failureCount = 0;
     this.successCount = 0;
   }
@@ -493,6 +558,13 @@ export class ResilientConnection {
       circuitState: this.circuitBreaker.getState(),
     };
   }
+
+  /**
+   * Get detailed circuit breaker metrics for monitoring
+   */
+  getCircuitBreakerMetrics(): CircuitBreakerMetrics {
+    return this.circuitBreaker.getMetrics();
+  }
 }
 
 // ============================================================================
@@ -561,6 +633,56 @@ export async function confirmTransactionWithRetry(
 
       await sleep(retryDelayMs);
     }
+  }
+}
+
+// ============================================================================
+// Dynamic Priority Fee Estimation
+// ============================================================================
+
+/**
+ * Get recommended priority fee based on recent transactions
+ * Uses getRecentPrioritizationFees API to estimate competitive fee
+ *
+ * @param connection - Solana connection
+ * @param percentile - Which percentile to use (default: 75 for good inclusion)
+ * @returns Priority fee in microlamports
+ */
+export async function getRecommendedPriorityFee(
+  connection: Connection,
+  percentile: number = 75
+): Promise<number> {
+  const MIN_PRIORITY_FEE = 1_000;      // 1,000 microlamports minimum
+  const MAX_PRIORITY_FEE = 1_000_000;  // 1M microlamports cap
+  const DEFAULT_PRIORITY_FEE = 50_000; // 50k microlamports fallback
+
+  try {
+    const recentFees = await connection.getRecentPrioritizationFees();
+
+    if (!recentFees || recentFees.length === 0) {
+      return DEFAULT_PRIORITY_FEE;
+    }
+
+    // Extract non-zero fees and sort
+    const fees = recentFees
+      .map(f => f.prioritizationFee)
+      .filter(f => f > 0)
+      .sort((a, b) => a - b);
+
+    if (fees.length === 0) {
+      return DEFAULT_PRIORITY_FEE;
+    }
+
+    // Calculate percentile
+    const index = Math.ceil((percentile / 100) * fees.length) - 1;
+    const fee = fees[Math.max(0, index)];
+
+    // Clamp to reasonable bounds
+    return Math.min(Math.max(fee, MIN_PRIORITY_FEE), MAX_PRIORITY_FEE);
+
+  } catch (error) {
+    // Fallback on error
+    return DEFAULT_PRIORITY_FEE;
   }
 }
 
@@ -715,4 +837,185 @@ export function parseRateLimitHeaders(headers: Headers): {
   }
 
   return null;
+}
+
+// ============================================================================
+// Batch RPC Operations
+// ============================================================================
+
+export interface BatchConfig {
+  batchSize: number;       // Max accounts per request (default: 100)
+  delayBetweenBatches: number; // ms delay between batches (default: 100)
+  retryConfig?: Partial<RetryConfig>;
+}
+
+const DEFAULT_BATCH_CONFIG: BatchConfig = {
+  batchSize: 100,
+  delayBetweenBatches: 100,
+};
+
+/**
+ * Fetch multiple accounts in batches with retry
+ * More efficient than individual getAccountInfo calls
+ */
+export async function batchGetMultipleAccounts<T>(
+  connection: Connection,
+  pubkeys: import('@solana/web3.js').PublicKey[],
+  config: Partial<BatchConfig> = {},
+  decoder?: (data: Buffer) => T
+): Promise<(T | null)[]> {
+  const { batchSize, delayBetweenBatches, retryConfig } = {
+    ...DEFAULT_BATCH_CONFIG,
+    ...config,
+  };
+
+  const results: (T | null)[] = new Array(pubkeys.length).fill(null);
+  const batches: import('@solana/web3.js').PublicKey[][] = [];
+
+  // Split into batches
+  for (let i = 0; i < pubkeys.length; i += batchSize) {
+    batches.push(pubkeys.slice(i, i + batchSize));
+  }
+
+  // Process batches sequentially with delay
+  for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+    const batch = batches[batchIdx];
+    const startIdx = batchIdx * batchSize;
+
+    // Add delay between batches (except first)
+    if (batchIdx > 0 && delayBetweenBatches > 0) {
+      await sleep(delayBetweenBatches);
+    }
+
+    // Fetch batch with retry
+    const batchResults = await withRetry(
+      async () => {
+        await acquireRateLimitToken();
+        return connection.getMultipleAccountsInfo(batch);
+      },
+      retryConfig
+    );
+
+    // Process results
+    for (let i = 0; i < batchResults.length; i++) {
+      const account = batchResults[i];
+      if (account && decoder) {
+        try {
+          results[startIdx + i] = decoder(account.data);
+        } catch {
+          results[startIdx + i] = null;
+        }
+      } else if (account) {
+        results[startIdx + i] = account as unknown as T;
+      }
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Parallel batch fetch with concurrency control
+ * Faster than sequential but uses more connections
+ */
+export async function parallelBatchGetMultipleAccounts<T>(
+  connection: Connection,
+  pubkeys: import('@solana/web3.js').PublicKey[],
+  config: Partial<BatchConfig> & { maxConcurrency?: number } = {},
+  decoder?: (data: Buffer) => T
+): Promise<(T | null)[]> {
+  const { batchSize, retryConfig, maxConcurrency = 3 } = {
+    ...DEFAULT_BATCH_CONFIG,
+    ...config,
+  };
+
+  const results: (T | null)[] = new Array(pubkeys.length).fill(null);
+  const batches: { startIdx: number; keys: import('@solana/web3.js').PublicKey[] }[] = [];
+
+  // Split into batches with index tracking
+  for (let i = 0; i < pubkeys.length; i += batchSize) {
+    batches.push({
+      startIdx: i,
+      keys: pubkeys.slice(i, i + batchSize),
+    });
+  }
+
+  // Process batches with limited concurrency
+  const inFlight: Promise<void>[] = [];
+
+  for (const batch of batches) {
+    // Wait if at max concurrency
+    while (inFlight.length >= maxConcurrency) {
+      await Promise.race(inFlight);
+    }
+
+    const promise = (async () => {
+      const batchResults = await withRetry(
+        async () => {
+          await acquireRateLimitToken();
+          return connection.getMultipleAccountsInfo(batch.keys);
+        },
+        retryConfig
+      );
+
+      for (let i = 0; i < batchResults.length; i++) {
+        const account = batchResults[i];
+        if (account && decoder) {
+          try {
+            results[batch.startIdx + i] = decoder(account.data);
+          } catch {
+            results[batch.startIdx + i] = null;
+          }
+        } else if (account) {
+          results[batch.startIdx + i] = account as unknown as T;
+        }
+      }
+    })();
+
+    // Track promise and remove when done
+    inFlight.push(promise);
+    promise.finally(() => {
+      const idx = inFlight.indexOf(promise);
+      if (idx > -1) inFlight.splice(idx, 1);
+    });
+  }
+
+  // Wait for all remaining
+  await Promise.all(inFlight);
+
+  return results;
+}
+
+/**
+ * Batch fetch token balances for multiple accounts
+ */
+export async function batchGetTokenBalances(
+  connection: Connection,
+  tokenAccounts: import('@solana/web3.js').PublicKey[],
+  config: Partial<BatchConfig> = {}
+): Promise<(bigint | null)[]> {
+  return batchGetMultipleAccounts(
+    connection,
+    tokenAccounts,
+    config,
+    (data: Buffer) => {
+      // SPL Token account data layout: first 8 bytes after 32-byte mint is amount
+      if (data.length >= 72) {
+        const amount = data.readBigUInt64LE(64);
+        return amount;
+      }
+      return null;
+    }
+  );
+}
+
+/**
+ * Chunk array into smaller arrays
+ */
+export function chunk<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
 }

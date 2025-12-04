@@ -6,10 +6,14 @@
  * - File output with rotation
  * - JSON format for parsing
  * - Log levels (debug, info, warn, error)
+ * - Automatic trace ID integration
+ *
+ * "Flush. Burn. Trace. This is fine." 🔥🐕
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { getCurrentContext, getTraceFields, formatTracePrefix } from './tracing-context';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -19,6 +23,11 @@ export interface LogEntry {
   component: string;
   message: string;
   data?: Record<string, unknown>;
+  // Trace context (automatically populated if in trace context)
+  traceId?: string;
+  spanId?: string;
+  operation?: string;
+  tokenSymbol?: string;
 }
 
 export interface LoggerConfig {
@@ -120,7 +129,14 @@ export class Logger {
   private formatConsole(entry: LogEntry): string {
     const color = LEVEL_COLORS[entry.level];
     const levelStr = entry.level.toUpperCase().padEnd(5);
-    let msg = `${color}[${entry.timestamp}] [${levelStr}] [${entry.component}]${RESET} ${entry.message}`;
+
+    // Build trace prefix if available
+    let tracePrefix = '';
+    if (entry.traceId) {
+      tracePrefix = `${LEVEL_COLORS.debug}[trace:${entry.traceId}]${RESET} `;
+    }
+
+    let msg = `${tracePrefix}${color}[${entry.timestamp}] [${levelStr}] [${entry.component}]${RESET} ${entry.message}`;
 
     if (entry.data && Object.keys(entry.data).length > 0) {
       const dataStr = Object.entries(entry.data)
@@ -147,12 +163,20 @@ export class Logger {
   private log(level: LogLevel, message: string, data?: Record<string, unknown>): void {
     if (!this.shouldLog(level)) return;
 
+    // Get trace context if available
+    const traceFields = getTraceFields();
+
     const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       component: this.component,
       message,
       data,
+      // Add trace context fields
+      traceId: traceFields.traceId,
+      spanId: traceFields.spanId,
+      operation: traceFields.operation,
+      tokenSymbol: traceFields.tokenSymbol,
     };
 
     // Console output

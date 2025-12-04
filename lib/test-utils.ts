@@ -506,3 +506,472 @@ export async function executeEcosystemCycle(
     return { success: false, output: e.message || 'Unknown error' };
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// E2E TEST UTILITIES
+// Additional helpers for production-grade E2E validation
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Verification result for E2E tests
+ */
+export interface VerificationResult {
+  name: string;
+  passed: boolean;
+  expected: string;
+  actual: string;
+  details?: string;
+}
+
+/**
+ * E2E State snapshot with comprehensive data
+ */
+export interface E2EStateSnapshot {
+  network: 'devnet' | 'mainnet';
+  capturedAt: string;
+  tokens: Array<{
+    mint: string;
+    symbol: string;
+    isRoot: boolean;
+    pendingFeesLamports: number;
+    totalBurned: number;
+    totalSolCollected: number;
+    totalSolSentToRoot: number;
+    totalSolReceivedFromOthers: number;
+    cyclesParticipated: number;
+    creatorVaultBalance: number;
+  }>;
+  rootTreasuryBalance: number;
+  rebatePool: {
+    totalDeposited: number;
+    totalDistributed: number;
+    rebatesCount: number;
+  } | null;
+  datAuthorityBalance: number;
+  walletBalance: number;
+}
+
+/**
+ * Diff between two E2E states
+ */
+export interface E2EStateDiff {
+  duration: string;
+  tokens: Array<{
+    symbol: string;
+    mint: string;
+    isRoot: boolean;
+    pendingFeesDelta: number;
+    totalBurnedDelta: number;
+    totalSolCollectedDelta: number;
+    totalSolSentToRootDelta: number;
+    cyclesParticipatedDelta: number;
+  }>;
+  rootTreasuryDelta: number;
+  rebatePoolDelta: {
+    depositedDelta: number;
+    distributedDelta: number;
+    rebatesCountDelta: number;
+  } | null;
+  datAuthorityDelta: number;
+  walletDelta: number;
+}
+
+/**
+ * Derive Rebate Pool PDA
+ */
+export function deriveRebatePoolPDA(): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('rebate_pool')],
+    PROGRAM_ID
+  );
+}
+
+/**
+ * Derive Root Treasury PDA
+ */
+export function deriveRootTreasuryPDA(rootMint: PublicKey): [PublicKey, number] {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from('root_treasury'), rootMint.toBuffer()],
+    PROGRAM_ID
+  );
+}
+
+/**
+ * Capture comprehensive E2E state
+ */
+export async function captureE2EState(
+  connection: Connection,
+  program: Program<Idl>,
+  tokens: TokenConfig[],
+  walletPubkey: PublicKey,
+  network: 'devnet' | 'mainnet'
+): Promise<E2EStateSnapshot> {
+  const accounts = getTypedAccounts(program);
+  const now = new Date().toISOString();
+
+  // Find root token
+  const rootToken = tokens.find((t) => t.isRoot);
+  if (!rootToken) {
+    throw new Error('No root token found in configs');
+  }
+  const rootMint = new PublicKey(rootToken.mint);
+
+  // Derive common PDAs
+  const pdas = derivePDAs(rootMint);
+  const [rebatePoolPda] = deriveRebatePoolPDA();
+
+  // Fetch common accounts in parallel
+  const [datAuthorityInfo, rootTreasuryInfo, walletBalance] = await Promise.all([
+    connection.getAccountInfo(pdas.datAuthority),
+    pdas.rootTreasury ? connection.getAccountInfo(pdas.rootTreasury) : Promise.resolve(null),
+    connection.getBalance(walletPubkey),
+  ]);
+
+  // Fetch rebate pool if exists
+  let rebatePool: E2EStateSnapshot['rebatePool'] = null;
+  try {
+    const rebateData = await accounts.rebatePool.fetch(rebatePoolPda);
+    rebatePool = {
+      totalDeposited: new BN(rebateData.totalDeposited).toNumber(),
+      totalDistributed: new BN(rebateData.totalDistributed).toNumber(),
+      rebatesCount: new BN(rebateData.rebatesCount).toNumber(),
+    };
+  } catch {
+    // Rebate pool not initialized yet
+  }
+
+  // Capture state for each token
+  const tokenStates: E2EStateSnapshot['tokens'] = [];
+  for (const token of tokens) {
+    const mint = new PublicKey(token.mint);
+    const creator = new PublicKey(token.creator);
+    const tokenStatsPda = deriveTokenStatsPDA(mint);
+
+    // Determine vault PDA based on pool type
+    let creatorVault: PublicKey;
+    if (token.poolType === 'pumpswap_amm') {
+      creatorVault = deriveCreatorVaultAMM(creator);
+    } else {
+      creatorVault = deriveCreatorVault(creator);
+    }
+
+    // Fetch data
+    const [statsData, vaultInfo] = await Promise.all([
+      accounts.tokenStats.fetch(tokenStatsPda).catch(() => null),
+      connection.getAccountInfo(creatorVault),
+    ]);
+
+    tokenStates.push({
+      mint: token.mint,
+      symbol: token.symbol,
+      isRoot: token.isRoot || false,
+      pendingFeesLamports: statsData ? new BN(statsData.pendingFeesLamports).toNumber() : 0,
+      totalBurned: statsData ? new BN(statsData.totalBurned).toNumber() : 0,
+      totalSolCollected: statsData ? new BN(statsData.totalSolCollected).toNumber() : 0,
+      totalSolSentToRoot: statsData ? new BN(statsData.totalSolSentToRoot).toNumber() : 0,
+      totalSolReceivedFromOthers: statsData
+        ? new BN(statsData.totalSolReceivedFromOthers).toNumber()
+        : 0,
+      cyclesParticipated: statsData ? new BN(statsData.cyclesParticipated).toNumber() : 0,
+      creatorVaultBalance: vaultInfo ? vaultInfo.lamports : 0,
+    });
+  }
+
+  return {
+    network,
+    capturedAt: now,
+    tokens: tokenStates,
+    rootTreasuryBalance: rootTreasuryInfo ? rootTreasuryInfo.lamports : 0,
+    rebatePool,
+    datAuthorityBalance: datAuthorityInfo ? datAuthorityInfo.lamports : 0,
+    walletBalance,
+  };
+}
+
+/**
+ * Compare two E2E states and return diff
+ */
+export function compareE2EStates(
+  before: E2EStateSnapshot,
+  after: E2EStateSnapshot
+): E2EStateDiff {
+  const startTime = new Date(before.capturedAt).getTime();
+  const endTime = new Date(after.capturedAt).getTime();
+  const durationMs = endTime - startTime;
+  const durationStr = `${Math.floor(durationMs / 60000)}m ${Math.floor((durationMs % 60000) / 1000)}s`;
+
+  const tokenDiffs = after.tokens.map((afterToken) => {
+    const beforeToken = before.tokens.find((t) => t.mint === afterToken.mint);
+    if (!beforeToken) {
+      return {
+        symbol: afterToken.symbol,
+        mint: afterToken.mint,
+        isRoot: afterToken.isRoot,
+        pendingFeesDelta: afterToken.pendingFeesLamports,
+        totalBurnedDelta: afterToken.totalBurned,
+        totalSolCollectedDelta: afterToken.totalSolCollected,
+        totalSolSentToRootDelta: afterToken.totalSolSentToRoot,
+        cyclesParticipatedDelta: afterToken.cyclesParticipated,
+      };
+    }
+    return {
+      symbol: afterToken.symbol,
+      mint: afterToken.mint,
+      isRoot: afterToken.isRoot,
+      pendingFeesDelta: afterToken.pendingFeesLamports - beforeToken.pendingFeesLamports,
+      totalBurnedDelta: afterToken.totalBurned - beforeToken.totalBurned,
+      totalSolCollectedDelta: afterToken.totalSolCollected - beforeToken.totalSolCollected,
+      totalSolSentToRootDelta: afterToken.totalSolSentToRoot - beforeToken.totalSolSentToRoot,
+      cyclesParticipatedDelta: afterToken.cyclesParticipated - beforeToken.cyclesParticipated,
+    };
+  });
+
+  let rebatePoolDelta: E2EStateDiff['rebatePoolDelta'] = null;
+  if (after.rebatePool && before.rebatePool) {
+    rebatePoolDelta = {
+      depositedDelta: after.rebatePool.totalDeposited - before.rebatePool.totalDeposited,
+      distributedDelta: after.rebatePool.totalDistributed - before.rebatePool.totalDistributed,
+      rebatesCountDelta: after.rebatePool.rebatesCount - before.rebatePool.rebatesCount,
+    };
+  } else if (after.rebatePool) {
+    rebatePoolDelta = {
+      depositedDelta: after.rebatePool.totalDeposited,
+      distributedDelta: after.rebatePool.totalDistributed,
+      rebatesCountDelta: after.rebatePool.rebatesCount,
+    };
+  }
+
+  return {
+    duration: durationStr,
+    tokens: tokenDiffs,
+    rootTreasuryDelta: after.rootTreasuryBalance - before.rootTreasuryBalance,
+    rebatePoolDelta,
+    datAuthorityDelta: after.datAuthorityBalance - before.datAuthorityBalance,
+    walletDelta: after.walletBalance - before.walletBalance,
+  };
+}
+
+/**
+ * Run E2E verification checks
+ */
+export function runE2EVerifications(
+  before: E2EStateSnapshot,
+  after: E2EStateSnapshot,
+  diff: E2EStateDiff
+): VerificationResult[] {
+  const results: VerificationResult[] = [];
+
+  // 1. Burns occurred
+  const totalBurnDelta = diff.tokens.reduce((sum, t) => sum + t.totalBurnedDelta, 0);
+  results.push({
+    name: 'Burns executed',
+    passed: totalBurnDelta > 0,
+    expected: '> 0 tokens burned',
+    actual: `${totalBurnDelta.toLocaleString()} tokens burned`,
+  });
+
+  // 2. Pending fees processed
+  const totalPendingBefore = before.tokens.reduce((sum, t) => sum + t.pendingFeesLamports, 0);
+  const totalPendingAfter = after.tokens.reduce((sum, t) => sum + t.pendingFeesLamports, 0);
+  const pendingReduced = totalPendingAfter < totalPendingBefore * 0.5;
+  results.push({
+    name: 'Pending fees processed',
+    passed: pendingReduced || totalPendingAfter === 0,
+    expected: 'Pending fees reduced by >50% or reset to 0',
+    actual: `Before: ${formatSol(totalPendingBefore)} SOL, After: ${formatSol(totalPendingAfter)} SOL`,
+  });
+
+  // 3. Secondary tokens sent 44.8% to root
+  for (const tokenDiff of diff.tokens.filter((t) => !t.isRoot)) {
+    if (tokenDiff.totalSolCollectedDelta > 0) {
+      const expectedToRoot = tokenDiff.totalSolCollectedDelta * ROOT_RATIO;
+      const actualToRoot = tokenDiff.totalSolSentToRootDelta;
+      const tolerance = 0.15; // 15% tolerance for fees/slippage
+      const withinTolerance =
+        actualToRoot >= expectedToRoot * (1 - tolerance) &&
+        actualToRoot <= expectedToRoot * (1 + tolerance);
+
+      results.push({
+        name: `${tokenDiff.symbol}: 44.8% split to root`,
+        passed: withinTolerance || tokenDiff.totalSolCollectedDelta === 0,
+        expected: `~${formatSol(expectedToRoot)} SOL to root (44.8%)`,
+        actual: `${formatSol(actualToRoot)} SOL to root`,
+        details: `Collected: ${formatSol(tokenDiff.totalSolCollectedDelta)} SOL`,
+      });
+    }
+  }
+
+  // 4. Root token cycle completed
+  const rootToken = diff.tokens.find((t) => t.isRoot);
+  if (rootToken && rootToken.totalBurnedDelta > 0) {
+    results.push({
+      name: 'Root token cycle completed',
+      passed: rootToken.cyclesParticipatedDelta > 0,
+      expected: 'Root cycles incremented',
+      actual: `+${rootToken.cyclesParticipatedDelta} cycles`,
+    });
+  }
+
+  // 5. No negative deltas (sanity check)
+  const hasNegativeBurns = diff.tokens.some((t) => t.totalBurnedDelta < 0);
+  results.push({
+    name: 'No data corruption',
+    passed: !hasNegativeBurns,
+    expected: 'No negative burn deltas',
+    actual: hasNegativeBurns ? 'Negative burns detected!' : 'All deltas valid',
+  });
+
+  return results;
+}
+
+/**
+ * Generate E2E markdown report
+ */
+export function generateE2EReport(
+  before: E2EStateSnapshot,
+  after: E2EStateSnapshot,
+  diff: E2EStateDiff,
+  verifications: VerificationResult[],
+  txSignatures: Array<{ phase: string; token: string; signature: string }>,
+  executionLogs: string[]
+): string {
+  const passedCount = verifications.filter((v) => v.passed).length;
+  const totalCount = verifications.length;
+  const allPassed = passedCount === totalCount;
+
+  let md = `# E2E Cycle Validation Report
+
+**Date:** ${after.capturedAt}
+**Network:** ${after.network}
+**Duration:** ${diff.duration}
+**Status:** ${allPassed ? 'PASSED' : 'FAILED'} (${passedCount}/${totalCount} checks)
+
+---
+
+## Summary
+
+| Metric | Before | After | Delta |
+|--------|--------|-------|-------|
+`;
+
+  // Token summaries
+  for (const tokenDiff of diff.tokens) {
+    const beforeToken = before.tokens.find((t) => t.mint === tokenDiff.mint)!;
+    const afterToken = after.tokens.find((t) => t.mint === tokenDiff.mint)!;
+    const burnDelta =
+      tokenDiff.totalBurnedDelta > 0 ? `+${tokenDiff.totalBurnedDelta.toLocaleString()}` : '0';
+    md += `| Total Burned (${tokenDiff.symbol}) | ${beforeToken.totalBurned.toLocaleString()} | ${afterToken.totalBurned.toLocaleString()} | ${burnDelta} |\n`;
+  }
+
+  // Root treasury
+  md += `| Root Treasury | ${formatSol(before.rootTreasuryBalance)} SOL | ${formatSol(after.rootTreasuryBalance)} SOL | ${diff.rootTreasuryDelta >= 0 ? '+' : ''}${formatSol(diff.rootTreasuryDelta)} SOL |\n`;
+
+  // Pending fees
+  const totalPendingBefore = before.tokens.reduce((sum, t) => sum + t.pendingFeesLamports, 0);
+  const totalPendingAfter = after.tokens.reduce((sum, t) => sum + t.pendingFeesLamports, 0);
+  md += `| Pending Fees (Total) | ${formatSol(totalPendingBefore)} SOL | ${formatSol(totalPendingAfter)} SOL | ${formatSol(totalPendingAfter - totalPendingBefore)} SOL |\n`;
+
+  md += `
+---
+
+## Verifications
+
+`;
+
+  for (const v of verifications) {
+    const icon = v.passed ? '[x]' : '[ ]';
+    md += `- ${icon} **${v.name}**\n`;
+    md += `  - Expected: ${v.expected}\n`;
+    md += `  - Actual: ${v.actual}\n`;
+    if (v.details) {
+      md += `  - Details: ${v.details}\n`;
+    }
+  }
+
+  if (txSignatures.length > 0) {
+    md += `
+---
+
+## Transactions
+
+| Phase | Token | TX Signature | Explorer |
+|-------|-------|--------------|----------|
+`;
+
+    for (const tx of txSignatures) {
+      const shortSig = tx.signature.slice(0, 12) + '...';
+      const explorerUrl = `https://solscan.io/tx/${tx.signature}?cluster=${after.network}`;
+      md += `| ${tx.phase} | ${tx.token} | \`${shortSig}\` | [Solscan](${explorerUrl}) |\n`;
+    }
+  }
+
+  md += `
+---
+
+## Token Details
+
+`;
+
+  for (const tokenDiff of diff.tokens) {
+    const rootLabel = tokenDiff.isRoot ? '(ROOT)' : '(SECONDARY)';
+    md += `### ${tokenDiff.symbol} ${rootLabel}
+
+| Metric | Delta |
+|--------|-------|
+| Pending Fees | ${formatSol(tokenDiff.pendingFeesDelta)} SOL |
+| Total Burned | +${tokenDiff.totalBurnedDelta.toLocaleString()} |
+| SOL Collected | +${formatSol(tokenDiff.totalSolCollectedDelta)} SOL |
+| Sent to Root | +${formatSol(tokenDiff.totalSolSentToRootDelta)} SOL |
+| Cycles | +${tokenDiff.cyclesParticipatedDelta} |
+
+`;
+  }
+
+  md += `---
+
+*Generated by e2e-cycle-validation.ts*
+*"Flush. Burn. Verify. This is fine."*
+`;
+
+  return md;
+}
+
+/**
+ * Parse TX signatures from orchestrator output
+ */
+export function parseTxSignatures(
+  output: string
+): Array<{ phase: string; token: string; signature: string }> {
+  const signatures: Array<{ phase: string; token: string; signature: string }> = [];
+  const lines = output.split('\n');
+
+  for (const line of lines) {
+    // Match patterns like "TX: 5Sjt8XRb..." or "Signature: ABC123..."
+    const txMatch = line.match(/(?:TX|Signature):\s*([A-Za-z0-9]{32,})/i);
+    if (txMatch) {
+      // Try to extract phase and token from context
+      let phase = 'Cycle';
+      let token = 'Unknown';
+
+      if (line.toLowerCase().includes('buy')) phase = 'Buy';
+      else if (line.toLowerCase().includes('burn')) phase = 'Burn';
+      else if (line.toLowerCase().includes('collect')) phase = 'Collect';
+      else if (line.toLowerCase().includes('volume')) phase = 'Volume';
+      else if (line.toLowerCase().includes('rebate')) phase = 'Rebate';
+
+      // Try to find token symbol in nearby context
+      const symbolMatch = line.match(/\b([A-Z]{2,10})\b/);
+      if (symbolMatch) {
+        token = symbolMatch[1];
+      }
+
+      signatures.push({
+        phase,
+        token,
+        signature: txMatch[1],
+      });
+    }
+  }
+
+  return signatures;
+}
