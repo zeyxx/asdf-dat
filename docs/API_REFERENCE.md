@@ -13,9 +13,10 @@ Complete instruction reference for the ASDF-DAT smart contract.
 3. [Fee Collection](#fee-collection)
 4. [Buyback & Burn](#buyback--burn)
 5. [Validator System](#validator-system)
-6. [Admin Operations](#admin-operations)
-7. [Error Codes](#error-codes)
-8. [Constants](#constants)
+6. [External App Integration](#external-app-integration)
+7. [Admin Operations](#admin-operations)
+8. [Error Codes](#error-codes)
+9. [Constants](#constants)
 
 ---
 
@@ -479,6 +480,155 @@ Reset stale validator to current slot.
 
 **Constraints:**
 - Only if > 1000 slots behind
+
+---
+
+## External App Integration
+
+External applications can deposit $ASDF tokens for burn with user rebates.
+
+### `initializeRebatePool`
+
+Initialize the rebate pool for external app deposits.
+
+**Access:** Admin only
+
+**Accounts:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `rebate_pool` | PDA | Rebate pool state (created) |
+| `rebate_pool_ata` | Account | Pool's token account |
+| `dat_state` | PDA | Global state |
+| `asdf_mint` | Account | $ASDF token mint |
+| `admin` | Signer | Administrator |
+| `system_program` | Program | System program |
+| `token_program` | Program | Token program |
+| `associated_token_program` | Program | ATA program |
+
+**Example:**
+```typescript
+await program.methods.initializeRebatePool()
+  .accounts({
+    rebatePool,
+    rebatePoolAta,
+    datState,
+    asdfMint,
+    admin: wallet.publicKey,
+    systemProgram: SystemProgram.programId,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+  })
+  .rpc();
+```
+
+---
+
+### `depositFeeAsdf`
+
+External apps deposit $ASDF for burn + rebate.
+
+**Access:** Permissionless
+
+**Parameters:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `amount` | u64 | Amount to deposit |
+
+**Fee Split (Exact Precision):**
+- 99.448% (99448/100000) → DAT ATA (burned in root cycle)
+- 0.552% (552/100000) → Rebate Pool ATA
+
+**Accounts:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `dat_state` | PDA | Global state |
+| `dat_authority` | PDA | Program signer |
+| `dat_ata` | Account | DAT's token account |
+| `rebate_pool` | PDA | Rebate pool state |
+| `rebate_pool_ata` | Account | Pool's token account |
+| `user_stats` | PDA | User contribution tracking |
+| `payer` | Signer | Depositor |
+| `payer_ata` | Account | Depositor's token account |
+| `asdf_mint` | Account | $ASDF token mint |
+| `token_program` | Program | Token program |
+| `system_program` | Program | System program |
+
+**Constraints:**
+- Minimum deposit: 0.1 SOL equivalent
+
+**Example:**
+```typescript
+await program.methods.depositFeeAsdf(new BN(1_000_000_000)) // 1 ASDF
+  .accounts({
+    datState,
+    datAuthority,
+    datAta,
+    rebatePool,
+    rebatePoolAta,
+    userStats,
+    payer: wallet.publicKey,
+    payerAta,
+    asdfMint,
+    tokenProgram: TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId,
+  })
+  .rpc();
+```
+
+---
+
+### `processUserRebate`
+
+Distribute rebate to an eligible user.
+
+**Access:** Permissionless (called in root cycle)
+
+**Accounts:**
+
+| Name | Type | Description |
+|------|------|-------------|
+| `dat_state` | PDA | Global state |
+| `rebate_pool` | PDA | Rebate pool state |
+| `rebate_pool_ata` | Account | Pool's token account |
+| `user_stats` | PDA | Selected user's stats |
+| `user` | Account | User's wallet |
+| `user_ata` | Account | User's token account |
+| `asdf_mint` | Account | $ASDF token mint |
+| `token_program` | Program | Token program |
+
+**Eligibility:**
+- User's pending_contribution >= 0.07 SOL equivalent
+
+**Selection Algorithm (Phase 1):**
+```
+selectedIndex = currentSlot % eligibleUsers.length
+```
+(Deterministic, verifiable. Oracle randomness planned for Phase 2.)
+
+**Effects:**
+- Transfers rebate_amount from pool → user
+- Resets user's pending_contribution to 0
+- Updates user's total_rebate
+- Updates pool statistics
+
+**Example:**
+```typescript
+await program.methods.processUserRebate()
+  .accounts({
+    datState,
+    rebatePool,
+    rebatePoolAta,
+    userStats: selectedUserStats,
+    user: selectedUser,
+    userAta: selectedUserAta,
+    asdfMint,
+    tokenProgram: TOKEN_PROGRAM_ID,
+  })
+  .rpc();
+```
 
 ---
 

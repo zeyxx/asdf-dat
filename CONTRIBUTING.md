@@ -2,6 +2,35 @@
 
 Guidelines for contributing to the ASDF-DAT codebase.
 
+---
+
+## Philosophy
+
+Before you code, understand what we're building:
+
+> **Creation, not extraction.**
+> We don't take value. We create it.
+> We don't print tokens. We burn them.
+
+### Core Principles
+
+1. **Quality > Quantity** - One working feature beats three half-done ones
+2. **Phase 2 Ready** - Every line of code should make the multi-tenant future easier
+3. **Verify Everything** - "Don't trust, verify" applies to your own code too
+4. **Simple > Clever** - Readable code wins over impressive abstractions
+
+### The Mantra
+
+```
+Test. Verify. Learn. Repeat.
+Never assume. Always confirm.
+Phase 1 today. Phase 2 ready.
+```
+
+*Building infrastructure for Creator Capital Markets.* 🔥🐕
+
+---
+
 ## Development Setup
 
 ```bash

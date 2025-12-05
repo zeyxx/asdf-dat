@@ -12,9 +12,10 @@ Everything you need to integrate, extend, or operate the DAT ecosystem.
 4. [Fee Attribution System](#fee-attribution-system)
 5. [Cycle Execution](#cycle-execution)
 6. [Token Configuration](#token-configuration)
-7. [Error Handling](#error-handling)
-8. [Security](#security)
-9. [Testing](#testing)
+7. [External App Integration](#external-app-integration)
+8. [Error Handling](#error-handling)
+9. [Security](#security)
+10. [Testing](#testing)
 
 ---
 
@@ -368,6 +369,146 @@ npx ts-node scripts/init-token-stats.ts devnet-tokens/99-newtoken.json --network
 # 3. Restart daemon (auto-detects new tokens)
 pkill -f monitor-ecosystem-fees
 npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
+```
+
+---
+
+## External App Integration
+
+Build apps that feed the burn engine. Your app can contribute revenue in **two ways**.
+
+### Option 1: Send SOL (Simple)
+
+```
+Your App generates revenue in SOL
+            │
+            ▼
+    Send SOL to ecosystem
+            │
+            ▼
+    Orchestrator collects
+            │
+            ▼
+    Automatic buyback $ASDF
+            │
+            ▼
+        BURN
+```
+
+**How**: Transfer SOL to the creator vault or DAT authority. The daemon automatically includes it in the next cycle.
+
+**Benefit**: Zero integration complexity. Just send SOL.
+
+---
+
+### Option 2: Send $ASDF (With Rebates)
+
+```
+Your App generates revenue in $ASDF
+            │
+            ▼
+    depositFeeAsdf(amount)
+            │
+     ┌──────┴──────┐
+     │             │
+  99.448%       0.552%
+     │             │
+     ▼             ▼
+  DAT ATA      Rebate Pool
+  (burned)     (user rewards)
+```
+
+**Benefit**: Users who interact with your app become eligible for rebates.
+
+### Integration Flow
+
+1. **User uses your app** → Pays in $ASDF
+2. **Your app calls `depositFeeAsdf`** → 99.448% burned, 0.552% to rebate pool
+3. **User becomes eligible** → Can receive rebates from pool
+
+### Code Example
+
+```typescript
+import { Program, BN } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
+
+async function depositRevenue(
+  program: Program,
+  amount: BN,
+  payer: PublicKey
+) {
+  // Derive PDAs
+  const [datState] = PublicKey.findProgramAddressSync(
+    [Buffer.from("dat_v3")],
+    program.programId
+  );
+
+  const [datAuthority] = PublicKey.findProgramAddressSync(
+    [Buffer.from("auth_v3")],
+    program.programId
+  );
+
+  const [rebatePool] = PublicKey.findProgramAddressSync(
+    [Buffer.from("rebate_pool")],
+    program.programId
+  );
+
+  const [userStats] = PublicKey.findProgramAddressSync(
+    [Buffer.from("user_stats_v1"), payer.toBuffer()],
+    program.programId
+  );
+
+  // Execute deposit
+  await program.methods
+    .depositFeeAsdf(amount)
+    .accounts({
+      datState,
+      datAuthority,
+      datAta,           // DAT's token account
+      rebatePool,
+      rebatePoolAta,    // Pool's token account
+      userStats,
+      payer,
+      payerAta,         // Payer's token account
+      asdfMint,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .rpc();
+}
+```
+
+### Rebate System
+
+Users who deposit through your app become eligible for rebates:
+
+| Threshold | Requirement |
+|-----------|-------------|
+| Eligibility | pending_contribution >= 0.07 SOL equivalent |
+| Rebate Amount | 0.552% of pending_contribution |
+
+Selection is deterministic (Phase 1):
+```
+selectedIndex = currentSlot % eligibleUsers.length
+```
+
+### Benefits for Apps
+
+- **User incentive**: Users get rebates for using your app
+- **Burn narrative**: 99.448% of revenue burns $ASDF
+- **On-chain proof**: Every deposit is verifiable
+
+### Testing on Devnet
+
+```bash
+# 1. Initialize rebate pool (admin only, one-time)
+npx ts-node scripts/initialize-rebate-pool.ts --network devnet
+
+# 2. Test deposit
+npx ts-node scripts/test-deposit-fee-asdf.ts --amount 1000000000 --network devnet
+
+# 3. Check user stats
+npx ts-node scripts/check-user-stats.ts <USER_PUBKEY> --network devnet
 ```
 
 ---

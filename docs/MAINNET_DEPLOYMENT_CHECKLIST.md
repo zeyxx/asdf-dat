@@ -1,6 +1,6 @@
 # Mainnet Deployment Checklist
 
-## Pre-Deployment Status (2025-12-02)
+## Pre-Deployment Status
 
 ### Infrastructure Verification (PASSED)
 
@@ -20,7 +20,7 @@ ASDF (AMM WSOL ATA): 9hf6biPF6HrxvH6KuQqXSLYCeLuDUV88wvhsxJGuq1s2
 FOUSE (BC Vault):    ECo6iR6yhyjrYsU5XbiMi3VXWeGTzqaLReWbNSHMg4LH
 ```
 
-### Current Vault Balances (2025-12-02)
+### Current Vault Balances
 - ASDF WSOL Vault: **0.013 WSOL** (~$2.60 at $200/SOL)
 - FOUSE BC Vault: **0.00196 SOL** (~$0.39)
 
@@ -196,5 +196,4 @@ npx ts-node scripts/execute-ecosystem-cycle.ts mainnet-token-root.json --network
 
 ---
 
-*Last Updated: 2025-12-02*
 *Status: Ready for deployment when funded*

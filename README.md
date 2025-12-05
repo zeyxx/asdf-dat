@@ -1,210 +1,142 @@
-# ASDF-DAT
+# ASDF-DAT 🔥🐕
 
-**Optimistic Burn Protocol**
-
-Flush. Burn. Verify.
-
----
-
-## What It Is
-
-An autonomous treasury that converts trading fees into permanent token supply reduction.
-
-```
-Trading happens → Fees accumulate → Daemon flushes → Tokens burn → Anyone verifies
-```
-
-No inflation. No emissions. Just deflation.
+> **The Burn Engine for Creator Capital Markets**
+>
+> *Creation, not extraction. This is fine.*
 
 ---
 
-## The Model
+## What is ASDF-DAT?
 
-### Optimistic Burn
+An autonomous protocol that converts ecosystem activity into permanent token burns.
 
-A single daemon executes cycles. The chain records everything. Anyone can verify.
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    THE BURN CYCLE                           │
-│                                                             │
-│   TRADE          FLUSH           BURN          VERIFY       │
-│   ─────►        ──────►         ──────►        ──────►      │
-│                                                             │
-│   Volume         Daemon          99% to        On-chain     │
-│   generates      collects        buyback       proof        │
-│   creator        and             & burn        forever      │
-│   fees           executes                                   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### 99/1 Split
-
-| Destination | Share | Purpose |
-|-------------|-------|---------|
-| Burn | 99% | Permanent supply reduction |
-| Dev | 1% | Infrastructure sustainability |
-
-1% today = 99% burns forever.
-
-### Native Yield
-
-Holders earn through deflation, not inflation.
-
-No token printing. No reward pools. No staking mechanics.
-Just fewer tokens existing over time.
+Every trade. Every app revenue. Every secondary token fee.
+**All roads lead to burn.**
 
 ---
 
-## Token Hierarchy
+## The 3 Burn Channels
+
+### 1. Trading Volume
+```
+Pump.fun trades → Creator fees → Buyback → Burn
+```
+
+### 2. Ecosystem Apps
+```
+ASDForecast (and future apps) → Revenue deposited → Burned
+```
+Apps can contribute in **two ways**:
+- **SOL** → Collected in cycles → Buyback → Burn (automatic)
+- **$ASDF** → 99.448% burned / 0.552% user rebates
+
+### 3. Token Hierarchy
+```
+Secondary tokens → 44.8% of fees → Root treasury → Mega burn
+```
 
 ```
-                    ROOT TOKEN
+                    $ASDF (Root)
+                         │
+                         │ receives 44.8% from ALL secondaries
                          │
          ┌───────────────┼───────────────┐
          │               │               │
          ▼               ▼               ▼
-    SECONDARY 1     SECONDARY 2     SECONDARY N
+    Secondary 1     Secondary 2     Secondary N
+    (keeps 55.2%)   (keeps 55.2%)   (keeps 55.2%)
 ```
-
-Each secondary token's fees flow:
-- 55.2% → Secondary buyback & burn
-- 44.8% → Root treasury (burned in root cycles)
 
 More tokens in ecosystem = more burn pressure on root.
 
 ---
 
-## Architecture
+## For Holders
 
-```
-OFF-CHAIN
-┌──────────────────────────────────────────────────────────────┐
-│                                                              │
-│  FEE DAEMON                    CYCLE ORCHESTRATOR            │
-│  ───────────                   ──────────────────            │
-│  Monitors trades               Calculates splits             │
-│  Attributes fees               Executes buybacks             │
-│  Updates chain                 Burns tokens                  │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-ON-CHAIN
-┌──────────────────────────────────────────────────────────────┐
-│                                                              │
-│  DAT STATE          TOKEN STATS          ROOT TREASURY       │
-│  ─────────          ───────────          ──────────────      │
-│  Global config      Per-token fees       44.8% accumulator   │
-│  Fee split %        Burn totals          For root burns      │
-│  Controls           Pending fees                             │
-│                                                              │
-│  ────────────────────────────────────────────────────────    │
-│                    PUMP.FUN INTEGRATION                      │
-│  Bonding Curve (pre-migration) │ PumpSwap AMM (post)         │
-│                                                              │
-└──────────────────────────────────────────────────────────────┘
-```
+**You hold. The ecosystem works.**
 
-**Program:** `ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui`
+- No staking required
+- No emissions, no inflation
+- Every action = fewer tokens = your share grows
+
+**Native yield through pure deflation.**
+
+The flywheel:
+```
+More apps join → More revenue injected → More burns → More value → More apps want to join
+```
 
 ---
 
-## Quick Start
+## For Developers
 
-```bash
-# Clone
-git clone https://github.com/asdfDAT/asdf-dat.git
-cd asdf-dat && npm install
+**Build apps that feed the burn engine.**
 
-# Start daemon
-npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
+Your app can contribute revenue in two ways:
 
-# Generate volume
-npx ts-node scripts/generate-volume.ts devnet-tokens/01-froot.json 2 0.5
+| Method | Flow | Benefit |
+|--------|------|---------|
+| **SOL** | Sent to ecosystem → Automatic buyback & burn | Simple integration |
+| **$ASDF** | `depositFeeAsdf()` → 99.448% burn / 0.552% rebate | User incentives |
 
-# Wait for sync
-sleep 30
-
-# Flush
-npx ts-node scripts/execute-ecosystem-cycle.ts devnet-tokens/01-froot.json --network devnet
-```
-
-Verify on-chain: fees collected, tokens burned, supply reduced.
-
----
-
-## Verification
-
-Everything is on-chain. Verify yourself:
-
-```bash
-# Check burn totals
-npx ts-node scripts/query-token-stats.ts <mint> --network mainnet
-
-# View cycle history
-npx ts-node scripts/query-cycles.ts --network mainnet
-```
-
-Or read directly from Solscan.
-
----
-
-## Philosophy
-
-### Creation > Extraction
-
-We don't take value. We create it.
-We don't print tokens. We burn them.
-We don't optimize for fees. We minimize them.
-
-### Trust Through Verification
-
-Single daemon executes.
-Chain proves.
-Anyone audits.
-
-### Sustainable Infrastructure
-
-1% keeps the lights on.
-99% goes to holders through deflation.
-
----
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------|
+| Guide | Purpose |
+|-------|---------|
+| [Quick Start](docs/DEVELOPER_GUIDE.md) | Integration guide |
+| [API Reference](docs/API_REFERENCE.md) | All instructions |
 | [Architecture](docs/ARCHITECTURE.md) | System design |
-| [Developer Guide](docs/DEVELOPER_GUIDE.md) | Integration |
-| [API Reference](docs/API_REFERENCE.md) | Instructions |
-| [Operations](docs/OPERATIONS.md) | Runbooks |
 
 ---
 
-## Roadmap
+## The Economics
 
-**Phase 1** (Current): Single ecosystem proof of concept
-**Phase 2** (2026): Multi-tenant platform - any creator can deploy
+| Split | Destination |
+|-------|-------------|
+| 99% | Buyback & Burn |
+| 1% | Dev sustainability |
+
+*"1% today = 99% burns forever"*
 
 ---
 
-## Security
+## How It Works
 
-- Emergency pause capability
-- Two-step admin transfer
-- Fee split change limits (5% max delta)
-- Auto-pause after consecutive failures
-- Timelock for significant parameter changes
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        THE BURN CYCLE                            │
+│                                                                  │
+│   ACTIVITY         COLLECT          BURN           VERIFY        │
+│   ────────►       ────────►       ────────►       ────────►      │
+│                                                                  │
+│   Trading &        Daemon          99% to         On-chain       │
+│   app revenue      attributes      buyback        proof          │
+│   generate         and executes    & burn         forever        │
+│   fees                                                           │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Single daemon executes. Chain proves. Anyone verifies.**
 
 ---
 
 ## Links
 
-- [Program Explorer](https://solscan.io/account/ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui)
-- [Root Token](https://pump.fun/coin/9FxrRPwDF44zzjfzxGKtdqXqH1JKjD4MJ1nbFP7Zpump)
-- [@ASDFASDFA552](https://x.com/ASDFASDFA552)
+| Resource | Link |
+|----------|------|
+| Program | [Solscan](https://solscan.io/account/ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui) |
+| Root Token | [Pump.fun](https://pump.fun/coin/9FxrRPwDF44zzjfzxGKtdqXqH1JKjD4MJ1nbFP7Zpump) |
+| Twitter | [@ASDFASDFA552](https://x.com/ASDFASDFA552) |
+| Docs | [Documentation](docs/) |
+
+---
+
+## Philosophy
+
+> We don't take value. We create it.
+> We don't print tokens. We burn them.
+> We don't optimize for fees. We minimize them.
+>
+> **Flush. Burn. Verify.**
 
 ---
 
@@ -214,5 +146,5 @@ MIT
 
 ---
 
-*Creation, not extraction.*
-*This is fine.* 🔥🐕
+*Building infrastructure for Creator Capital Markets.*
+*Phase 2 ready.* 🔥🐕
