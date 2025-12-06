@@ -14,6 +14,6 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true
   },
-  "include": ["index.ts"],
+  "include": ["index.ts", "daemon.ts", "cli.ts"],
   "exclude": ["node_modules", "dist"]
 }

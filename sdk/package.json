@@ -4,6 +4,9 @@
   "description": "Per-token fee attribution SDK for Pump.fun token ecosystems",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "asdf-validator": "dist/cli.js"
+  },
   "files": [
     "dist",
     "README.md"
@@ -11,6 +14,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
+    "start": "node dist/cli.js",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "keywords": [

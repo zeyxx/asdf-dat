@@ -1,165 +1,162 @@
 # @asdf/validator-sdk
 
-Per-token fee attribution for Pump.fun token ecosystems.
-
-## Problem
-
-Multiple tokens from the same creator share ONE vault. Impossible to know which token generated which fees.
-
-```
-Token A ─┐
-Token B ─┼─► Shared Vault ─► ???
-Token C ─┘
-```
-
-## Solution
-
-Each token gets a `ValidatorState` tracking its contributions.
-
-```
-Token A ─► ValidatorState A: 0.5 SOL
-Token B ─► ValidatorState B: 0.3 SOL
-Token C ─► ValidatorState C: 0.2 SOL
-```
+Run your own validator daemon to track creator fees on Pump.fun.
 
 ## Install
 
 ```bash
-npm install @asdf/validator-sdk @solana/web3.js
+npm install -g @asdf/validator-sdk
 ```
 
 ## Quick Start
 
-```typescript
-import { Connection, PublicKey } from '@solana/web3.js';
-import { ValidatorSDK } from '@asdf/validator-sdk';
+```bash
+# Run daemon for your creator address
+asdf-validator --creator YOUR_CREATOR_WALLET_ADDRESS
 
-const connection = new Connection('https://api.mainnet-beta.solana.com');
-const sdk = new ValidatorSDK(connection);
+# With verbose logging
+asdf-validator -c YOUR_ADDRESS -v
 
-// Check if validator exists
-const mint = new PublicKey('YOUR_TOKEN_MINT');
-const exists = await sdk.isInitialized(mint);
-
-// Get contribution
-const contribution = await sdk.getContribution(mint);
-console.log(`Total fees: ${contribution.totalSOL} SOL`);
+# Custom RPC
+asdf-validator -c YOUR_ADDRESS -r https://my-rpc.com
 ```
 
-## Initialize Validator
+## What It Does
 
-After launching a token on Pump.fun:
+1. Monitors your creator vault for balance changes
+2. Detects fee accumulation from trading activity
+3. Tracks total fees in real-time
+4. Reports stats every 60 seconds
 
-```typescript
-const mint = new PublicKey('TOKEN_MINT');
-const bondingCurve = new PublicKey('BONDING_CURVE');
-const payer = wallet.publicKey;
+```
+🔥 ASDF VALIDATOR DAEMON
+═══════════════════════════════════════════════════════
+Creator:    5ABC...xyz
+BC Vault:   7DEF...uvw
+AMM Vault:  9GHI...rst
+═══════════════════════════════════════════════════════
 
-// Build transaction
-const tx = sdk.buildInitializeTransaction(mint, bondingCurve, payer);
+▶ Starting daemon...
 
-// Sign and send (using your wallet adapter)
-const sig = await sendTransaction(tx);
+✅ Daemon running. Press Ctrl+C to stop.
+
+[12:34:56] 💰 BC: +0.001234 SOL
+[12:35:12] 💰 BC: +0.000567 SOL
+
+📊 STATS
+────────────────────────────────────
+Total: 0.001801 SOL
+────────────────────────────────────
 ```
 
-## Get Leaderboard
+## Options
 
-```typescript
-const mints = [mint1, mint2, mint3];
-const leaderboard = await sdk.getLeaderboard(mints);
-
-for (const entry of leaderboard) {
-  console.log(`#${entry.rank} ${entry.mint}: ${entry.totalSOL} SOL (${entry.percentage}%)`);
-}
+```
+--creator, -c <ADDRESS>   Creator wallet address (required)
+--rpc, -r <URL>           RPC URL (default: mainnet)
+--tokens, -t <FILE>       JSON file with token configs
+--interval, -i <SECONDS>  Poll interval (default: 5)
+--verbose, -v             Verbose logging
+--help, -h                Show help
 ```
 
-## Distribute Rewards
+## Token Config File
+
+Track specific tokens with a JSON file:
+
+```json
+[
+  {
+    "mint": "TokenMintAddress...",
+    "symbol": "MYTOKEN",
+    "bondingCurve": "BCAddress...",
+    "poolType": "bonding_curve"
+  }
+]
+```
+
+```bash
+asdf-validator -c YOUR_ADDRESS -t tokens.json
+```
+
+## Programmatic Usage
 
 ```typescript
-const contributions = await sdk.getContributions(mints);
-const distribution = sdk.calculateDistribution(contributions, 1_000_000_000n); // 1 SOL
+import { ValidatorDaemon } from '@asdf/validator-sdk';
 
-for (const [mint, amount] of distribution) {
-  console.log(`${mint}: ${Number(amount) / 1e9} SOL`);
-}
+const daemon = new ValidatorDaemon({
+  rpcUrl: 'https://api.mainnet-beta.solana.com',
+  creatorAddress: 'YOUR_CREATOR_ADDRESS',
+  verbose: true,
+
+  onFeeDetected: (record) => {
+    console.log(`${record.symbol}: +${record.amount} lamports`);
+    // Save to database, send notification, etc.
+  },
+
+  onStats: (stats) => {
+    // Periodic stats callback
+    const total = stats.reduce((sum, s) => sum + Number(s.totalFees), 0);
+    console.log(`Total: ${total / 1e9} SOL`);
+  },
+});
+
+await daemon.start();
+
+// Later...
+daemon.stop();
+console.log(`Final total: ${daemon.getTotalFees()}`);
 ```
 
 ## API
 
-### `ValidatorSDK`
+### `ValidatorDaemon`
 
 ```typescript
-new ValidatorSDK(connection: Connection, programId?: PublicKey)
+new ValidatorDaemon(config: DaemonConfig)
 ```
+
+#### Config
+
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `rpcUrl` | string | Yes | Solana RPC URL |
+| `creatorAddress` | string | Yes | Creator wallet |
+| `tokens` | TokenConfig[] | No | Tokens to track |
+| `pollInterval` | number | No | Poll interval ms (default: 5000) |
+| `verbose` | boolean | No | Enable logging |
+| `onFeeDetected` | function | No | Fee callback |
+| `onStats` | function | No | Stats callback |
+| `statsInterval` | number | No | Stats interval ms (default: 60000) |
 
 #### Methods
 
 | Method | Description |
 |--------|-------------|
-| `isInitialized(mint)` | Check if validator exists |
-| `getContribution(mint)` | Get single token contribution |
-| `getContributions(mints)` | Get multiple contributions |
-| `getLeaderboard(mints)` | Get ranked contributions |
-| `buildInitializeTransaction(mint, bc, payer)` | Build init transaction |
-| `calculateDistribution(contributions, amount)` | Calculate proportional split |
-| `verifyPool(bondingCurve)` | Verify pool ownership |
+| `start()` | Start the daemon |
+| `stop()` | Stop the daemon |
+| `isRunning()` | Check if running |
+| `getStats()` | Get current stats |
+| `getTotalFees()` | Get total fees (bigint) |
+| `addToken(config)` | Add token to track |
 
-### Types
-
-```typescript
-interface TokenContribution {
-  mint: string;
-  totalLamports: bigint;
-  totalSOL: number;
-  validationCount: number;
-  lastSlot: number;
-  feeRateBps: number;
-}
-
-interface RankedContribution extends TokenContribution {
-  percentage: number;
-  rank: number;
-}
-```
-
-## Standalone Functions
-
-For functional style:
+### Utility Functions
 
 ```typescript
 import {
-  isValidatorInitialized,
-  getTokenContribution,
-  deriveValidatorPDA
+  deriveBondingCurveVault,
+  derivePumpSwapVault,
 } from '@asdf/validator-sdk';
 
-const exists = await isValidatorInitialized(connection, mint);
-const contribution = await getTokenContribution(connection, mint);
-const [pda, bump] = deriveValidatorPDA(mint);
+// Get vault addresses for a creator
+const bcVault = deriveBondingCurveVault(creatorPubkey);
+const ammVault = derivePumpSwapVault(creatorPubkey);
 ```
 
-## Constants
-
-```typescript
-import {
-  ASDF_PROGRAM_ID,    // Main program
-  PUMP_PROGRAM_ID,    // PumpFun
-  PUMPSWAP_PROGRAM_ID // PumpSwap AMM
-} from '@asdf/validator-sdk';
-```
-
-## Running the Daemon
-
-The SDK is read-only. To register fees, run the validator daemon:
+## Environment Variables
 
 ```bash
-# Clone the full repo
-git clone https://github.com/zeyxx/asdf-dat.git
-cd asdf-dat
-npm install
-
-# Run daemon
-npx ts-node scripts/run-validator-daemon.ts --network mainnet
+RPC_URL=https://my-rpc.com  # Default RPC URL
 ```
 
 ## License
