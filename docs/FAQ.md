@@ -12,14 +12,19 @@ Frequently asked questions about the Optimistic Burn Protocol.
 
 Every trade, every app deposit = fewer tokens in existence. Your share of the remaining supply automatically grows. No staking required. No actions needed.
 
-### What is the 99/1 split?
+### How are fees distributed?
 
+**Root Token ($ASDF)**
+- 100% → Buyback & Burn (no dev fee)
+- Plus 44.8% from all secondaries → Mega burn
+
+**Secondary Tokens (99/1 split on their 55.2% share)**
 | Portion | Destination |
 |---------|-------------|
-| 99% | Buyback & Burn (permanent supply reduction) |
-| 1% | Dev sustainability (keeps infrastructure running) |
+| 99% | Buyback & Burn |
+| 1% | Dev sustainability |
 
-*"1% today = 99% burns forever"*
+*"1% of secondary share today = 99% burns forever"*
 
 ### Where do the burns come from?
 

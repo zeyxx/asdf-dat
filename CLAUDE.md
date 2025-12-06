@@ -20,12 +20,17 @@ Single daemon executes. Chain proves. Anyone verifies.
 Volume → Fees accumulate → Daemon flushes → Tokens burn → On-chain proof
 ```
 
-### 99/1 Split
+### Fee Distribution
 
-- 99% → Buyback & burn (native yield through deflation)
+**Root Token**: 100% burn (no dev fee)
+- All creator fees → Buyback & burn
+- Receives 44.8% from all secondaries → Mega burn
+
+**Secondary Tokens**: 99/1 split on their 55.2% share
+- 99% → Buyback & burn
 - 1% → Dev sustainability (keeps infrastructure running)
 
-1% today = 99% burns forever.
+*1% of secondary share today = 99% burns forever.*
 
 ---
 
@@ -399,8 +404,8 @@ Simple & readable    >  Complex & impressive
 Phase 1 is foundation. Always ask: "Will this make Phase 2 easier or harder?"
 
 ```rust
-// Creation, not extraction
-pub const DEV_SUSTAINABILITY_BPS: u16 = 100;  // 1% - keeps lights on
+// Creation, not extraction (secondaries only)
+pub const DEV_FEE_BPS: u16 = 100;  // 1% of secondary share - keeps lights on
 ```
 
 ## Commit Format
@@ -428,8 +433,8 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 // Accumulate until threshold - reduces tx costs
 total += fee;
 
-// 1% dev sustainability - 1% today = 99% burns forever
-let dev_share = amount / 100;
+// 1% dev sustainability (secondaries only) - keeps infrastructure running
+let dev_share = secondary_share / 100;
 ```
 
 ---
@@ -452,3 +457,4 @@ If doubt exists, ask first.
 - organic always win.
 - ASDF - Optimistic Burn Protocol
 - eligibility is efficiency
+- plus jamais de ta vie tu affiches des données sensibles

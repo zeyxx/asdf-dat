@@ -89,12 +89,20 @@ Your app can contribute revenue in two ways:
 
 ## The Economics
 
+**Root Token ($ASDF)**
+- 100% of creator fees → Buyback & Burn
+- 44.8% from all secondary tokens → Mega burn
+
+**Secondary Tokens**
 | Split | Destination |
 |-------|-------------|
-| 99% | Buyback & Burn |
-| 1% | Dev sustainability |
+| 55.2% | Secondary's own buyback & burn |
+| 44.8% | Root treasury (mega burn) |
+| 1%* | Dev sustainability |
 
-*"1% today = 99% burns forever"*
+*\*1% of the 55.2% secondary share = keeps infrastructure running*
+
+The root burns everything. Secondaries contribute to both.
 
 ---
 
@@ -107,9 +115,9 @@ Your app can contribute revenue in two ways:
 │   ACTIVITY         COLLECT          BURN           VERIFY        │
 │   ────────►       ────────►       ────────►       ────────►      │
 │                                                                  │
-│   Trading &        Daemon          99% to         On-chain       │
-│   app revenue      attributes      buyback        proof          │
-│   generate         and executes    & burn         forever        │
+│   Trading &        Daemon          Tokens         On-chain       │
+│   app revenue      attributes      bought &       proof          │
+│   generate         and executes    burned         forever        │
 │   fees                                                           │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘

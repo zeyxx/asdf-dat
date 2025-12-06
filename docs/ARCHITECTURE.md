@@ -181,23 +181,23 @@ Executes the buy & burn cycle for all tokens.
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  SECONDARY 1 (Single Batch TX)                                  │
-│  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
-│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │           │
-│  │ Budget  │  Fees   │  Tokens  │ Cycle  │ Tokens  │           │
-│  └─────────┴─────────┴──────────┴────────┴─────────┘           │
+│  ┌─────────┬─────────┬──────────┬────────┬─────────┬─────────┐ │
+│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │ Dev Fee │ │
+│  │ Budget  │  Fees   │  Tokens  │ Cycle  │ Tokens  │  (1%)   │ │
+│  └─────────┴─────────┴──────────┴────────┴─────────┴─────────┘ │
 │                         │                                       │
 │                         ▼                                       │
 │  SECONDARY 2 (Single Batch TX)                                  │
-│  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
-│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │           │
-│  │ Budget  │ (no-op) │  Tokens  │ Cycle  │ Tokens  │           │
-│  └─────────┴─────────┴──────────┴────────┴─────────┘           │
+│  ┌─────────┬─────────┬──────────┬────────┬─────────┬─────────┐ │
+│  │ Compute │ Collect │ Buy+Split│Finalize│  Burn   │ Dev Fee │ │
+│  │ Budget  │ (no-op) │  Tokens  │ Cycle  │ Tokens  │  (1%)   │ │
+│  └─────────┴─────────┴──────────┴────────┴─────────┴─────────┘ │
 │                         │                                       │
 │                         ▼                                       │
 │  ...more secondaries...                                         │
 │                         │                                       │
 │                         ▼                                       │
-│  ROOT TOKEN (Single Batch TX)                                   │
+│  ROOT TOKEN (Single Batch TX) - NO DEV FEE                      │
 │  ┌─────────┬─────────┬──────────┬────────┬─────────┐           │
 │  │ Compute │ Collect │   Buy    │Finalize│  Burn   │           │
 │  │ Budget  │  All    │  Tokens  │ Cycle  │ Tokens  │           │
@@ -205,6 +205,8 @@ Executes the buy & burn cycle for all tokens.
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+**Dev Fee**: 1% of secondary's 55.2% share goes to dev wallet. Root token has no dev fee.
 
 **Why N+1?**
 - First secondary: Drains shared vault to datAuthority
@@ -253,11 +255,13 @@ Executes the buy & burn cycle for all tokens.
 │     Tokens      │                            │   (accumulates) │
 └────────┬────────┘                            └────────┬────────┘
          │                                              │
-         ▼                                              │
-┌─────────────────┐                                     │
-│  Burn Tokens    │                                     │
-│  Supply: -N     │                                     │
-└─────────────────┘                                     │
+    ┌────┴────┐                                         │
+    │         │                                         │
+    ▼         ▼                                         │
+┌───────┐ ┌───────┐                                     │
+│  99%  │ │  1%   │                                     │
+│ Burn  │ │ Dev   │                                     │
+└───────┘ └───────┘                                     │
                                                         │
                               (On Root Cycle)           │
                                        ┌────────────────┘
@@ -265,11 +269,13 @@ Executes the buy & burn cycle for all tokens.
                               ┌─────────────────┐
                               │  Buy Root Token │
                               │  with treasury  │
+                              │  + creator fees │
                               └────────┬────────┘
                                        │
                                        ▼
                               ┌─────────────────┐
-                              │  Burn Root      │
+                              │  100% Burn Root │
+                              │  (no dev fee)   │
                               │  Supply: -M     │
                               └─────────────────┘
 ```
