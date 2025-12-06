@@ -1,0 +1,43 @@
+{
+  "name": "@asdf/validator-sdk",
+  "version": "0.1.0-beta.1",
+  "description": "Per-token fee attribution SDK for Pump.fun token ecosystems",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "solana",
+    "pump.fun",
+    "pumpfun",
+    "validator",
+    "fee-attribution",
+    "token-launcher",
+    "asdf"
+  ],
+  "author": "ASDF Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zeyxx/asdf-dat.git",
+    "directory": "sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/zeyxx/asdf-dat/issues"
+  },
+  "homepage": "https://github.com/zeyxx/asdf-dat/tree/main/sdk#readme",
+  "peerDependencies": {
+    "@solana/web3.js": "^1.87.0"
+  },
+  "devDependencies": {
+    "@solana/web3.js": "^1.87.0",
+    "typescript": "^5.0.0"
+  }
+}
