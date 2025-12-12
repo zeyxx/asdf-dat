@@ -340,6 +340,9 @@ scripts/testing/output/logs/
 .daemon-state.backup.json
 .daemon-lock.json
 
+# Runtime data (metrics, history, test data)
+data/
+
 # Temporary files at root
 Program
 continue

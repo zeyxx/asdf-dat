@@ -253,7 +253,7 @@ Fee Daemon
 ### Constants (lib.rs)
 
 ```rust
-FLUSH_THRESHOLD: u64 = 10_000_000;        // 0.01 SOL - minimum to flush
+FLUSH_THRESHOLD: u64 = 100_000_000;       // 0.1 SOL - minimum to flush
 INITIAL_SLIPPAGE_BPS: u16 = 500;          // 5% - slippage protection
 MIN_CYCLE_INTERVAL: i64 = 60;             // 60 seconds between cycles
 
@@ -458,3 +458,5 @@ If doubt exists, ask first.
 - ASDF - Optimistic Burn Protocol
 - eligibility is efficiency
 - plus jamais de ta vie tu affiches des données sensibles
+- "Optimistic burn protocol for sustainable token economics.
+ Collect. Burn. This is fine."

@@ -13,6 +13,11 @@
  *   --network <devnet|mainnet>  Select network (default: devnet)
  *   --verbose                   Enable verbose logging
  *   --auto-discover             Enable periodic token discovery
+ *   --realtime                  Use WebSocket subscriptions (~400ms latency)
+ *
+ * Modes:
+ *   POLLING (default)  - Poll each token's BC/pool every 30s
+ *   REALTIME           - WebSocket subscriptions, ~400ms latency
  *
  * API Endpoints (port 3030):
  *   POST /flush           - Force flush pending fees
@@ -21,13 +26,21 @@
  *   GET /status           - Daemon status
  *   GET /metrics          - Prometheus format
  *   GET /health           - Health check
+ *   GET /fees             - Fee breakdown per token (validators)
+ *   GET /fees/attestation - Cryptographic attestation
+ *   GET /history          - PoH chain entries (realtime mode)
+ *
+ * WebSocket (port 3031):
+ *   Channels: fees, attestation, all
+ *   Actions: subscribe, unsubscribe, ping, getState, getAttestation
  *
  * Flow:
  * 1. Loads ecosystem tokens from configuration
- * 2. Polls each token's bonding curve/pool for transactions
+ * 2. Polls each token's bonding curve/pool for transactions (or WebSocket)
  * 3. Extracts vault balance deltas and attributes to correct token
  * 4. Updates TokenStats.pending_fees on-chain
  * 5. State persists to .daemon-state.json for crash recovery
+ * 6. PoH chain records all events tamper-proof (realtime mode)
  */
 
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
@@ -35,7 +48,11 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 import http from "http";
+import crypto from "crypto";
+import WebSocket from "ws";
 import { PumpFunFeeMonitor, TokenConfig } from "../lib/fee-monitor";
+import { RealtimeTracker, TokenInfo, FeeEvent } from "../lib/realtime-tracker";
+import { HistoryManager, initHistory, getHistory } from "../lib/history-manager";
 import { getNetworkConfig, printNetworkBanner, NetworkConfig, NetworkType } from "../lib/network-config";
 import { monitoring, MonitoringService } from "../lib/monitoring";
 import { createLogger, Logger } from "../lib/logger";
@@ -56,15 +73,28 @@ const DEFAULT_DEVNET_INTERVAL = 30000;  // 30 seconds
 let UPDATE_INTERVAL = parseInt(process.env.UPDATE_INTERVAL || "0"); // 0 means use network default
 const VERBOSE = process.env.VERBOSE === "true";
 const API_PORT = parseInt(process.env.API_PORT || "3030");
+const WS_PORT = parseInt(process.env.WS_PORT || "3031"); // WebSocket on separate port
 const API_KEY = process.env.DAEMON_API_KEY || ""; // Optional API key for auth
 const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute window for rate limiting
 const RATE_LIMIT_MAX_REQUESTS = 2; // Max 2 flush requests per minute
 const AUTO_DISCOVER_INTERVAL = parseInt(process.env.AUTO_DISCOVER_INTERVAL || "300000"); // 5 minutes
+const REALTIME_MODE = process.env.REALTIME_MODE === "true"; // Use WebSocket subscriptions instead of polling
 
 interface EcosystemConfig {
   root?: TokenConfig;
   secondaries: TokenConfig[];
 }
+
+// WebSocket client tracking
+interface WsClient {
+  ws: WebSocket;
+  subscribedTo: Set<string>; // 'fees', 'attestation', 'all'
+  connectedAt: number;
+}
+
+// Global WebSocket state
+const wsClients: Map<string, WsClient> = new Map();
+let wsServer: WebSocket.Server | null = null;
 
 /**
  * Load ecosystem configuration from network config
@@ -137,6 +167,227 @@ function displayStats(monitor: PumpFunFeeMonitor, tokens: TokenConfig[]): void {
   }
 
   console.log("\n" + "═".repeat(70) + "\n");
+}
+
+// =========================================================================
+// WEBSOCKET SERVER
+// Real-time fee updates for validators
+// =========================================================================
+
+/**
+ * Generate fee update message for WebSocket broadcast
+ */
+function generateFeesMessage(monitor: PumpFunFeeMonitor): object {
+  const breakdown = monitor.getPendingFeesBreakdown();
+  const tokens: Array<{
+    mint: string;
+    symbol: string;
+    pendingLamports: number;
+    pendingSOL: number;
+  }> = [];
+
+  for (const [mint, data] of breakdown.entries()) {
+    tokens.push({
+      mint,
+      symbol: data.symbol,
+      pendingLamports: data.amount,
+      pendingSOL: data.amount / 1e9,
+    });
+  }
+
+  const totalPending = monitor.getTotalPendingFees();
+  const metrics = monitor.getHealthMetrics();
+
+  return {
+    type: "fees",
+    version: "1.0",
+    timestamp: Date.now(),
+    daemon: {
+      pollCount: metrics.pollCount,
+      errorRate: metrics.errorRate,
+      lastPollMs: metrics.timeSinceLastPoll,
+    },
+    totals: {
+      pendingLamports: totalPending,
+      pendingSOL: totalPending / 1e9,
+      tokenCount: tokens.length,
+    },
+    tokens,
+  };
+}
+
+/**
+ * Generate attestation message for WebSocket broadcast
+ */
+function generateAttestationMessage(monitor: PumpFunFeeMonitor): object {
+  const breakdown = monitor.getPendingFeesBreakdown();
+  const metrics = monitor.getHealthMetrics();
+  const timestamp = Date.now();
+
+  const sortedTokens = Array.from(breakdown.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([mint, data]) => ({
+      mint,
+      amount: data.amount,
+    }));
+
+  const stateData = {
+    timestamp,
+    pollCount: metrics.pollCount,
+    tokens: sortedTokens,
+  };
+
+  const stateJson = JSON.stringify(stateData);
+  const hash = crypto.createHash("sha256").update(stateJson).digest("hex");
+
+  return {
+    type: "attestation",
+    version: "1.0",
+    attestation: {
+      hash,
+      algorithm: "sha256",
+      timestamp,
+      pollCount: metrics.pollCount,
+      tokenCount: sortedTokens.length,
+      totalPendingLamports: monitor.getTotalPendingFees(),
+    },
+    state: stateData,
+  };
+}
+
+/**
+ * Broadcast message to all subscribed WebSocket clients
+ */
+function broadcastToWsClients(messageType: string, message: object, logger: Logger): void {
+  const json = JSON.stringify(message);
+  let sentCount = 0;
+
+  for (const [clientId, client] of wsClients.entries()) {
+    if (client.ws.readyState !== WebSocket.OPEN) {
+      continue;
+    }
+
+    // Check subscription
+    if (client.subscribedTo.has("all") || client.subscribedTo.has(messageType)) {
+      try {
+        client.ws.send(json);
+        sentCount++;
+      } catch (err: any) {
+        logger.warn("Failed to send to WebSocket client", { clientId, error: err.message });
+      }
+    }
+  }
+
+  if (sentCount > 0) {
+    logger.debug(`Broadcast ${messageType} to ${sentCount} clients`);
+  }
+}
+
+/**
+ * Start WebSocket server for real-time fee updates
+ */
+function startWsServer(monitor: PumpFunFeeMonitor, logger: Logger): WebSocket.Server {
+  wsServer = new WebSocket.Server({ port: WS_PORT });
+
+  wsServer.on("connection", (ws: WebSocket, req: http.IncomingMessage) => {
+    const clientId = `${req.socket.remoteAddress}:${Date.now()}`;
+    const client: WsClient = {
+      ws,
+      subscribedTo: new Set(["all"]), // Default: subscribe to all
+      connectedAt: Date.now(),
+    };
+
+    wsClients.set(clientId, client);
+    logger.info("WebSocket client connected", { clientId, total: wsClients.size });
+
+    // Send welcome message with current state
+    const welcome = {
+      type: "welcome",
+      clientId,
+      subscriptions: Array.from(client.subscribedTo),
+      availableChannels: ["fees", "attestation", "all"],
+      currentState: generateFeesMessage(monitor),
+    };
+    ws.send(JSON.stringify(welcome));
+
+    // Handle incoming messages (subscription management)
+    ws.on("message", (data: Buffer | ArrayBuffer | Buffer[]) => {
+      try {
+        const msg = JSON.parse(data.toString());
+
+        if (msg.action === "subscribe" && msg.channel) {
+          client.subscribedTo.add(msg.channel);
+          ws.send(JSON.stringify({
+            type: "subscribed",
+            channel: msg.channel,
+            subscriptions: Array.from(client.subscribedTo),
+          }));
+          logger.debug("Client subscribed", { clientId, channel: msg.channel });
+        }
+
+        if (msg.action === "unsubscribe" && msg.channel) {
+          client.subscribedTo.delete(msg.channel);
+          ws.send(JSON.stringify({
+            type: "unsubscribed",
+            channel: msg.channel,
+            subscriptions: Array.from(client.subscribedTo),
+          }));
+          logger.debug("Client unsubscribed", { clientId, channel: msg.channel });
+        }
+
+        if (msg.action === "ping") {
+          ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+        }
+
+        // On-demand state request
+        if (msg.action === "getState") {
+          ws.send(JSON.stringify(generateFeesMessage(monitor)));
+        }
+
+        if (msg.action === "getAttestation") {
+          ws.send(JSON.stringify(generateAttestationMessage(monitor)));
+        }
+      } catch (err: any) {
+        logger.warn("Invalid WebSocket message", { clientId, error: err.message });
+      }
+    });
+
+    ws.on("close", () => {
+      wsClients.delete(clientId);
+      logger.info("WebSocket client disconnected", { clientId, remaining: wsClients.size });
+    });
+
+    ws.on("error", (err: Error) => {
+      logger.warn("WebSocket client error", { clientId, error: err.message });
+      wsClients.delete(clientId);
+    });
+  });
+
+  wsServer.on("error", (err: Error) => {
+    logger.error("WebSocket server error", { error: err.message });
+  });
+
+  logger.info(`WebSocket server listening on port ${WS_PORT}`);
+  console.log(`🔌 WebSocket server listening on port ${WS_PORT}`);
+  console.log(`   ws://localhost:${WS_PORT} - Real-time fee updates`);
+  console.log(`   Channels: fees, attestation, all`);
+  console.log(`   Actions: subscribe, unsubscribe, ping, getState, getAttestation`);
+
+  return wsServer;
+}
+
+/**
+ * Broadcast fee update to all WebSocket clients (called after each poll)
+ */
+function broadcastFeeUpdate(monitor: PumpFunFeeMonitor, logger: Logger): void {
+  if (wsClients.size === 0) return;
+
+  const feesMessage = generateFeesMessage(monitor);
+  broadcastToWsClients("fees", feesMessage, logger);
+
+  // Also broadcast attestation for validators
+  const attestationMessage = generateAttestationMessage(monitor);
+  broadcastToWsClients("attestation", attestationMessage, logger);
 }
 
 // Rate limiting state
@@ -522,6 +773,152 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
       return;
     }
 
+    // =========================================================================
+    // VALIDATOR CROSS-REFERENCE ENDPOINTS
+    // These endpoints allow external validators (like ASDF Validator) to
+    // cross-reference their tracked fees against the daemon's state.
+    // =========================================================================
+
+    // GET /fees - Detailed fee breakdown per token for validator cross-reference
+    if (req.method === "GET" && req.url === "/fees") {
+      const breakdown = monitor.getPendingFeesBreakdown();
+      const tokens: Array<{
+        mint: string;
+        symbol: string;
+        pendingLamports: number;
+        pendingSOL: number;
+      }> = [];
+
+      for (const [mint, data] of breakdown.entries()) {
+        tokens.push({
+          mint,
+          symbol: data.symbol,
+          pendingLamports: data.amount,
+          pendingSOL: data.amount / 1e9,
+        });
+      }
+
+      const totalPending = monitor.getTotalPendingFees();
+      const metrics = monitor.getHealthMetrics();
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        version: "1.0",
+        timestamp: Date.now(),
+        slot: metrics.lastPollTime, // Approximate slot time
+        daemon: {
+          pollCount: metrics.pollCount,
+          errorRate: metrics.errorRate,
+          lastPollMs: metrics.timeSinceLastPoll,
+        },
+        totals: {
+          pendingLamports: totalPending,
+          pendingSOL: totalPending / 1e9,
+          tokenCount: tokens.length,
+        },
+        tokens,
+      }, null, 2));
+      return;
+    }
+
+    // GET /fees/attestation - Cryptographic attestation for validator verification
+    // Returns a signed hash of the current fee state for tamper detection
+    if (req.method === "GET" && req.url === "/fees/attestation") {
+      const breakdown = monitor.getPendingFeesBreakdown();
+      const metrics = monitor.getHealthMetrics();
+      const timestamp = Date.now();
+
+      // Build deterministic state representation
+      const sortedTokens = Array.from(breakdown.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([mint, data]) => ({
+          mint,
+          amount: data.amount,
+        }));
+
+      const stateData = {
+        timestamp,
+        pollCount: metrics.pollCount,
+        tokens: sortedTokens,
+      };
+
+      // Generate SHA-256 hash of state
+      const stateJson = JSON.stringify(stateData);
+      const hash = crypto.createHash("sha256").update(stateJson).digest("hex");
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        version: "1.0",
+        attestation: {
+          hash,
+          algorithm: "sha256",
+          timestamp,
+          pollCount: metrics.pollCount,
+          tokenCount: sortedTokens.length,
+          totalPendingLamports: monitor.getTotalPendingFees(),
+        },
+        // Include state for verification (validator can re-hash to verify)
+        state: stateData,
+        // Instructions for validators
+        verification: {
+          method: "SHA-256 hash of JSON.stringify(state)",
+          crossReference: "Compare with your tracked fees at same timestamp",
+          tolerance: "Allow ±5% variance due to polling timing differences",
+        },
+      }, null, 2));
+      return;
+    }
+
+    // GET /history - PoH chain entries
+    if (req.method === "GET" && req.url?.startsWith("/history")) {
+      const history = getHistory();
+      if (!history) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: "History not enabled. Use --realtime mode." }));
+        return;
+      }
+
+      const urlParams = new URL(req.url, `http://${req.headers.host}`);
+      const count = parseInt(urlParams.searchParams.get("count") || "50", 10);
+      const eventType = urlParams.searchParams.get("type");
+
+      let entries;
+      if (eventType) {
+        entries = history.getEntriesByType(eventType as any, count);
+      } else {
+        entries = history.getRecentEntries(count);
+      }
+
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        metadata: history.getMetadata(),
+        attestation: history.getAttestation(),
+        entries,
+      }, null, 2));
+      return;
+    }
+
+    // GET /history/validate - Validate PoH chain integrity
+    if (req.method === "GET" && req.url === "/history/validate") {
+      const history = getHistory();
+      if (!history) {
+        res.setHeader("Content-Type", "application/json");
+        res.writeHead(503);
+        res.end(JSON.stringify({ error: "History not enabled" }));
+        return;
+      }
+
+      const validation = await history.validateChain();
+      res.setHeader("Content-Type", "application/json");
+      res.writeHead(validation.valid ? 200 : 500);
+      res.end(JSON.stringify(validation, null, 2));
+      return;
+    }
+
     res.setHeader("Content-Type", "application/json");
     res.writeHead(404);
     res.end(JSON.stringify({ error: "Not found" }));
@@ -544,6 +941,14 @@ function startApiServer(monitor: PumpFunFeeMonitor, logger: Logger): http.Server
     console.log(`   GET /metrics/history/manifest - Snapshot manifest`);
     console.log(`   GET /alerting/status  - Alerting service status`);
     console.log(`   POST /alerting/test   - Send test alert${API_KEY ? ' (requires X-Daemon-Key)' : ''}`);
+    console.log(`   ─────────────────────────────────────────────────`);
+    console.log(`   🔍 VALIDATOR CROSS-REFERENCE:`);
+    console.log(`   GET /fees             - Fee breakdown per token (for validators)`);
+    console.log(`   GET /fees/attestation - Cryptographic attestation of state`);
+    console.log(`   ─────────────────────────────────────────────────`);
+    console.log(`   📜 POH CHAIN (--realtime mode):`);
+    console.log(`   GET /history          - PoH chain entries`);
+    console.log(`   GET /history/validate - Validate chain integrity`);
   });
 
   return server;
@@ -810,6 +1215,14 @@ async function main() {
   // Start API server for external flush triggers and monitoring
   const apiServer = startApiServer(monitor, logger);
 
+  // Start WebSocket server for real-time updates
+  const wsServerInstance = startWsServer(monitor, logger);
+
+  // Broadcast fee updates after each poll
+  const broadcastInterval = setInterval(() => {
+    broadcastFeeUpdate(monitor, logger);
+  }, UPDATE_INTERVAL);
+
   // Display stats every minute
   const statsInterval = setInterval(() => {
     displayStats(monitor, allTokens);
@@ -866,7 +1279,25 @@ async function main() {
 
     clearInterval(statsInterval);
     clearInterval(alertCheckInterval);
+    clearInterval(broadcastInterval);
     if (discoveryInterval) clearInterval(discoveryInterval);
+
+    // Close all WebSocket connections
+    for (const [clientId, client] of wsClients.entries()) {
+      try {
+        client.ws.close(1001, "Server shutting down");
+      } catch {}
+    }
+    wsClients.clear();
+
+    // Close WebSocket server
+    await new Promise<void>((resolve) => {
+      wsServerInstance.close(() => {
+        logger.info("WebSocket server closed");
+        resolve();
+      });
+      setTimeout(() => resolve(), 3000);
+    });
 
     // Stop metrics persistence
     if (persistence) {

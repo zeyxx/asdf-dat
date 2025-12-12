@@ -183,8 +183,9 @@ pub const REBATE_THRESHOLD_SOL_EQUIV: u64 = 100_000_000; // 0.1 SOL
 /// PumpFun buy instruction discriminator
 pub const PUMPFUN_BUY_DISCRIMINATOR: [u8; 8] = [102, 6, 61, 18, 1, 218, 235, 234];
 
-/// PumpFun create token instruction discriminator
-pub const PUMPFUN_CREATE_DISCRIMINATOR: [u8; 8] = [24, 30, 200, 40, 5, 28, 7, 119];
+/// PumpFun create_v2 instruction discriminator (Token2022)
+/// Supports mayhem_mode parameter (bool)
+pub const PUMPFUN_CREATE_V2_DISCRIMINATOR: [u8; 8] = [214, 144, 76, 236, 95, 139, 49, 180];
 
 /// PumpFun collect fee instruction discriminator
 pub const PUMPFUN_COLLECT_FEE_DISCRIMINATOR: [u8; 8] = [20, 22, 86, 123, 198, 28, 219, 132];

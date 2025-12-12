@@ -442,126 +442,6 @@ export type AsdfDat = {
       "args": []
     },
     {
-      "name": "createPumpfunToken",
-      "discriminator": [
-        32,
-        217,
-        77,
-        209,
-        89,
-        36,
-        65,
-        35
-      ],
-      "accounts": [
-        {
-          "name": "datState",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  97,
-                  116,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "datAuthority",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  117,
-                  116,
-                  104,
-                  95,
-                  118,
-                  51
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "admin",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mint",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "mintAuthority",
-          "writable": true
-        },
-        {
-          "name": "bondingCurve",
-          "writable": true
-        },
-        {
-          "name": "associatedBondingCurve",
-          "writable": true
-        },
-        {
-          "name": "metadata",
-          "writable": true
-        },
-        {
-          "name": "global",
-          "writable": true
-        },
-        {
-          "name": "mplTokenMetadata"
-        },
-        {
-          "name": "tokenProgram"
-        },
-        {
-          "name": "associatedTokenProgram",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent"
-        },
-        {
-          "name": "eventAuthority"
-        },
-        {
-          "name": "pumpProgram"
-        }
-      ],
-      "args": [
-        {
-          "name": "name",
-          "type": "string"
-        },
-        {
-          "name": "symbol",
-          "type": "string"
-        },
-        {
-          "name": "uri",
-          "type": "string"
-        }
-      ]
-    },
-    {
       "name": "createPumpfunTokenMayhem",
       "docs": [
         "Create a PumpFun token in Mayhem Mode with AI trading agent",
@@ -670,6 +550,118 @@ export type AsdfDat = {
         {
           "name": "mayhemTokenVault",
           "writable": true
+        },
+        {
+          "name": "eventAuthority"
+        },
+        {
+          "name": "pumpProgram"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "createPumpfunTokenV2",
+      "docs": [
+        "Create a PumpFun token using create_v2 (Token2022) without Mayhem Mode",
+        "Standard Token2022 token with 1B supply"
+      ],
+      "discriminator": [
+        236,
+        163,
+        184,
+        147,
+        15,
+        105,
+        148,
+        252
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "datAuthority",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  116,
+                  104,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mint",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mintAuthority"
+        },
+        {
+          "name": "bondingCurve",
+          "writable": true
+        },
+        {
+          "name": "associatedBondingCurve",
+          "writable": true
+        },
+        {
+          "name": "global"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token2022Program"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "eventAuthority"

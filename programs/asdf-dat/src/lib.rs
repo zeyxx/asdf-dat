@@ -1387,62 +1387,64 @@ pub mod asdf_dat {
         Ok(())
     }
 
-    pub fn create_pumpfun_token(
-        ctx: Context<CreatePumpfunToken>,
+    /// Create a PumpFun token using create_v2 (Token2022) without Mayhem Mode
+    /// Standard Token2022 token with 1B supply
+    pub fn create_pumpfun_token_v2(
+        ctx: Context<CreatePumpfunTokenV2>,
         name: String,
         symbol: String,
         uri: String,
     ) -> Result<()> {
         let state = &ctx.accounts.dat_state;
-        
-        msg!("Creating PumpFun token via manual CPI");
+
+        msg!("Creating PumpFun token via create_v2 (Token2022, no Mayhem)");
         msg!("Name: {}, Symbol: {}, Creator: {}", name, symbol, ctx.accounts.dat_authority.key());
-        
+
         let mut data = Vec::new();
-        
-        // PumpFun create token discriminator
-        data.extend_from_slice(&PUMPFUN_CREATE_DISCRIMINATOR);
-        
-        // Name
+
+        // Discriminator for create_v2
+        data.extend_from_slice(&PUMPFUN_CREATE_V2_DISCRIMINATOR);
+
+        // Name (String)
         data.extend_from_slice(&(name.len() as u32).to_le_bytes());
         data.extend_from_slice(name.as_bytes());
-        
-        // Symbol
+
+        // Symbol (String)
         data.extend_from_slice(&(symbol.len() as u32).to_le_bytes());
         data.extend_from_slice(symbol.as_bytes());
-        
-        // URI
+
+        // URI (String)
         data.extend_from_slice(&(uri.len() as u32).to_le_bytes());
         data.extend_from_slice(uri.as_bytes());
-        
-        // Creator (4th arg)
+
+        // Creator (Pubkey)
         data.extend_from_slice(&ctx.accounts.dat_authority.key().to_bytes());
-        
+
+        // is_mayhem_mode (bool - 1 byte) = false
+        data.extend_from_slice(&[0u8]); // false for standard Token2022
+
         let accounts = vec![
             AccountMeta::new(ctx.accounts.mint.key(), true),
             AccountMeta::new_readonly(ctx.accounts.mint_authority.key(), false),
             AccountMeta::new(ctx.accounts.bonding_curve.key(), false),
             AccountMeta::new(ctx.accounts.associated_bonding_curve.key(), false),
             AccountMeta::new_readonly(ctx.accounts.global.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.mpl_token_metadata.key(), false),
-            AccountMeta::new(ctx.accounts.metadata.key(), false),
-            AccountMeta::new(ctx.accounts.dat_authority.key(), true),
+            AccountMeta::new(ctx.accounts.dat_authority.key(), true), // user/creator
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.token_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.token_2022_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
-            AccountMeta::new_readonly(ctx.accounts.rent.key(), false),
             AccountMeta::new_readonly(ctx.accounts.event_authority.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_program.key(), false),
         ];
-        
+
         let ix = Instruction {
             program_id: PUMP_PROGRAM,
             accounts,
             data,
         };
-        
+
         let seeds: &[&[u8]] = &[DAT_AUTHORITY_SEED, &[state.dat_authority_bump]];
-        
+
         invoke_signed(
             &ix,
             &[
@@ -1451,21 +1453,18 @@ pub mod asdf_dat {
                 ctx.accounts.bonding_curve.to_account_info(),
                 ctx.accounts.associated_bonding_curve.to_account_info(),
                 ctx.accounts.global.to_account_info(),
-                ctx.accounts.mpl_token_metadata.to_account_info(),
-                ctx.accounts.metadata.to_account_info(),
                 ctx.accounts.dat_authority.to_account_info(),
                 ctx.accounts.system_program.to_account_info(),
-                ctx.accounts.token_program.to_account_info(),
+                ctx.accounts.token_2022_program.to_account_info(),
                 ctx.accounts.associated_token_program.to_account_info(),
-                ctx.accounts.rent.to_account_info(),
                 ctx.accounts.event_authority.to_account_info(),
                 ctx.accounts.pump_program.to_account_info(),
             ],
             &[seeds],
         )?;
-        
-        msg!("Token created successfully!");
-        
+
+        msg!("Token2022 token created successfully!");
+
         emit!(TokenCreated {
             mint: ctx.accounts.mint.key(),
             bonding_curve: ctx.accounts.bonding_curve.key(),

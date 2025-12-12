@@ -570,45 +570,6 @@ pub struct TransferAdmin<'info> {
 }
 
 #[derive(Accounts)]
-pub struct CreatePumpfunToken<'info> {
-    #[account(seeds = [DAT_STATE_SEED], bump)]
-    pub dat_state: Account<'info, DATState>,
-    /// CHECK: PDA
-    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
-    pub dat_authority: AccountInfo<'info>,
-    #[account(mut, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
-    pub admin: Signer<'info>,
-    #[account(mut)]
-    pub mint: Signer<'info>,
-    /// CHECK: PDA
-    #[account(mut)]
-    pub mint_authority: AccountInfo<'info>,
-    /// CHECK: PDA
-    #[account(mut)]
-    pub bonding_curve: AccountInfo<'info>,
-    /// CHECK: ATA
-    #[account(mut)]
-    pub associated_bonding_curve: AccountInfo<'info>,
-    /// CHECK: Metadata
-    #[account(mut)]
-    pub metadata: AccountInfo<'info>,
-    /// CHECK: Global
-    #[account(mut)]
-    pub global: AccountInfo<'info>,
-    /// CHECK: Metaplex
-    pub mpl_token_metadata: AccountInfo<'info>,
-    pub token_program: Interface<'info, TokenInterface>,
-    pub associated_token_program: Program<'info, AssociatedToken>,
-    pub system_program: Program<'info, System>,
-    /// CHECK: Rent
-    pub rent: AccountInfo<'info>,
-    /// CHECK: Event authority
-    pub event_authority: AccountInfo<'info>,
-    /// CHECK: Pump program
-    pub pump_program: AccountInfo<'info>,
-}
-
-#[derive(Accounts)]
 pub struct CreatePumpfunTokenMayhem<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump)]
     pub dat_state: Account<'info, DATState>,
@@ -662,6 +623,51 @@ pub struct CreatePumpfunTokenMayhem<'info> {
     /// CHECK: Mayhem token vault (Token2022 ATA)
     #[account(mut)]
     pub mayhem_token_vault: AccountInfo<'info>,
+
+    /// CHECK: Event authority PDA
+    pub event_authority: AccountInfo<'info>,
+
+    /// CHECK: Main pump program (6EF8r...)
+    pub pump_program: AccountInfo<'info>,
+}
+
+/// CreatePumpfunTokenV2 - Create token using create_v2 (Token2022) without Mayhem Mode
+/// Standard Token2022 token with 1B supply
+#[derive(Accounts)]
+pub struct CreatePumpfunTokenV2<'info> {
+    #[account(seeds = [DAT_STATE_SEED], bump)]
+    pub dat_state: Account<'info, DATState>,
+
+    /// CHECK: PDA - DAT Authority acts as token creator
+    #[account(mut, seeds = [DAT_AUTHORITY_SEED], bump = dat_state.dat_authority_bump)]
+    pub dat_authority: AccountInfo<'info>,
+
+    #[account(mut, constraint = admin.key() == dat_state.admin @ ErrorCode::UnauthorizedAccess)]
+    pub admin: Signer<'info>,
+
+    #[account(mut)]
+    pub mint: Signer<'info>,
+
+    /// CHECK: PDA from pump program (mint-authority seed)
+    pub mint_authority: AccountInfo<'info>,
+
+    /// CHECK: Bonding curve PDA
+    #[account(mut)]
+    pub bonding_curve: AccountInfo<'info>,
+
+    /// CHECK: Associated bonding curve token account (Token2022 ATA)
+    #[account(mut)]
+    pub associated_bonding_curve: AccountInfo<'info>,
+
+    /// CHECK: Global config PDA from pump program
+    pub global: AccountInfo<'info>,
+
+    pub system_program: Program<'info, System>,
+
+    /// CHECK: Token2022 program (not legacy Token program!)
+    pub token_2022_program: AccountInfo<'info>,
+
+    pub associated_token_program: Program<'info, AssociatedToken>,
 
     /// CHECK: Event authority PDA
     pub event_authority: AccountInfo<'info>,

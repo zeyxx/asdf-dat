@@ -30,7 +30,19 @@ npx ts-node scripts/execute-ecosystem-cycle.ts --network devnet
 ```bash
 # Start fee attribution daemon (runs continuously)
 npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
+
+# With WebSocket real-time mode (~400ms latency)
+REALTIME_MODE=true npx ts-node scripts/monitor-ecosystem-fees.ts --network devnet &
 ```
+
+**API Endpoints (port 3030):**
+- `GET /fees` - Fee breakdown per token (for validators)
+- `GET /fees/attestation` - Cryptographic attestation of state
+- `GET /history` - PoH chain entries (realtime mode)
+
+**WebSocket (port 3031):**
+- Channels: `fees`, `attestation`, `all`
+- Actions: `subscribe`, `unsubscribe`, `ping`, `getState`, `getAttestation`
 
 ### Automated Cycle Trigger
 ```bash
@@ -76,6 +88,33 @@ npx ts-node scripts/initialize-rebate-pool.ts --network devnet
 ```bash
 # Initialize validator accounts for trustless fee tracking
 npx ts-node scripts/initialize-validators.ts --network devnet
+
+# Start cross-reference validator
+npx ts-node scripts/start-validator.ts --network devnet
+
+# Sync validator slots with daemon
+npx ts-node scripts/sync-validator-slots.ts --network devnet
+```
+
+### Pool Accounts
+```bash
+# Initialize pool accounts for a token
+npx ts-node scripts/init-pool-accounts.ts devnet-tokens/01-froot.json --network devnet
+
+# Initialize all required ATAs
+npx ts-node scripts/create-all-required-atas.ts --network devnet
+
+# Initialize DAT token account
+npx ts-node scripts/init-dat-token-account.ts --network devnet
+```
+
+### Token2022 / Mayhem Setup
+```bash
+# Initialize Mayhem pool accounts
+npx ts-node scripts/init-mayhem-pool-accounts.ts --network devnet
+
+# Initialize Token2022 accounts
+npx ts-node scripts/init-token2022-accounts.ts --network devnet
 ```
 
 ---
@@ -92,6 +131,9 @@ npx ts-node scripts/rapid-volume.ts devnet-tokens/01-froot.json 5 0.5 --network 
 ```bash
 # Generate buy-only volume
 npx ts-node scripts/generate-volume.ts devnet-tokens/01-froot.json 2 0.5 --network devnet
+
+# Generate liquidity on devnet
+npx ts-node scripts/generate-liquidity-devnet.ts --network devnet
 ```
 
 ### Sell Tokens
@@ -138,6 +180,21 @@ npx ts-node scripts/check-creator-vault.ts devnet-tokens/01-froot.json --network
 npx ts-node scripts/check-token-balances.ts --network devnet
 ```
 
+### Check Pool State
+```bash
+npx ts-node scripts/check-spl-pool-state.ts devnet-tokens/01-froot.json --network devnet
+```
+
+### Read Cycle Events
+```bash
+npx ts-node scripts/read-cycle-events.ts --network devnet
+```
+
+### Discover Creator Tokens
+```bash
+npx ts-node scripts/discover-creator-tokens.ts <creator-pubkey> --network devnet
+```
+
 ### View Fee Distribution
 ```bash
 npx ts-node scripts/view-fee-distribution.ts --network devnet
@@ -152,6 +209,11 @@ npx ts-node scripts/view-fee-distribution.ts --network devnet
 npx ts-node scripts/transfer-admin.ts <new-admin-pubkey> --network devnet
 ```
 
+### Transfer Program Authority
+```bash
+npx ts-node scripts/transfer-program-authority.ts <new-authority-pubkey> --network devnet
+```
+
 ### Update Fee Split
 ```bash
 npx ts-node scripts/update-fee-split.ts <new-bps> --network devnet
@@ -164,14 +226,33 @@ npx ts-node scripts/update-dat-config.ts --network devnet
 
 ---
 
-## Token Creation (Devnet)
+## Token Creation
 
-### Create SPL Token
+### Create Token2022 Token (Recommended - create_v2)
 ```bash
-npx ts-node scripts/create-devnet-token.ts --name "MyToken" --symbol "MTK" --network devnet
+# Standard (random mint)
+npx ts-node scripts/create-token-v2.ts "My Token" "MTK" "devnet-tokens/mtk.json" --network devnet
+
+# With vanity mint from asdf-vanity-grinder pool server
+npx ts-node scripts/create-token-v2.ts "ASDF" "ASDF" "tokens/asdf.json" --vanity-pool http://localhost:3030
+
+# With pre-generated vanity file
+npx ts-node scripts/create-token-v2.ts "ASDF" "ASDF" "tokens/asdf.json" --vanity-file ./vanity_mints.json
+
+# As root token
+npx ts-node scripts/create-token-v2.ts "Root Token" "ROOT" "tokens/root.json" --root --network mainnet
 ```
 
-### Create Token2022 (Mayhem)
+### Vanity Mint Integration (asdf-vanity-grinder)
+```bash
+# Run vanity grinder pool server
+./asdf-vanity-grinder pool --port 3030 --suffix ASDF
+
+# Or generate vanity mints offline
+./asdf-vanity-grinder generate --suffix ASDF --count 10 --output vanity_mints.json
+```
+
+### Create Token2022 (Mayhem Mode)
 ```bash
 npx ts-node scripts/create-devnet-mayhem-token.ts --name "MayhemToken" --symbol "MAY" --network devnet
 ```
@@ -193,6 +274,12 @@ npx ts-node scripts/verify-mainnet-infrastructure.ts
 ### Validate Token Configs
 ```bash
 npx ts-node scripts/validate-tokens.ts --network devnet
+
+# Validate creator configs
+npx ts-node scripts/validate-creator-configs.ts --network devnet
+
+# Validate Mayhem readiness
+npx ts-node scripts/validate-mayhem-readiness.ts --network devnet
 ```
 
 ---
@@ -202,6 +289,11 @@ npx ts-node scripts/validate-tokens.ts --network devnet
 ### Complete Ecosystem Validation
 ```bash
 npx ts-node scripts/complete-ecosystem-validation.ts --network devnet
+```
+
+### E2E Cycle Validation
+```bash
+npx ts-node scripts/e2e-cycle-validation.ts --network devnet
 ```
 
 ### Test External App Deposit
@@ -221,6 +313,11 @@ npx ts-node scripts/test-process-user-rebate.ts --network devnet
 ### Rollback Failed Cycle
 ```bash
 npx ts-node scripts/rollback-cycle.ts --network devnet
+```
+
+### Migrate Token Stats
+```bash
+npx ts-node scripts/migrate-all-token-stats.ts --network devnet
 ```
 
 ---
@@ -259,7 +356,9 @@ scripts/
 | **VOLUME** | generate-volume, rapid-volume, sell-* | Trading activity |
 | **ADMIN** | transfer-admin, update-* | Governance |
 | **VALIDATE** | validate-*, verify-* | Pre-deployment checks |
-| **TEST** | test-*, complete-ecosystem-validation | Testing |
+| **TEST** | test-*, complete-ecosystem-validation, e2e-* | Testing |
+| **VALIDATOR** | start-validator, sync-validator-slots, initialize-validators | Cross-reference |
+| **RECOVERY** | rollback-cycle, migrate-all-token-stats | Recovery |
 
 ---
 
