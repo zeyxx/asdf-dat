@@ -352,3 +352,4 @@ debug
 # Rust backup files
 programs/**/backup-*
 programs/**/*.backup-*
+CLAUDE.md
