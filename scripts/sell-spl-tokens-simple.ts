@@ -1,12 +1,23 @@
 /**
- * Sell SPL Tokens using Official Pump SDK
+ * Sell Tokens on PumpFun
+ *
+ * Auto-discovery version - no manual JSON files needed!
+ *
+ * Usage:
+ *   npx ts-node scripts/sell-spl-tokens-simple.ts <mint-or-symbol>
+ *   npx ts-node scripts/sell-spl-tokens-simple.ts DROOT
+ *   npx ts-node scripts/sell-spl-tokens-simple.ts FuBryC4gM3SvNLPXPsckH4zaMs6pktxUWLhCiG7aBavb
+ *   npx ts-node scripts/sell-spl-tokens-simple.ts --all  # Sell all tokens
+ *
+ * Requires:
+ *   - Daemon state file (.asdf-state.json) OR daemon running (API)
+ *   - CREATOR env var or --creator flag
  */
 
-import { Connection, Keypair, PublicKey, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getAccount, getAssociatedTokenAddress } from "@solana/spl-token";
-import { OnlinePumpSdk } from "@pump-fun/pump-sdk";
-import fs from "fs";
-import BN from "bn.js";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { loadWallet, sellTokens, deriveCreatorVault } from "../src/pump/sdk";
+import { loadTokenFromState, loadAllTokensFromState } from "../src/utils/token-loader";
+import { TokenConfig } from "../src/core/types";
 
 const colors = {
   reset: "\x1b[0m",
@@ -21,114 +32,166 @@ function log(emoji: string, message: string, color = colors.reset) {
   console.log(`${color}${emoji} ${message}${colors.reset}`);
 }
 
-async function main() {
-  const tokenFile = process.argv[2] || "devnet-token-spl.json";
+// Parse args
+function parseArgs() {
+  const args = process.argv.slice(2);
+  let tokenId: string | undefined;
+  let all = false;
+  let creator: string | undefined;
+  let network: "devnet" | "mainnet" = "devnet";
 
-  console.log("\n" + "=".repeat(60));
-  console.log(`${colors.bright}${colors.yellow}💰 SELL SPL TOKENS${colors.reset}`);
-  console.log("=".repeat(60) + "\n");
-
-  log("📄", `Token file: ${tokenFile}`, colors.cyan);
-
-  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
-  const sdk = new OnlinePumpSdk(connection);
-
-  const seller = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("devnet-wallet.json", "utf-8")))
-  );
-
-  log("👤", `Seller: ${seller.publicKey.toString()}`, colors.cyan);
-
-  // Load SPL token info
-  const tokenInfo = JSON.parse(fs.readFileSync(tokenFile, "utf-8"));
-  const tokenMint = new PublicKey(tokenInfo.mint);
-
-  log("🪙", `Token Mint: ${tokenMint.toString()}`, colors.cyan);
-
-  // Get seller's token account
-  const sellerTokenAccount = await getAssociatedTokenAddress(
-    tokenMint,
-    seller.publicKey,
-    false,
-    TOKEN_PROGRAM_ID
-  );
-
-  try {
-    // Get token balance
-    const tokenAccountInfo = await getAccount(
-      connection,
-      sellerTokenAccount,
-      "confirmed",
-      TOKEN_PROGRAM_ID
-    );
-
-    const tokenBalance = tokenAccountInfo.amount;
-
-    if (tokenBalance === 0n) {
-      log("⚠️", "No tokens to sell!", colors.yellow);
-      return;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--all") {
+      all = true;
+    } else if (arg === "--creator" || arg === "-c") {
+      creator = args[++i];
+    } else if (arg === "--network" || arg === "-n") {
+      const n = args[++i];
+      if (n === "devnet" || n === "mainnet") network = n;
+    } else if (arg === "--help" || arg === "-h") {
+      showHelp();
+      process.exit(0);
+    } else if (!tokenId) {
+      tokenId = arg;
     }
+  }
 
-    const tokenBalanceNum = Number(tokenBalance) / 1e6;
+  // Try env
+  if (!creator) creator = process.env.CREATOR;
 
-    // Skip dust (less than 100 tokens ≈ negligible value)
-    if (tokenBalanceNum < 100) {
-      log("ℹ️", `Skipping dust: ${tokenBalanceNum.toFixed(2)} tokens (< 100)`, colors.yellow);
-      return;
-    }
+  return { tokenId, all, creator, network };
+}
 
-    log("💎", `Selling ${tokenBalanceNum.toLocaleString()} tokens`, colors.cyan);
+function showHelp() {
+  console.log(`
+${colors.bright}${colors.cyan}Sell Tokens on PumpFun${colors.reset}
 
-    // Fetch sell state
-    const global = await sdk.fetchGlobal();
-    const { bondingCurveAccountInfo, bondingCurve } =
-      await sdk.fetchSellState(tokenMint, seller.publicKey, TOKEN_PROGRAM_ID);
+Usage:
+  npx ts-node scripts/sell-spl-tokens-simple.ts <mint-or-symbol>
+  npx ts-node scripts/sell-spl-tokens-simple.ts --all
 
-    const tokenAmount = new BN(tokenBalance.toString());
+Options:
+  --all           Sell ALL discovered tokens
+  --creator, -c   Creator pubkey (or set CREATOR env var)
+  --network, -n   Network: devnet or mainnet (default: devnet)
+  --help, -h      Show this help
 
-    // Build sell instructions using SDK with reasonable slippage
-    // Use minimal solAmount and let slippage tolerance handle the rest
-    const offlineSdk = new (await import("@pump-fun/pump-sdk")).PumpSdk();
-    const instructions = await offlineSdk.sellInstructions({
-      global,
-      bondingCurveAccountInfo,
-      bondingCurve,
-      mint: tokenMint,
-      user: seller.publicKey,
-      amount: tokenAmount,
-      solAmount: new BN(1), // Minimal amount, slippage will adjust
-      slippage: 25, // 25% slippage for devnet (accounts for low liquidity)
-      tokenProgram: TOKEN_PROGRAM_ID,
-      mayhemMode: false, // Not mayhem mode for SPL tokens
-    });
+Examples:
+  npx ts-node scripts/sell-spl-tokens-simple.ts DROOT
+  npx ts-node scripts/sell-spl-tokens-simple.ts FuBryC4gM3SvNLPXPsckH4zaMs6pktxUWLhCiG7aBavb
+  npx ts-node scripts/sell-spl-tokens-simple.ts --all -c 84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68
+`);
+}
 
-    const tx = new Transaction();
-    for (const ix of instructions) {
-      tx.add(ix);
-    }
+async function sellTokenForConfig(
+  connection: Connection,
+  wallet: any,
+  config: TokenConfig,
+  network: "devnet" | "mainnet"
+) {
+  console.log("\n" + "-".repeat(60));
+  log("📄", `Token: ${config.name} (${config.symbol})`, colors.cyan);
+  log("🪙", `Mint: ${config.mint}`, colors.cyan);
+  log("🔧", `Token Program: ${config.tokenProgram}`, colors.cyan);
+  log("🎰", `Mayhem Mode: ${config.mayhemMode}`, config.mayhemMode ? colors.yellow : colors.cyan);
 
-    const sig = await sendAndConfirmTransaction(connection, tx, [seller], {
-      commitment: "confirmed",
-    });
+  // Sell tokens
+  log("💰", "Selling all tokens...", colors.yellow);
 
+  const result = await sellTokens(connection, wallet, config);
+
+  if (result.success) {
     log("✅", "Sell successful!", colors.green);
-    log("🔗", `TX: https://explorer.solana.com/tx/${sig}?cluster=devnet`, colors.cyan);
-
-    // Check balance after
-    const balance = await connection.getBalance(seller.publicKey);
-    log("💰", `Balance after: ${(balance / 1e9).toFixed(4)} SOL`, colors.green);
-
-  } catch (error: any) {
-    log("❌", `Sell failed: ${error.message}`, colors.red);
-    if (error.logs) {
-      console.log("\n📋 Logs:");
-      error.logs.slice(-10).forEach((l: string) => console.log(`   ${l}`));
+    if (result.signature) {
+      const cluster = network === "devnet" ? "?cluster=devnet" : "";
+      log("🔗", `https://explorer.solana.com/tx/${result.signature}${cluster}`, colors.cyan);
     }
-    throw error;
+    if (result.solReceived !== undefined) {
+      log("💎", `SOL received: ~${result.solReceived.toFixed(4)} SOL`, colors.green);
+    }
+    return true;
+  } else {
+    log("❌", `Sell failed: ${result.error}`, colors.red);
+    return false;
   }
 }
 
+async function main() {
+  const { tokenId, all, creator, network } = parseArgs();
+
+  if (!creator) {
+    console.error(`${colors.red}Error: Creator pubkey required. Use --creator or set CREATOR env var${colors.reset}`);
+    process.exit(1);
+  }
+
+  if (!all && !tokenId) {
+    console.error(`${colors.red}Error: Specify token mint/symbol or use --all${colors.reset}`);
+    showHelp();
+    process.exit(1);
+  }
+
+  // Setup
+  const rpcUrl = network === "devnet"
+    ? "https://api.devnet.solana.com"
+    : "https://api.mainnet-beta.solana.com";
+  const connection = new Connection(rpcUrl, "confirmed");
+  const wallet = loadWallet(`${network}-wallet.json`);
+  const creatorPubkey = new PublicKey(creator);
+
+  console.log("\n" + "=".repeat(60));
+  console.log(`${colors.bright}${colors.yellow}SELL TOKENS${colors.reset}`);
+  console.log("=".repeat(60));
+  console.log(`Network: ${network}`);
+  console.log(`Creator: ${creator.slice(0, 8)}...`);
+  console.log(`Wallet: ${wallet.publicKey.toString().slice(0, 8)}...`);
+
+  let tokens: TokenConfig[] = [];
+
+  if (all) {
+    // Load all tokens
+    tokens = await loadAllTokensFromState(connection, creatorPubkey);
+    if (tokens.length === 0) {
+      console.error(`${colors.red}No tokens found. Run daemon first to discover tokens.${colors.reset}`);
+      process.exit(1);
+    }
+    console.log(`Found ${tokens.length} tokens`);
+  } else {
+    // Load specific token
+    const config = await loadTokenFromState(tokenId!, connection, creatorPubkey);
+    if (!config) {
+      console.error(`${colors.red}Token not found: ${tokenId}${colors.reset}`);
+      console.error("Make sure daemon has discovered this token (check .asdf-state.json or API)");
+      process.exit(1);
+    }
+    tokens = [config];
+  }
+
+  // Sell each token
+  let successCount = 0;
+  for (const config of tokens) {
+    const success = await sellTokenForConfig(connection, wallet, config, network);
+    if (success) successCount++;
+    if (tokens.length > 1) await new Promise(r => setTimeout(r, 2000));
+  }
+
+  // Summary
+  console.log("\n" + "=".repeat(60));
+  console.log(`${colors.bright}${successCount === tokens.length ? colors.green : colors.yellow}RESULT${colors.reset}`);
+  console.log("=".repeat(60));
+  console.log(`Sold: ${successCount}/${tokens.length} tokens`);
+
+  // Show wallet balance
+  const balance = await connection.getBalance(wallet.publicKey);
+  log("💰", `Wallet balance: ${(balance / 1e9).toFixed(4)} SOL`, colors.cyan);
+
+  // Show vault balance
+  const vault = deriveCreatorVault(creatorPubkey);
+  const vaultBalance = (await connection.getAccountInfo(vault))?.lamports || 0;
+  log("🏦", `Creator Vault: ${(vaultBalance / 1e9).toFixed(6)} SOL`, colors.cyan);
+}
+
 main().catch((error) => {
-  console.error(`${colors.red}❌ Fatal error: ${error.message}${colors.reset}`);
+  console.error(`${colors.red}Fatal error: ${error.message}${colors.reset}`);
   process.exit(1);
 });

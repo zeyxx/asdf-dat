@@ -21,7 +21,7 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NETWORK_CONFIGS, NetworkType, parseNetworkArg } from '../lib/network-config';
+import { NETWORK_CONFIGS, NetworkType, parseNetworkArg } from '../src/network/config';
 
 // ============================================================================
 // Constants - Simple, no optimization
@@ -421,7 +421,7 @@ async function main(): Promise<void> {
 
   // Banner
   console.log('\n╔══════════════════════════════════════════════════════╗');
-  console.log('║           ASDF-DAT CYCLE TRIGGER BOT                 ║');
+  console.log('║           ASDF Burn Engine CYCLE TRIGGER BOT                 ║');
   console.log('╚══════════════════════════════════════════════════════╝\n');
 
   log(`Network: ${config.network}`);

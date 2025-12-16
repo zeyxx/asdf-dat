@@ -520,6 +520,18 @@ pub struct MigrateTokenStats<'info> {
     pub system_program: Program<'info, System>,
 }
 
+/// MigrateDatState - Migrate DAT state to add new fields (one-time migration)
+/// This handles the account reallocation from 382 to 390 bytes
+#[derive(Accounts)]
+pub struct MigrateDatState<'info> {
+    #[account(mut, seeds = [DAT_STATE_SEED], bump)]
+    /// CHECK: Manual verification - using AccountInfo for raw data access during migration
+    pub dat_state: AccountInfo<'info>,
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
 /// ProposeAdminTransfer - Current admin proposes a new admin (two-step transfer)
 #[derive(Accounts)]
 pub struct ProposeAdminTransfer<'info> {
@@ -633,6 +645,7 @@ pub struct CreatePumpfunTokenMayhem<'info> {
 
 /// CreatePumpfunTokenV2 - Create token using create_v2 (Token2022) without Mayhem Mode
 /// Standard Token2022 token with 1B supply
+/// NOTE: Even without Mayhem Mode, PumpFun's create_v2 requires all Mayhem accounts
 #[derive(Accounts)]
 pub struct CreatePumpfunTokenV2<'info> {
     #[account(seeds = [DAT_STATE_SEED], bump)]
@@ -668,6 +681,26 @@ pub struct CreatePumpfunTokenV2<'info> {
     pub token_2022_program: AccountInfo<'info>,
 
     pub associated_token_program: Program<'info, AssociatedToken>,
+
+    // Mayhem accounts - required by create_v2 even when is_mayhem_mode = false
+    /// CHECK: Mayhem program (MAyhSmz...) - must be passed even without Mayhem Mode
+    #[account(mut)]
+    pub mayhem_program: AccountInfo<'info>,
+
+    /// CHECK: Global params PDA from mayhem program
+    pub global_params: AccountInfo<'info>,
+
+    /// CHECK: SOL vault PDA from mayhem program
+    #[account(mut)]
+    pub sol_vault: AccountInfo<'info>,
+
+    /// CHECK: Mayhem state PDA (derived from mint)
+    #[account(mut)]
+    pub mayhem_state: AccountInfo<'info>,
+
+    /// CHECK: Mayhem token vault (Token2022 ATA)
+    #[account(mut)]
+    pub mayhem_token_vault: AccountInfo<'info>,
 
     /// CHECK: Event authority PDA
     pub event_authority: AccountInfo<'info>,

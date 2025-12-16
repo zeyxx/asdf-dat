@@ -207,11 +207,13 @@ out/
 
 # Custom project files to ignore
 research/
+labs/
 drafts/
 todo.md
 notes.txt
 NOTES.md
 TODO.md
+docs/TODO-*.md
 scratch/
 
 # Solana specific
@@ -307,9 +309,10 @@ reports/
 migrations/
 .program_logs/
 
-# Devnet configuration and token info files
+# Devnet configuration and token info files (auto-discovered now)
 devnet-config.json
 devnet-token-*.json
+devnet-tokens/*.json
 !devnet-config.example.json
 
 # Temporary scripts at root
@@ -339,6 +342,12 @@ scripts/testing/output/logs/
 .daemon-state.json
 .daemon-state.backup.json
 .daemon-lock.json
+.asdf-state.json
+.asdf-state.json.*
+
+# Debug scripts (development only)
+scripts/debug-*.ts
+scripts/find-*.ts
 
 # Runtime data (metrics, history, test data)
 data/
@@ -353,3 +362,4 @@ debug
 programs/**/backup-*
 programs/**/*.backup-*
 CLAUDE.md
+cinema-creator-wallet.json

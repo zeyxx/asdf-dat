@@ -1,74 +1,26 @@
 import { Connection, PublicKey } from "@solana/web3.js";
-import { Program, AnchorProvider, Wallet, Idl } from "@coral-xyz/anchor";
-import { Keypair } from "@solana/web3.js";
-import fs from "fs";
-import path from "path";
-import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
 
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
-function loadIdl(): Idl {
-  const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
-  return JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
-}
-
 async function main() {
-  // Parse network argument
-  const args = process.argv.slice(2);
-  const networkConfig = getNetworkConfig(args);
-
-  printNetworkBanner(networkConfig);
-
-  const connection = new Connection(networkConfig.rpcUrl, "confirmed");
-
-  const dummyWallet = Keypair.generate();
-  const provider = new AnchorProvider(connection, new Wallet(dummyWallet), {});
-
-  const idl = loadIdl();
-  const program: Program<Idl> = new Program(idl, provider);
+  const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
   const [datState] = PublicKey.findProgramAddressSync(
     [Buffer.from("dat_v3")],
     PROGRAM_ID
   );
 
-  const [datAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from("auth_v3")],
-    PROGRAM_ID
-  );
-
-  console.log("\n=== DAT Configuration ===\n");
+  console.log("Program ID:", PROGRAM_ID.toString());
   console.log("DAT State PDA:", datState.toString());
-  console.log("DAT Authority PDA:", datAuthority.toString());
 
-  try {
-    const state = await (program.account as any).datState.fetch(datState);
-    console.log("\n=== DAT State Data ===\n");
-    console.log("Admin:", state.admin.toString());
-    console.log("ASDF Mint:", state.asdfMint.toString());
-    console.log("Is Active:", state.isActive);
-    console.log("Emergency Pause:", state.emergencyPause);
-
-    // Token amounts (6 decimals for most tokens)
-    const TOKEN_DECIMALS = 6;
-    const totalBurnedReal = Number(state.totalBurned.toString()) / Math.pow(10, TOKEN_DECIMALS);
-    console.log("Total Burned:", totalBurnedReal.toLocaleString(undefined, {maximumFractionDigits: 6}), "tokens", `(${state.totalBurned.toString()} unités)`);
-
-    // SOL amounts (9 decimals for lamports)
-    const SOL_DECIMALS = 9;
-    const totalSolReal = Number(state.totalSolCollected.toString()) / Math.pow(10, SOL_DECIMALS);
-    console.log("Total SOL Collected:", totalSolReal.toLocaleString(undefined, {maximumFractionDigits: 9}), "SOL", `(${state.totalSolCollected.toString()} lamports)`);
-
-    console.log("Total Buybacks:", state.totalBuybacks);
-    console.log("DAT Authority Bump:", state.datAuthorityBump);
-
-    console.log("\n=== Comparison ===\n");
-    console.log("Config DAT Authority:", "HzZ2AFNYVdCR1dvg8Mb9vuxZnpkmx3P2vMiq7f6gEi7J");
-    console.log("Derived DAT Authority:", datAuthority.toString());
-    console.log("Match:", datAuthority.toString() === "HzZ2AFNYVdCR1dvg8Mb9vuxZnpkmx3P2vMiq7f6gEi7J" ? "YES" : "NO");
-
-  } catch (error: any) {
-    console.error("Failed to fetch DAT state:", error.message);
+  const accountInfo = await connection.getAccountInfo(datState);
+  if (accountInfo) {
+    console.log("Account exists, data length:", accountInfo.data.length);
+    const adminBytes = accountInfo.data.slice(8, 40);
+    const admin = new PublicKey(adminBytes);
+    console.log("Admin:", admin.toString());
+  } else {
+    console.log("DAT State not initialized");
   }
 }
 

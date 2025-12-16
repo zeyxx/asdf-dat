@@ -1,4 +1,4 @@
-# FAQ - ASDF-DAT
+# FAQ - ASDF Burn Engine
 
 Frequently asked questions about the Optimistic Burn Protocol.
 
@@ -131,7 +131,7 @@ Secondary tokens keep 55.2% for their own buyback & burn. The remaining 44.8% fl
 
 Traditional models: Creator takes fees → Value extracted from holders.
 
-ASDF-DAT: Fees → Buyback → Burn → Value created for holders.
+ASDF Burn Engine: Fees → Buyback → Burn → Value created for holders.
 
 We don't extract value. We create it through permanent supply reduction.
 

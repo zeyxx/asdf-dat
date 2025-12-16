@@ -1,21 +1,32 @@
 {
   "name": "asdf-dat",
   "version": "2.0.0",
-  "description": "ASDF DAT - Automated Buyback and Burn System",
-  "main": "dist/index.js",
+  "description": "ASDF DAT - Optimistic Burn Protocol Daemon",
+  "main": "dist/cli.js",
+  "bin": {
+    "asdf-dat": "./dist/cli.js"
+  },
   "scripts": {
-    "build": "tsc && anchor build",
+    "build": "tsc",
+    "build:all": "tsc && anchor build",
     "clean": "rm -rf dist target",
-    "compile": "tsc",
+    "dev": "ts-node src/cli.ts",
+    "start": "node dist/cli.js",
     "test": "anchor test",
+    "compile": "tsc",
+    "daemon": "ts-node src/cli.ts",
     "init": "ts-node scripts/init-dat-state.ts",
-    "create-token": "ts-node scripts/create-token-spl.ts",
-    "init-accounts": "ts-node scripts/create-all-required-atas.ts",
-    "check-vault": "ts-node scripts/check-creator-vault.ts",
-    "bot": "ts-node src/bot.ts",
-    "dashboard": "ts-node src/index.ts dashboard",
-    "start": "ts-node src/index.ts all",
-    "validate-mayhem": "ts-node scripts/validate-mayhem-readiness.ts"
+    "init-token": "ts-node scripts/init-token-stats.ts",
+    "create-token": "ts-node scripts/create-token-v2.ts",
+    "set-root": "ts-node scripts/set-root-token.ts",
+    "check-fees": "ts-node scripts/check-fees.ts",
+    "check-state": "ts-node scripts/check-dat-state.ts",
+    "volume": "ts-node scripts/generate-volume.ts",
+    "sell": "ts-node scripts/sell-spl-tokens-simple.ts",
+    "cycle": "ts-node scripts/execute-ecosystem-cycle.ts",
+    "validate": "ts-node scripts/validate-before-mainnet-launch.ts",
+    "transfer-admin": "ts-node scripts/transfer-admin.ts",
+    "accept-admin": "ts-node scripts/accept-admin.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "0.31.1",
@@ -29,6 +40,7 @@
     "mime-types": "^3.0.2",
     "nft.storage": "^7.2.0",
     "socket.io": "^4.8.1",
+    "ws": "^8.18.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -39,6 +51,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.5",
+    "@types/ws": "^8.18.1",
     "chai": "^6.2.1",
     "mocha": "^11.7.5",
     "ts-node": "^10.9.2",

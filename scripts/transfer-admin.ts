@@ -7,7 +7,7 @@ import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
 
-const PROGRAM_ID = new PublicKey("ASDfNfUHwVGfrg3SV7SQYWhaVxnrCUZyWmMpWJAPu4MZ");
+const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 const colors = {
   reset: "\x1b[0m",
@@ -38,31 +38,31 @@ async function main() {
 
   const connection = new Connection("https://api.devnet.solana.com", "confirmed");
 
-  // Check if old wallet file exists
-  let oldWalletPath = "./old-devnet-wallet.json";
+  // Current admin wallet (old one)
+  const oldWalletPath = "./devnet-wallet-old.json";
+  // New admin wallet
+  const newWalletPath = "./devnet-wallet.json";
+
   if (!fs.existsSync(oldWalletPath)) {
-    oldWalletPath = "./devnet-wallet-backup.json";
-    if (!fs.existsSync(oldWalletPath)) {
-      log("❌", "Ancien wallet non trouvé!", colors.red);
-      log("⚠️", "Veuillez placer l'ancien wallet dans:", colors.yellow);
-      log("  ", "  - old-devnet-wallet.json", colors.yellow);
-      log("  ", "  - ou devnet-wallet-backup.json", colors.yellow);
-      log("💡", "Admin actuel: 9UopfvYqxhzg7zLwe6YmTkZuGzVq98J2tNyenKfWeUjj", colors.cyan);
-      process.exit(1);
-    }
+    log("❌", "Wallet actuel (devnet-wallet-old.json) non trouvé!", colors.red);
+    process.exit(1);
+  }
+  if (!fs.existsSync(newWalletPath)) {
+    log("❌", "Nouveau wallet (devnet-wallet.json) non trouvé!", colors.red);
+    process.exit(1);
   }
 
-  // Load OLD admin wallet
-  log("🔑", `Chargement de l'ancien wallet depuis: ${oldWalletPath}`, colors.yellow);
+  // Load CURRENT admin wallet
+  log("🔑", `Chargement du wallet actuel depuis: ${oldWalletPath}`, colors.yellow);
   const oldAdmin = Keypair.fromSecretKey(
     new Uint8Array(JSON.parse(fs.readFileSync(oldWalletPath, "utf-8")))
   );
-  log("👤", `Ancien Admin: ${oldAdmin.publicKey.toString()}`, colors.cyan);
+  log("👤", `Admin actuel: ${oldAdmin.publicKey.toString()}`, colors.cyan);
 
   // Load NEW admin wallet
-  log("🔑", "Chargement du nouveau wallet...", colors.yellow);
+  log("🔑", `Chargement du nouveau wallet depuis: ${newWalletPath}`, colors.yellow);
   const newAdminKeypair = Keypair.fromSecretKey(
-    new Uint8Array(JSON.parse(fs.readFileSync("./devnet-wallet.json", "utf-8")))
+    new Uint8Array(JSON.parse(fs.readFileSync(newWalletPath, "utf-8")))
   );
   const newAdmin = newAdminKeypair.publicKey;
   log("👤", `Nouveau Admin: ${newAdmin.toString()}`, colors.green);

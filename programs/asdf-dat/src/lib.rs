@@ -747,6 +747,85 @@ pub mod asdf_dat {
         Ok(())
     }
 
+    /// Migrate DATState account to add new fields (one-time migration)
+    /// This handles the account reallocation from 382 to 390 bytes
+    /// Adding: last_direct_fee_split_timestamp (i64 = 8 bytes)
+    pub fn migrate_dat_state(ctx: Context<MigrateDatState>) -> Result<()> {
+        use anchor_lang::solana_program::program::invoke;
+        use anchor_lang::solana_program::system_instruction;
+
+        let dat_state_account = &ctx.accounts.dat_state;
+
+        // Constants for migration
+        const OLD_SIZE: usize = 382;  // Current on-chain size (8 discriminator + 374 old struct)
+        const NEW_SIZE: usize = 390;  // New size (8 discriminator + 382 new struct)
+
+        let current_data = dat_state_account.try_borrow_data()?;
+        let current_size = current_data.len();
+
+        msg!("DATState migration: current size = {}, target size = {}", current_size, NEW_SIZE);
+
+        // Already migrated?
+        if current_size >= NEW_SIZE {
+            msg!("DATState already migrated (size: {})", current_size);
+            return Ok(());
+        }
+
+        if current_size != OLD_SIZE {
+            msg!("Unexpected DATState size: {}. Expected {} or {}", current_size, OLD_SIZE, NEW_SIZE);
+            return err!(ErrorCode::AccountSizeMismatch);
+        }
+
+        // Verify admin from raw data (admin is at offset 8, after discriminator)
+        let admin_bytes = &current_data[8..40];
+        let stored_admin = Pubkey::try_from(admin_bytes).map_err(|_| ErrorCode::InvalidParameter)?;
+        require!(stored_admin == ctx.accounts.admin.key(), ErrorCode::UnauthorizedAccess);
+
+        // Copy old data before realloc
+        let mut old_data = vec![0u8; OLD_SIZE];
+        old_data.copy_from_slice(&current_data[..OLD_SIZE]);
+        drop(current_data); // Release borrow
+
+        // Calculate rent for new size
+        let rent = Rent::get()?;
+        let new_lamports = rent.minimum_balance(NEW_SIZE);
+        let current_lamports = dat_state_account.lamports();
+
+        // Transfer additional lamports if needed
+        if new_lamports > current_lamports {
+            let lamports_diff = new_lamports - current_lamports;
+            msg!("Transferring {} lamports for rent", lamports_diff);
+            invoke(
+                &system_instruction::transfer(
+                    ctx.accounts.admin.key,
+                    dat_state_account.key,
+                    lamports_diff,
+                ),
+                &[
+                    ctx.accounts.admin.to_account_info(),
+                    dat_state_account.to_account_info(),
+                    ctx.accounts.system_program.to_account_info(),
+                ],
+            )?;
+        }
+
+        // Realloc the account to new size
+        dat_state_account.realloc(NEW_SIZE, false).map_err(|_| ErrorCode::AccountSizeMismatch)?;
+
+        // Write data back with new field
+        let mut new_data = dat_state_account.try_borrow_mut_data()?;
+        new_data[..OLD_SIZE].copy_from_slice(&old_data);
+
+        // Add last_direct_fee_split_timestamp at the end (bytes 382-390)
+        // Initialize to 0 (no direct fee split has been done yet)
+        new_data[382..390].copy_from_slice(&0i64.to_le_bytes());
+
+        msg!("DATState migrated successfully from {} to {} bytes", OLD_SIZE, NEW_SIZE);
+        msg!("Added field: last_direct_fee_split_timestamp = 0");
+
+        Ok(())
+    }
+
     pub fn collect_fees(ctx: Context<CollectFees>, is_root_token: bool, for_ecosystem: bool) -> Result<()> {
         let state = &mut ctx.accounts.dat_state;
         let clock = Clock::get()?;
@@ -1423,6 +1502,7 @@ pub mod asdf_dat {
         // is_mayhem_mode (bool - 1 byte) = false
         data.extend_from_slice(&[0u8]); // false for standard Token2022
 
+        // PumpFun's create_v2 requires all Mayhem accounts even when is_mayhem_mode = false
         let accounts = vec![
             AccountMeta::new(ctx.accounts.mint.key(), true),
             AccountMeta::new_readonly(ctx.accounts.mint_authority.key(), false),
@@ -1433,6 +1513,12 @@ pub mod asdf_dat {
             AccountMeta::new_readonly(ctx.accounts.system_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.token_2022_program.key(), false),
             AccountMeta::new_readonly(ctx.accounts.associated_token_program.key(), false),
+            // Mayhem accounts (required even for non-mayhem mode)
+            AccountMeta::new(ctx.accounts.mayhem_program.key(), false),
+            AccountMeta::new_readonly(ctx.accounts.global_params.key(), false),
+            AccountMeta::new(ctx.accounts.sol_vault.key(), false),
+            AccountMeta::new(ctx.accounts.mayhem_state.key(), false),
+            AccountMeta::new(ctx.accounts.mayhem_token_vault.key(), false),
             AccountMeta::new_readonly(ctx.accounts.event_authority.key(), false),
             AccountMeta::new_readonly(ctx.accounts.pump_program.key(), false),
         ];
@@ -1457,13 +1543,19 @@ pub mod asdf_dat {
                 ctx.accounts.system_program.to_account_info(),
                 ctx.accounts.token_2022_program.to_account_info(),
                 ctx.accounts.associated_token_program.to_account_info(),
+                // Mayhem accounts (required even for non-mayhem mode)
+                ctx.accounts.mayhem_program.to_account_info(),
+                ctx.accounts.global_params.to_account_info(),
+                ctx.accounts.sol_vault.to_account_info(),
+                ctx.accounts.mayhem_state.to_account_info(),
+                ctx.accounts.mayhem_token_vault.to_account_info(),
                 ctx.accounts.event_authority.to_account_info(),
                 ctx.accounts.pump_program.to_account_info(),
             ],
             &[seeds],
         )?;
 
-        msg!("Token2022 token created successfully!");
+        msg!("Token2022 token created successfully (standard mode)!");
 
         emit!(TokenCreated {
             mint: ctx.accounts.mint.key(),

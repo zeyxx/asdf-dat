@@ -664,6 +664,25 @@ export type AsdfDat = {
           "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
+          "name": "mayhemProgram",
+          "writable": true
+        },
+        {
+          "name": "globalParams"
+        },
+        {
+          "name": "solVault",
+          "writable": true
+        },
+        {
+          "name": "mayhemState",
+          "writable": true
+        },
+        {
+          "name": "mayhemTokenVault",
+          "writable": true
+        },
+        {
           "name": "eventAuthority"
         },
         {
@@ -1674,6 +1693,55 @@ export type AsdfDat = {
         },
         {
           "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrateDatState",
+      "docs": [
+        "Migrate DATState account to add new fields (one-time migration)",
+        "This handles the account reallocation from 382 to 390 bytes",
+        "Adding: last_direct_fee_split_timestamp (i64 = 8 bytes)"
+      ],
+      "discriminator": [
+        195,
+        191,
+        79,
+        157,
+        50,
+        83,
+        128,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "datState",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
           "writable": true,
           "signer": true
         },

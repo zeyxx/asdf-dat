@@ -38,28 +38,37 @@ import { AnchorProvider, Program, Wallet, BN, Idl } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../lib/network-config';
-import { getCycleLogger } from '../lib/logger';
-import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../lib/tracing-context';
-import { monitoring, OperationType } from '../lib/monitoring';
+import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../src/network/config';
+import { getCycleLogger } from '../src/observability/logger';
+import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../src/observability/tracing';
+import { monitoring, OperationType } from '../src/observability/monitoring';
 import {
   getBcCreatorVault,
   getAmmCreatorVaultAta,
   deriveAmmCreatorVaultAuthority,
-} from '../lib/amm-utils';
-import { DATState, TokenStats, getTypedAccounts } from '../lib/types';
-import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError, getRecommendedPriorityFee } from '../lib/rpc-utils';
-import { ExecutionLock, LockError } from '../lib/execution-lock';
-import { getAlerting, initAlerting, CycleSummary } from '../lib/alerting';
-import { validateAlertingEnv } from '../lib/env-validator';
+} from '../src/pump/amm-utils';
+import { DATState, TokenStats, getTypedAccounts } from '../src/core/types';
+import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError, getRecommendedPriorityFee } from '../src/network/rpc-utils';
+import { ExecutionLock, LockError } from '../src/utils/execution-lock';
+import { getAlerting, initAlerting, CycleSummary } from '../src/observability/alerting';
+import { validateAlertingEnv } from '../src/utils/env-validator';
 import {
   deriveRebatePoolPda,
   deriveUserStatsPda,
   getEligibleUsers,
   selectUserForRebate,
   calculateRebateAmount,
-} from '../lib/user-pool';
+} from '../src/core/user-pool';
 import { getAssociatedTokenAddress } from '@solana/spl-token';
+// "Don't trust, verify" - trustless token verification
+import {
+  discoverAndVerifyTokens,
+  deriveTokenAddresses,
+  detectPoolType,
+  detectTokenProgram,
+  detectMayhemMode,
+} from '../src/core/token-verifier';
+import { VerifiedToken, StoredToken } from '../src/types';
 
 // ============================================================================
 // Constants & Configuration
@@ -395,7 +404,10 @@ interface TokenConfig {
   creator: PublicKey;
   isRoot: boolean;
   isToken2022: boolean;
+  mayhemMode: boolean;      // Determines fee recipient (Mayhem vs SPL)
   poolType: PoolType;       // Determines bonding curve vs PumpSwap AMM
+  pendingFeesFromState?: number;  // Pending fees from daemon state file (fallback when TokenStats doesn't exist)
+  hasTokenStats?: boolean;  // From on-chain verification - true if TokenStats PDA exists
 }
 
 interface TokenAllocation {
@@ -1037,10 +1049,256 @@ async function waitForDaemonSync(
 // Token Configuration Loader
 // ============================================================================
 
-async function loadEcosystemTokens(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
-  // Get token files from network config
-  const tokenFiles = networkConfig.tokens;
+const DAEMON_API_URL = 'http://localhost:3030';
 
+/**
+ * Try to load tokens from daemon API first, then state file, fallback to JSON files
+ * Finally fall back to trustless on-chain discovery
+ */
+async function loadEcosystemTokens(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
+  // Try daemon API first
+  const daemonTokens = await loadTokensFromDaemon();
+  if (daemonTokens.length > 0) {
+    return daemonTokens;
+  }
+
+  // Try state file (daemon persisted state)
+  log('⚠️', 'Daemon API not available, trying state file...', colors.yellow);
+  const stateTokens = loadTokensFromStateFile();
+  if (stateTokens.length > 0) {
+    return stateTokens;
+  }
+
+  // Try JSON files
+  log('⚠️', 'State file not available, trying JSON files...', colors.yellow);
+  try {
+    const fileTokens = loadTokensFromFiles(networkConfig);
+    if (fileTokens.length > 0) {
+      return fileTokens;
+    }
+  } catch {
+    // Fall through to trustless discovery
+  }
+
+  // Final fallback: Trustless on-chain discovery
+  log('🔍', 'No local tokens found, attempting on-chain discovery...', colors.cyan);
+  return loadTokensTrustless(connection, networkConfig);
+}
+
+/**
+ * "Don't trust, verify" - Trustless on-chain token discovery
+ * Discovers tokens via getProgramAccounts and verifies all data on-chain
+ */
+async function loadTokensTrustless(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
+  try {
+    // Get creator from DATState
+    const [datStatePda] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], PROGRAM_ID);
+
+    // Load IDL
+    const idlPath = path.join(__dirname, '..', 'target', 'idl', 'asdf_dat.json');
+    if (!fs.existsSync(idlPath)) {
+      log('❌', 'IDL not found, cannot perform trustless discovery', colors.red);
+      return [];
+    }
+    const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
+
+    // Create dummy provider for read-only access
+    const dummyWallet = {
+      publicKey: PublicKey.default,
+      signTransaction: async (tx: Transaction) => tx,
+      signAllTransactions: async (txs: Transaction[]) => txs,
+    };
+    const provider = new AnchorProvider(connection, dummyWallet as any, {});
+    const program = new Program(idl, provider);
+
+    // Fetch DATState to get admin (creator) and root token
+    let creator: PublicKey;
+    let rootTokenMint: PublicKey | null = null;
+    try {
+      const datState = await getTypedAccounts(program).datState.fetch(datStatePda);
+      creator = datState.admin;
+      rootTokenMint = datState.rootTokenMint;
+      log('✓', `Creator from DATState: ${creator.toBase58().slice(0, 8)}...`, colors.green);
+      if (rootTokenMint) {
+        log('✓', `Root token from DATState: ${rootTokenMint.toBase58().slice(0, 8)}...`, colors.green);
+      }
+    } catch (error) {
+      log('❌', `Failed to fetch DATState: ${(error as Error).message}`, colors.red);
+      return [];
+    }
+
+    // Discover and verify tokens
+    log('🔍', 'Discovering tokens on-chain...', colors.cyan);
+    const verifiedTokens = await discoverAndVerifyTokens(connection, creator, rootTokenMint ?? undefined);
+
+    if (verifiedTokens.length === 0) {
+      log('⚠️', 'No tokens discovered on-chain for this creator', colors.yellow);
+      return [];
+    }
+
+    // Convert VerifiedToken to TokenConfig
+    const tokens: TokenConfig[] = verifiedTokens.map(vt => ({
+      file: `verified:${vt.mint}`,
+      symbol: vt.symbol || vt.mint.slice(0, 4).toUpperCase(),
+      mint: new PublicKey(vt.mint),
+      bondingCurve: vt.bondingCurve,
+      creator: vt.creator,
+      isRoot: vt.isRoot,
+      isToken2022: vt.tokenProgram === 'Token2022',
+      mayhemMode: vt.isMayhemMode,
+      poolType: vt.poolType,
+      hasTokenStats: vt.hasTokenStats,
+    }));
+
+    for (const token of tokens) {
+      const typeIcon = token.isToken2022 ? '🪙' : '💰';
+      const poolIcon = token.poolType === 'pumpswap_amm' ? '🔄' : '📈';
+      const rootIcon = token.isRoot ? '👑' : '';
+      log('✓', `Verified ${token.symbol} ${rootIcon} (${typeIcon} ${token.isToken2022 ? 'Token2022' : 'SPL'}, ${poolIcon} ${token.poolType})`, colors.green);
+    }
+
+    log('📊', `Discovered ${tokens.length} tokens on-chain: ${tokens.filter(t => t.isRoot).length} root, ${tokens.filter(t => !t.isRoot).length} secondary`, colors.cyan);
+
+    return tokens;
+  } catch (error) {
+    log('❌', `Trustless discovery failed: ${(error as Error).message}`, colors.red);
+    return [];
+  }
+}
+
+/**
+ * Load tokens from daemon state file (.asdf-state.json)
+ * This is the most reliable source when daemon API is not accessible
+ */
+function loadTokensFromStateFile(): TokenConfig[] {
+  const STATE_FILE = '.asdf-state.json';
+  const statePath = path.join(__dirname, '..', STATE_FILE);
+
+  if (!fs.existsSync(statePath)) {
+    log('⚠️', `State file not found: ${STATE_FILE}`, colors.yellow);
+    return [];
+  }
+
+  try {
+    const stateData = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+
+    if (!stateData.tokens || stateData.tokens.length === 0) {
+      log('⚠️', 'State file has no tokens', colors.yellow);
+      return [];
+    }
+
+    const tokens: TokenConfig[] = [];
+
+    for (const t of stateData.tokens) {
+      const poolType: PoolType = t.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
+      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
+      const pendingFees = typeof t.pendingFeesLamports === 'string'
+        ? parseInt(t.pendingFeesLamports, 10)
+        : (t.pendingFeesLamports || 0);
+
+      tokens.push({
+        file: `state:${t.mint}`,
+        symbol: t.symbol,
+        mint: new PublicKey(t.mint),
+        bondingCurve: new PublicKey(t.bondingCurve),
+        creator: new PublicKey('11111111111111111111111111111111'), // Not needed from state
+        isRoot: t.isRoot === true,
+        isToken2022: false,
+        mayhemMode: false,
+        poolType,
+        pendingFeesFromState: pendingFees,
+      });
+      const feesInfo = pendingFees > 0 ? ` | ${(pendingFees / 1e9).toFixed(6)} SOL pending` : '';
+      log('✓', `Loaded ${t.symbol} from state (${poolIcon} ${poolType}${feesInfo})`, colors.green);
+    }
+
+    const rootTokens = tokens.filter(t => t.isRoot);
+    log('📊', `Loaded ${tokens.length} tokens from state: ${rootTokens.length} root, ${tokens.length - rootTokens.length} secondary`, colors.cyan);
+
+    return tokens;
+  } catch (error) {
+    log('⚠️', `Failed to load from state file: ${(error as Error).message}`, colors.yellow);
+    return [];
+  }
+}
+
+/**
+ * Load tokens from daemon API (http://localhost:3030/tokens)
+ */
+async function loadTokensFromDaemon(): Promise<TokenConfig[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(`${DAEMON_API_URL}/tokens`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      log('⚠️', `Daemon returned ${response.status}`, colors.yellow);
+      return [];
+    }
+
+    const data = await response.json() as { count: number; tokens: Array<{
+      mint: string;
+      symbol: string;
+      name: string;
+      isRoot: boolean;
+      bondingCurve: string;
+      poolType: string;
+      pendingFeesLamports: number;
+    }> };
+
+    if (!data.tokens || data.tokens.length === 0) {
+      log('⚠️', 'Daemon has no tokens', colors.yellow);
+      return [];
+    }
+
+    const tokens: TokenConfig[] = [];
+
+    for (const t of data.tokens) {
+      const poolType: PoolType = t.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
+      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
+
+      tokens.push({
+        file: `daemon:${t.mint}`,
+        symbol: t.symbol,
+        mint: new PublicKey(t.mint),
+        bondingCurve: new PublicKey(t.bondingCurve),
+        creator: new PublicKey('11111111111111111111111111111111'), // Not needed from daemon
+        isRoot: t.isRoot,
+        isToken2022: false, // Daemon doesn't track this yet
+        mayhemMode: false,
+        poolType,
+      });
+      log('✓', `Loaded ${t.symbol} from daemon (${poolIcon} ${poolType})`, colors.green);
+    }
+
+    const rootTokens = tokens.filter(t => t.isRoot);
+    log('📊', `Loaded ${tokens.length} tokens from daemon: ${rootTokens.length} root, ${tokens.length - rootTokens.length} secondary`, colors.cyan);
+
+    // If no root token, mark the first one as root (for now)
+    if (rootTokens.length === 0 && tokens.length > 0) {
+      log('⚠️', 'No root token marked, using first token as root', colors.yellow);
+      tokens[0].isRoot = true;
+    }
+
+    return tokens;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (!msg.includes('abort')) {
+      log('⚠️', `Failed to load from daemon: ${msg}`, colors.yellow);
+    }
+    return [];
+  }
+}
+
+/**
+ * Load tokens from JSON files (fallback)
+ */
+function loadTokensFromFiles(networkConfig: NetworkConfig): TokenConfig[] {
+  const tokenFiles = networkConfig.tokens;
   const tokens: TokenConfig[] = [];
 
   for (const file of tokenFiles) {
@@ -1053,11 +1311,8 @@ async function loadEcosystemTokens(connection: Connection, networkConfig: Networ
 
     try {
       const tokenData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      // Read poolType from JSON, default to 'bonding_curve' if not specified
       const poolType: PoolType = tokenData.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
-      // Determine if root from JSON data
       const isRoot = tokenData.isRoot === true;
-      // Determine token program from JSON or filename
       const isToken2022 = tokenData.tokenProgram === 'Token2022' || tokenData.mayhemMode === true;
 
       tokens.push({
@@ -1068,6 +1323,7 @@ async function loadEcosystemTokens(connection: Connection, networkConfig: Networ
         creator: new PublicKey(tokenData.creator),
         isRoot,
         isToken2022,
+        mayhemMode: tokenData.mayhemMode === true,
         poolType,
       });
       const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
@@ -1078,19 +1334,18 @@ async function loadEcosystemTokens(connection: Connection, networkConfig: Networ
   }
 
   if (tokens.length === 0) {
-    throw new Error('No tokens loaded. Ensure token config files exist.');
+    throw new Error('No tokens loaded. Ensure daemon is running or token config files exist.');
   }
 
-  // Verify we have exactly one root token
   const rootTokens = tokens.filter(t => t.isRoot);
   if (rootTokens.length === 0) {
-    throw new Error('No root token found in configuration. Ensure at least one token has "isRoot": true');
+    throw new Error('No root token found. Ensure at least one token has "isRoot": true');
   }
   if (rootTokens.length > 1) {
     throw new Error('Multiple root tokens found. Only one root token is allowed.');
   }
 
-  log('📊', `Loaded ${tokens.length} tokens: ${rootTokens.length} root, ${tokens.length - 1} secondary`, colors.cyan);
+  log('📊', `Loaded ${tokens.length} tokens from files: ${rootTokens.length} root, ${tokens.length - 1} secondary`, colors.cyan);
   return tokens;
 }
 
@@ -1142,8 +1397,19 @@ async function queryPendingFees(
         pendingFees > 0 ? colors.green : colors.yellow);
 
     } catch (error) {
-      log('❌', `${token.symbol}: Failed to query pending fees - ${(error as Error).message || String(error)}`, colors.red);
-      throw error;
+      // TokenStats doesn't exist on-chain - try to use fees from daemon state file
+      if (token.pendingFeesFromState && token.pendingFeesFromState > 0) {
+        log('💾', `${token.symbol}: Using state file pending fees: ${formatSOL(token.pendingFeesFromState)} SOL`, colors.cyan);
+        allocations.push({
+          token,
+          pendingFees: token.pendingFeesFromState,
+          allocation: 0,
+          isRoot: false,
+        });
+      } else {
+        log('⚠️', `${token.symbol}: No TokenStats & no state fees (skipping)`, colors.yellow);
+      }
+      continue;
     }
   }
 
@@ -1735,7 +2001,7 @@ async function executeSecondaryWithAllocation(
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 
-    const protocolFeeRecipient = allocation.token.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+    const protocolFeeRecipient = allocation.token.mayhemMode ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
     // Derive root treasury PDA (required for secondary tokens)
     const [rootTreasury] = PublicKey.findProgramAddressSync(
@@ -2221,7 +2487,7 @@ async function executeRootCycle(
     // Protocol fee recipient (different for Mayhem vs SPL)
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
-    const protocolFeeRecipient = rootToken.isToken2022 ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+    const protocolFeeRecipient = rootToken.mayhemMode ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
 
     // Select swap program based on pool type
     const swapProgram = isAmm ? PUMP_SWAP_PROGRAM : PUMP_PROGRAM;

@@ -1,4 +1,4 @@
-# ASDF-DAT Architecture
+# ASDF Burn Engine Architecture
 
 Optimistic Burn Protocol - Technical Design
 
@@ -8,11 +8,11 @@ Single daemon executes. Chain proves. Anyone verifies.
 
 ## System Overview
 
-ASDF-DAT is a two-layer system combining on-chain smart contracts with off-chain automation:
+ASDF Burn Engine is a two-layer system combining on-chain smart contracts with off-chain automation:
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                              ASDF-DAT                                   │
+│                              ASDF Burn Engine                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
@@ -133,13 +133,113 @@ seeds = ["auth_v3"]
 
 ---
 
+## Source Code Organization
+
+The TypeScript source is organized into modular directories:
+
+```
+src/
+├── cli.ts              # CLI entry point (daemon launcher)
+├── daemon.ts           # Main daemon orchestration
+│
+├── core/               # Protocol constants, types, business logic
+│   ├── constants.ts    # All protocol constants (single source of truth)
+│   ├── pda-utils.ts    # PDA derivation functions
+│   ├── types.ts        # On-chain account type definitions
+│   ├── user-pool.ts    # Rebate pool & user stats
+│   ├── allocation-calculator.ts  # Fee split calculations
+│   ├── burn-engine.ts           # Core burn execution logic
+│   ├── token-verifier.ts        # "Don't trust, verify" on-chain verification
+│   ├── transaction-builder.ts   # Transaction construction helpers
+│   └── index.ts        # Barrel exports
+│
+├── pump/               # Pump.fun SDK integration
+│   ├── sdk.ts          # Buy/sell, wallet loading
+│   ├── amm-utils.ts    # AMM pool, creator vault derivation
+│   ├── price-utils.ts  # Price calculation, slippage
+│   └── index.ts        # Barrel exports
+│
+├── monitoring/         # Fee monitoring & tracking
+│   ├── realtime-tracker.ts  # WebSocket tracking
+│   ├── validator-daemon.ts  # Trustless validation
+│   └── index.ts        # Barrel exports
+│
+├── network/            # Network & RPC layer
+│   ├── config.ts       # Network configs (devnet/mainnet)
+│   ├── rpc-utils.ts    # Retry, TX confirmation
+│   ├── jito-utils.ts   # Jito bundle submission
+│   └── index.ts        # Barrel exports
+│
+├── observability/      # Logging, tracing, alerting
+│   ├── logger.ts       # Structured logging with file output
+│   ├── tracing.ts      # Distributed tracing context
+│   ├── monitoring.ts   # Metrics collection
+│   ├── alerting.ts     # Alert thresholds
+│   ├── metrics-persistence.ts  # Metrics storage
+│   └── index.ts        # Barrel exports
+│
+├── managers/           # Daemon manager classes
+│   ├── rpc-manager.ts      # RPC connection pool
+│   ├── token-manager.ts    # Token tracking & discovery
+│   ├── fee-tracker.ts      # Fee attribution
+│   └── cycle-manager.ts    # Cycle execution
+│
+├── utils/              # Config, state, utilities
+│   ├── token-loader.ts      # Auto-discovery token loading (state → API → on-chain)
+│   ├── config-validator.ts  # Token config validation
+│   ├── execution-lock.ts    # Concurrency locks
+│   ├── state-persistence.ts # Daemon state persistence
+│   ├── env-validator.ts     # Environment validation
+│   ├── history-manager.ts   # History tracking
+│   ├── logger.ts            # Utility logger
+│   ├── test-utils.ts        # Test helpers
+│   ├── websocket-manager.ts # WebSocket management
+│   └── index.ts        # Barrel exports
+│
+├── api/                # HTTP API & dashboard
+│   ├── server.ts       # Express server
+│   ├── control-panel.ts  # Dashboard control actions
+│   └── websocket.ts    # WebSocket API
+│
+└── types/              # Runtime type definitions
+    ├── index.ts        # All runtime types
+    ├── dat-program.ts  # Program-specific types
+    └── pump-sdk.d.ts   # Pump.fun SDK type declarations
+```
+
+### Module Imports
+
+```typescript
+// Import constants and PDAs
+import { PROGRAM_ID, PUMP_PROGRAM, SECONDARY_KEEP_RATIO } from '../src/core';
+import { deriveDATState, deriveTokenStats, deriveCreatorVaultBC } from '../src/core';
+
+// Import token loading (autonomous discovery)
+import { loadTokenFromState, loadAllTokensFromState, TokenLoader } from '../src/utils/token-loader';
+
+// Import network utilities
+import { withRetryAndTimeout, confirmTransactionWithRetry } from '../src/network';
+import { NETWORK_CONFIGS, NetworkType } from '../src/network/config';
+
+// Import Pump.fun SDK
+import { buyTokens, sellTokens, loadWallet, deriveCreatorVault } from '../src/pump/sdk';
+
+// Import token verifier ("Don't trust, verify")
+import { verifyToken, discoverTokensByCreator, deriveTokenAddresses } from '../src/core/token-verifier';
+
+// Import types
+import { TokenConfig, DATState, TokenStats } from '../src/core/types';
+```
+
+---
+
 ## Off-Chain Components
 
-### Fee Daemon (`monitor-ecosystem-fees.ts`)
+### Unified Daemon (`src/daemon.ts`)
 
 **Problem Solved**: All tokens from the same creator share ONE vault. Cannot determine per-token fees from vault balance alone.
 
-**Solution**: Balance polling with transaction attribution.
+**Solution**: Balance polling with transaction attribution + autonomous token discovery.
 
 ```
 Token A Trade ──► Token A's BC (unique) ──┐
@@ -152,21 +252,44 @@ Daemon polls Token B's BC → detects vault change → attribute to B
 
 **How it works:**
 
-1. Every 5 seconds, poll each token's bonding curve/AMM for new transactions
-2. For each transaction, extract the vault's balance change
-3. Call `update_pending_fees` on-chain to attribute the fee
-4. Persist state to `.daemon-state.json` for crash recovery
+1. **Auto-Discovery**: On startup, discovers all creator tokens on-chain (no JSON files needed)
+2. **Token Verification**: Verifies each token on-chain ("Don't trust, verify")
+3. **Fee Polling**: Every 5 seconds, polls each token's bonding curve/AMM for transactions
+4. **Attribution**: Extracts vault balance changes and attributes to correct token
+5. **State Persistence**: Saves state to `.asdf-state.json` for crash recovery
+
+**Token Loading Priority (TokenLoader):**
+```
+1. State file (.asdf-state.json) → Cached tokens
+2. API (daemon /tokens endpoint) → Live daemon state
+3. On-chain discovery → getProgramAccounts with creator filter
+```
 
 **State Persistence:**
 ```json
 {
-  "lastSignatures": {
-    "9Gs59vJFFZWfZ72j7BNiTyzUPovH5oMVtTjGnrATECMG": "5xK3...",
-    "ABC123...": "4yJ2..."
-  },
+  "tokens": [
+    {
+      "mint": "...",
+      "symbol": "DROOT",
+      "isRoot": true,
+      "poolType": "bonding_curve",
+      "bondingCurve": "...",
+      "creator": "..."
+    }
+  ],
   "lastUpdated": "2025-12-01T00:00:00.000Z",
-  "version": 1
+  "version": 2
 }
+```
+
+**Starting the Daemon:**
+```bash
+# Autonomous mode (discovers tokens automatically)
+npx ts-node src/cli.ts -c <creator-pubkey> -n devnet
+
+# With all options
+npx ts-node src/cli.ts --creator <pubkey> --network devnet --port 3030
 ```
 
 ### Cycle Orchestrator (`execute-ecosystem-cycle.ts`)
@@ -407,11 +530,12 @@ The system is designed to handle unlimited tokens:
 
 | Feature | Implementation |
 |---------|---------------|
-| **Token Addition** | Create config file, run init-token-stats, restart daemon |
-| **Daemon Recovery** | State persisted to `.daemon-state.json` |
+| **Token Addition** | Automatic on-chain discovery (no config files needed) |
+| **Daemon Recovery** | State persisted to `.asdf-state.json` |
 | **Batch Efficiency** | Each token = 1 transaction (N+1 pattern) |
 | **Rate Limiting** | Adaptive polling (3-30 second intervals) |
 | **Memory Bounds** | 10,000 signature cache with FIFO eviction |
+| **Token Discovery** | getProgramAccounts with creator filter at offset 49 |
 
 ---
 
@@ -420,8 +544,9 @@ The system is designed to handle unlimited tokens:
 | Aspect | Devnet | Mainnet |
 |--------|--------|---------|
 | RPC | Helius devnet | Helius mainnet + fallback |
-| Token Dir | `devnet-tokens/` | `mainnet-tokens/` |
+| Token Source | Auto-discovered on-chain | Auto-discovered on-chain |
 | Wallet | `devnet-wallet.json` | `mainnet-wallet.json` |
+| State File | `.asdf-state.json` | `.asdf-state.json` |
 | Jito | Disabled | Optional |
 | Commitment | confirmed | finalized |
 
@@ -433,11 +558,11 @@ The system is designed to handle unlimited tokens:
 
 | Account | Seeds | Program |
 |---------|-------|---------|
-| DAT State | `["dat_v3"]` | ASDF-DAT |
-| DAT Authority | `["auth_v3"]` | ASDF-DAT |
-| Token Stats | `["token_stats_v1", mint]` | ASDF-DAT |
-| Root Treasury | `["root_treasury", root_mint]` | ASDF-DAT |
-| Validator State | `["validator_v1", mint, bonding_curve]` | ASDF-DAT |
+| DAT State | `["dat_v3"]` | ASDF Burn Engine |
+| DAT Authority | `["auth_v3"]` | ASDF Burn Engine |
+| Token Stats | `["token_stats_v1", mint]` | ASDF Burn Engine |
+| Root Treasury | `["root_treasury", root_mint]` | ASDF Burn Engine |
+| Validator State | `["validator_v1", mint, bonding_curve]` | ASDF Burn Engine |
 | BC Creator Vault | `["creator-vault", creator]` (hyphen) | Pump.fun |
 | AMM Creator Vault | `["creator_vault", creator]` (underscore) | PumpSwap |
 
@@ -470,12 +595,99 @@ npx ts-node scripts/sync-validator-slot.ts --network devnet
 
 When a Pump.fun token graduates from bonding curve to PumpSwap AMM:
 
-1. **Detect**: Token config `poolType` changes from `bonding_curve` to `pumpswap_amm`
-2. **Update Config**: Edit token JSON: `"poolType": "amm"`, update `bondingCurve` to pool address
-3. **Restart Daemon**: New pool address will be polled for transactions
-4. **Verify**: Daemon logs show "AMM pool" for the token
+1. **Auto-Detection**: Daemon automatically detects pool type via `detectPoolType()`:
+   - Checks bonding curve account existence
+   - Falls back to AMM pool detection
+2. **Seamless Transition**: No manual intervention required - daemon polls correct pool
+3. **Verification**: Check daemon logs for "Pool type: pumpswap_amm" for migrated tokens
 
 **No fund loss during migration** - fees accumulate in the new AMM creator vault automatically.
+
+**Manual Check (if needed):**
+```bash
+# Verify a token's pool type
+npx ts-node scripts/test-verify-architecture.ts --creator <pubkey>
+```
+
+---
+
+## HTTP API Reference
+
+The daemon exposes an HTTP API on port 3030 for dashboard and integrations.
+
+### Status Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/health` | GET | Daemon health status |
+| `/health/sync` | GET | "Don't trust, verify" - Compare daemon state vs on-chain vault |
+| `/fees` | GET | Current pending fees across all tokens |
+| `/tokens` | GET | List of tracked tokens (auto-discovered) |
+| `/burns` | GET | Recent burn history (query: `?limit=20`) |
+| `/treasury` | GET | Root treasury balance |
+| `/rebate-pool` | GET | Rebate pool stats |
+| `/attestation` | GET | PoH chain attestation (cryptographic proof) |
+| `/history` | GET | Recent PoH entries (query: `?count=50&type=fee_detected`) |
+
+### Cycle Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/flush` | POST | Force daemon to sync fees on-chain |
+| `/cycle` | POST | Execute burn cycle |
+| `/cycle/status` | GET | Current cycle readiness status |
+
+### Dashboard Control Endpoints (Devnet)
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/control/tokens` | GET | - | List tokens (from daemon, no files needed) |
+| `/control/wallet` | GET | - | Wallet balance |
+| `/control/fees` | GET | `?creator=...&rootMint=...` | Check creator vault fees |
+| `/control/volume` | POST | `{ tokenFile, numBuys?, buyAmount? }` | Generate buy volume |
+| `/control/sell` | POST | `{ tokenFile }` | Sell tokens |
+| `/control/cycle` | POST | `{ tokenFile, network? }` | Execute burn cycle |
+| `/control/sync-fees` | POST | `{ tokenFile?, network? }` | Sync fees to on-chain |
+| `/control/workflow` | POST | `{ tokenFile, cycles?, solPerCycle?, waitMs? }` | Full E2E workflow |
+| `/control/create-token` | POST | `{ name, symbol, isRoot?, mayhemMode? }` | Create new token |
+| `/control/init-token-stats` | POST | `{ tokenFile }` | Initialize TokenStats |
+| `/control/set-root-token` | POST | `{ tokenFile }` | Set token as root |
+
+### Test/Mock Endpoints (Dashboard Development)
+
+| Endpoint | Method | Body | Description |
+|----------|--------|------|-------------|
+| `/test/add-token` | POST | `{ symbol, name?, isRoot? }` | Add mock token |
+| `/test/add-fee` | POST | `{ mint, amountSOL }` | Add mock fee |
+| `/test/simulate-burn` | POST | `{ mint }` | Simulate burn cycle |
+| `/test/clear` | POST | - | Clear all mock data |
+| `/test/scenario` | POST | `{ scenario }` | Load scenario: "healthy", "pending", "active" |
+
+### Example API Usage
+
+```bash
+# Check health with sync verification
+curl http://localhost:3030/health
+curl http://localhost:3030/health/sync
+
+# Get pending fees
+curl http://localhost:3030/fees
+
+# Get all discovered tokens
+curl http://localhost:3030/tokens
+
+# Force flush
+curl -X POST http://localhost:3030/flush
+
+# Execute cycle
+curl -X POST http://localhost:3030/cycle
+
+# Check cycle readiness
+curl http://localhost:3030/cycle/status
+
+# Get attestation (cryptographic proof)
+curl http://localhost:3030/attestation
+```
 
 ---
 

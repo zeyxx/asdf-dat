@@ -1,6 +1,6 @@
-# Contributing to ASDF-DAT
+# Contributing to ASDF Burn Engine
 
-Guidelines for contributing to the ASDF-DAT codebase.
+Guidelines for contributing to the ASDF Burn Engine codebase.
 
 ---
 

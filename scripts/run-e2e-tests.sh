@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════════════════════
-# ASDF-DAT E2E Test Runner
+# ASDF Burn Engine E2E Test Runner
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # Usage:
@@ -74,7 +74,7 @@ fi
 # Header
 echo ""
 echo "═══════════════════════════════════════════════════════════════════════════"
-echo -e "  ${BLUE}ASDF-DAT E2E Test Runner${NC}"
+echo -e "  ${BLUE}ASDF Burn Engine E2E Test Runner${NC}"
 echo "═══════════════════════════════════════════════════════════════════════════"
 echo ""
 echo -e "Network:    ${GREEN}$NETWORK${NC}"

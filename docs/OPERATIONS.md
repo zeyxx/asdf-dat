@@ -1,4 +1,4 @@
-# ASDF-DAT Operations Guide
+# ASDF Burn Engine Operations Guide
 
 Runbooks, monitoring, and troubleshooting procedures for operating the DAT ecosystem.
 

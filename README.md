@@ -1,4 +1,4 @@
-# ASDF-DAT 🔥🐕
+# ASDF Burn Engine 🔥🐕
 
 > **The Burn Engine for Creator Capital Markets**
 >
@@ -6,7 +6,7 @@
 
 ---
 
-## What is ASDF-DAT?
+## What is ASDF Burn Engine?
 
 An autonomous protocol that converts ecosystem activity into permanent token burns.
 

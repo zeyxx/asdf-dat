@@ -3,7 +3,7 @@
  */
 
 import { Connection, PublicKey } from '@solana/web3.js';
-import { getNetworkConfig, printNetworkBanner } from '../lib/network-config';
+import { getNetworkConfig, printNetworkBanner } from '../src/network/config';
 
 async function main() {
   // Parse network argument

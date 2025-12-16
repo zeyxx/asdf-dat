@@ -1,6 +1,6 @@
-# ASDF-DAT API Reference
+# ASDF Burn Engine API Reference
 
-Complete instruction reference for the ASDF-DAT smart contract.
+Complete instruction reference for the ASDF Burn Engine smart contract.
 
 **Program ID:** `ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui`
 

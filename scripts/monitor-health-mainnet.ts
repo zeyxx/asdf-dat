@@ -1,7 +1,7 @@
 /**
  * Mainnet Health Monitor
  *
- * Continuously monitors the health of the ASDF-DAT ecosystem on mainnet.
+ * Continuously monitors the health of the ASDF Burn Engine ecosystem on mainnet.
  * Designed to run 24/7 alongside the daemon and orchestrator.
  *
  * Features:
@@ -20,7 +20,8 @@
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NETWORK_CONFIGS, NetworkType } from '../lib/network-config';
+import { NETWORK_CONFIGS, NetworkType } from '../src/network/config';
+import { loadAllTokensFromState } from '../src/utils/token-loader';
 
 // ============================================================================
 // Configuration
@@ -37,6 +38,7 @@ interface HealthConfig {
   maxConsecutiveFailures: number;
   runOnce: boolean;
   verbose: boolean;
+  creator: string | undefined;
 }
 
 interface TokenConfig {
@@ -275,7 +277,11 @@ async function runHealthCheck(config: HealthConfig): Promise<HealthCheckResult> 
   const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
 
   // Load token configs
-  const tokens = loadTokenConfigs(config.network);
+  if (!config.creator) {
+    throw new Error('Creator pubkey required. Use --creator or set CREATOR env var');
+  }
+  const creatorPubkey = new PublicKey(config.creator);
+  const tokens = await loadTokenConfigs(connection, creatorPubkey);
 
   // Run checks
   const [daemonResult, rpcResult, tokenResults] = await Promise.all([
@@ -324,45 +330,21 @@ async function runHealthCheck(config: HealthConfig): Promise<HealthCheckResult> 
 // Token Loading
 // ============================================================================
 
-function loadTokenConfigs(network: NetworkType): TokenConfig[] {
-  const tokens: TokenConfig[] = [];
-  const tokensDir = path.join(process.cwd(), `${network}-tokens`);
+async function loadTokenConfigs(
+  connection: Connection,
+  creatorPubkey: PublicKey
+): Promise<TokenConfig[]> {
+  // Use state-based loading (state file → API → on-chain discovery)
+  const configs = await loadAllTokensFromState(connection, creatorPubkey);
 
-  if (!fs.existsSync(tokensDir)) {
-    // Fallback to individual files
-    const rootFile = path.join(process.cwd(), `${network}-token-root.json`);
-    if (fs.existsSync(rootFile)) {
-      const config = JSON.parse(fs.readFileSync(rootFile, 'utf-8'));
-      tokens.push({
-        mint: config.mint,
-        symbol: config.symbol,
-        name: config.name,
-        isRoot: true,
-        poolType: config.poolType,
-      });
-    }
-    return tokens;
-  }
-
-  // Load from directory
-  const files = fs.readdirSync(tokensDir).filter((f) => f.endsWith('.json'));
-  for (const file of files) {
-    try {
-      const filePath = path.join(tokensDir, file);
-      const config = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      tokens.push({
-        mint: config.mint,
-        symbol: config.symbol,
-        name: config.name,
-        isRoot: config.isRoot || false,
-        poolType: config.poolType,
-      });
-    } catch {
-      // Skip invalid files
-    }
-  }
-
-  return tokens;
+  // Map to local TokenConfig format
+  return configs.map((c) => ({
+    mint: c.mint,
+    symbol: c.symbol,
+    name: c.name,
+    isRoot: c.isRoot ?? false,
+    poolType: c.poolType,
+  }));
 }
 
 // ============================================================================
@@ -378,7 +360,7 @@ function printHealthResult(result: HealthCheckResult, verbose: boolean): void {
         : '🔴';
 
   console.log('\n═══════════════════════════════════════════════════════');
-  console.log(`  ASDF-DAT Health Check - ${result.timestamp}`);
+  console.log(`  ASDF Burn Engine Health Check - ${result.timestamp}`);
   console.log('═══════════════════════════════════════════════════════\n');
 
   console.log(`Status: ${statusIcon} ${result.overall.toUpperCase()}`);
@@ -437,6 +419,7 @@ function parseArgs(): HealthConfig {
     maxConsecutiveFailures: 3,
     runOnce: false,
     verbose: false,
+    creator: undefined,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -449,6 +432,8 @@ function parseArgs(): HealthConfig {
       }
     } else if (arg === '--mainnet' || arg === '-m') {
       config.network = 'mainnet';
+    } else if (arg === '--creator' || arg === '-c') {
+      config.creator = args[++i];
     } else if (arg === '--interval' || arg === '-i') {
       config.checkIntervalMs = parseInt(args[++i], 10) * 1000;
     } else if (arg === '--once' || arg === '-1') {
@@ -462,6 +447,7 @@ Usage: npx ts-node scripts/monitor-health-mainnet.ts [options]
 Options:
   --network, -n <network>   Network: mainnet or devnet (default: devnet)
   --mainnet, -m             Shorthand for --network mainnet
+  --creator, -c <pubkey>    Creator pubkey (or set CREATOR env var)
   --interval, -i <seconds>  Check interval in seconds (default: 60)
   --once, -1                Run single check and exit
   --verbose, -v             Show detailed output
@@ -476,13 +462,16 @@ Exit Codes:
     }
   }
 
+  // Try env
+  if (!config.creator) config.creator = process.env.CREATOR;
+
   return config;
 }
 
 async function main(): Promise<void> {
   const config = parseArgs();
 
-  console.log(`\n🔍 ASDF-DAT Health Monitor (${config.network})`);
+  console.log(`\n🔍 ASDF Burn Engine Health Monitor (${config.network})`);
   console.log(`   Interval: ${config.checkIntervalMs / 1000}s`);
   console.log(`   Mode: ${config.runOnce ? 'Single check' : 'Continuous'}`);
 

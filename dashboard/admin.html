@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASDF Burn Engine | Admin Panel</title>
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/admin.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="admin">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🔥🐕</span>
+        <div>
+          <div class="logo-text">ASDF Burn Engine</div>
+          <div class="logo-tagline">Admin Panel</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <select id="network-select" class="network-select">
+          <option value="devnet">DEVNET</option>
+          <option value="mainnet">MAINNET</option>
+        </select>
+        <div class="status-indicator" id="ws-status">
+          <span class="status-dot status-dot-danger"></span>
+          <span>Disconnected</span>
+        </div>
+        <a href="index.html" class="btn btn-secondary btn-sm">Dashboard</a>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="admin-main">
+      <div class="admin-grid">
+        <!-- Left Column -->
+        <div class="admin-left">
+          <!-- Wallet Status -->
+          <section class="section">
+            <h2 class="section-title">
+              <span class="section-title-icon">💼</span>
+              Wallet Status
+            </h2>
+            <div class="card">
+              <div class="card-body">
+                <div class="wallet-grid">
+                  <div class="wallet-item">
+                    <span class="wallet-label">Daemon Wallet</span>
+                    <span class="wallet-value mono" id="wallet-balance">-- SOL</span>
+                    <span class="wallet-address mono" id="wallet-address">--</span>
+                  </div>
+                  <div class="wallet-item">
+                    <span class="wallet-label">Creator Vault</span>
+                    <span class="wallet-value mono" id="vault-balance">-- SOL</span>
+                    <span class="wallet-address mono" id="vault-address">--</span>
+                  </div>
+                </div>
+                <button class="btn btn-secondary w-full mt-md" id="btn-refresh-wallet">
+                  Refresh Balances
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Token Management -->
+          <section class="section">
+            <h2 class="section-title">
+              <span class="section-title-icon">🪙</span>
+              Token Management
+            </h2>
+            <div class="card">
+              <div class="card-body">
+                <div class="form-group">
+                  <label class="form-label">Select Token</label>
+                  <select id="token-select" class="form-select">
+                    <option value="">-- Select a token --</option>
+                  </select>
+                </div>
+
+                <div class="token-details" id="token-details">
+                  <div class="stat-grid">
+                    <div class="stat-item">
+                      <span class="stat-label">Mint</span>
+                      <span class="stat-value mono" id="token-mint">--</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">Is Root</span>
+                      <span class="stat-value" id="token-is-root">--</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">Pending Fees</span>
+                      <span class="stat-value mono" id="token-pending">-- SOL</span>
+                    </div>
+                    <div class="stat-item">
+                      <span class="stat-label">Total Burned</span>
+                      <span class="stat-value mono" id="token-burned">--</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="button-group">
+                  <button class="btn btn-secondary" id="btn-init-token" disabled>
+                    Init TokenStats
+                  </button>
+                  <button class="btn btn-warning" id="btn-set-root" disabled>
+                    Set as Root
+                  </button>
+                </div>
+
+                <hr class="divider">
+
+                <h4 class="subsection-title">Create New Token</h4>
+                <div class="form-group">
+                  <label class="form-label">Token Symbol</label>
+                  <input type="text" id="new-token-symbol" class="form-input" placeholder="MYTOKEN">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Token Name</label>
+                  <input type="text" id="new-token-name" class="form-input" placeholder="My Token">
+                </div>
+                <button class="btn btn-primary w-full" id="btn-create-token">
+                  Create Token
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Middle Column -->
+        <div class="admin-middle">
+          <!-- Volume Generation -->
+          <section class="section">
+            <h2 class="section-title">
+              <span class="section-title-icon">📈</span>
+              Volume Generation
+            </h2>
+            <div class="card">
+              <div class="card-body">
+                <div class="volume-config">
+                  <div class="form-group">
+                    <label class="form-label">SOL per Round</label>
+                    <input type="number" id="volume-sol" class="form-input" value="0.5" min="0.01" step="0.1">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Rounds</label>
+                    <input type="number" id="volume-rounds" class="form-input" value="2" min="1" max="10">
+                  </div>
+                </div>
+
+                <div class="volume-estimate">
+                  <span class="estimate-label">Estimated Fees:</span>
+                  <span class="estimate-value mono" id="volume-estimate">~0.006 SOL</span>
+                </div>
+
+                <div class="button-group">
+                  <button class="btn btn-success btn-lg" id="btn-buy" disabled>
+                    Buy Tokens
+                  </button>
+                  <button class="btn btn-danger btn-lg" id="btn-sell" disabled>
+                    Sell Tokens
+                  </button>
+                </div>
+
+                <button class="btn btn-primary w-full" id="btn-generate-volume" disabled>
+                  Generate Full Volume (Buy + Sell)
+                </button>
+
+                <div class="volume-status" id="volume-status">
+                  <span class="status-text">Select a token to generate volume</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Cycle Control -->
+          <section class="section">
+            <h2 class="section-title">
+              <span class="section-title-icon">🔥</span>
+              Cycle Control
+            </h2>
+            <div class="card">
+              <div class="card-body">
+                <div class="cycle-status" id="cycle-status">
+                  <div class="cycle-status-header">
+                    <span class="cycle-status-label">Cycle Status</span>
+                    <span class="badge badge-info" id="cycle-status-badge">IDLE</span>
+                  </div>
+                  <div class="cycle-stats">
+                    <div class="cycle-stat">
+                      <span class="cycle-stat-label">Total Pending</span>
+                      <span class="cycle-stat-value mono" id="cycle-pending">-- SOL</span>
+                    </div>
+                    <div class="cycle-stat">
+                      <span class="cycle-stat-label">Tokens Ready</span>
+                      <span class="cycle-stat-value" id="cycle-tokens-ready">--</span>
+                    </div>
+                    <div class="cycle-stat">
+                      <span class="cycle-stat-label">Last Cycle</span>
+                      <span class="cycle-stat-value" id="cycle-last">--</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="button-group-vertical">
+                  <button class="btn btn-secondary" id="btn-check-fees">
+                    Check Fees
+                  </button>
+                  <button class="btn btn-secondary" id="btn-sync-fees">
+                    Sync Fees (Poll)
+                  </button>
+                  <button class="btn btn-primary btn-lg" id="btn-trigger-cycle">
+                    🔥 Trigger Burn Cycle
+                  </button>
+                </div>
+
+                <div class="cycle-warning">
+                  <span class="warning-icon">⚠️</span>
+                  <span>Minimum 0.0055 SOL per token required for cycle</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Right Column - Event Log -->
+        <div class="admin-right">
+          <section class="section section-full-height">
+            <h2 class="section-title">
+              <span class="section-title-icon">📋</span>
+              Event Log
+              <button class="btn btn-sm btn-secondary ml-auto" id="btn-clear-log">Clear</button>
+            </h2>
+            <div class="card card-full-height">
+              <div class="card-body log-container" id="event-log">
+                <div class="log-entry log-info">
+                  <span class="log-time">--:--:--</span>
+                  <span class="log-message">Admin panel initialized. Select a network to begin.</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-bar-left">
+        <span id="api-url">API: --</span>
+        <span id="ws-url">WS: --</span>
+      </div>
+      <div class="status-bar-right">
+        <span id="daemon-status">Daemon: --</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Confirmation Modal -->
+  <div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-title">Confirm Action</h3>
+        <button class="btn btn-icon" id="modal-close">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        Are you sure you want to proceed?
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-primary" id="modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="shared/config.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/websocket.js"></script>
+  <script src="shared/utils.js"></script>
+  <script>
+    /**
+     * ASDF Admin Panel - Control Application
+     */
+
+    const { $, formatSOL, formatTokens, formatUptime, formatTimeAgo, shortenAddress, getHealthBadge } = window.ASDF_UTILS;
+    // Use window globals directly to avoid redeclaration conflicts
+
+    // ============================================================
+    // STATE
+    // ============================================================
+
+    let selectedToken = null;
+    let tokens = [];
+    let pendingAction = null;
+
+    // ============================================================
+    // INITIALIZATION
+    // ============================================================
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initNetworkSelector();
+      initWebSocket();
+      initEventListeners();
+      fetchInitialData();
+      updateStatusBar();
+      log('Admin panel ready', 'info');
+    });
+
+    function initNetworkSelector() {
+      const select = $('network-select');
+      select.value = window.ASDF_CONFIG.getCurrentNetwork();
+
+      select.addEventListener('change', (e) => {
+        const network = e.target.value;
+        window.ASDF_CONFIG.setCurrentNetwork(network);
+        window.ASDF_WS.reconnect();
+        fetchInitialData();
+        updateStatusBar();
+        log(`Switched to ${network.toUpperCase()}`, 'info');
+      });
+    }
+
+    function initWebSocket() {
+      window.ASDF_WS.on('connected', () => {
+        updateWsStatus(true);
+        log('WebSocket connected', 'success');
+      });
+
+      window.ASDF_WS.on('disconnected', () => {
+        updateWsStatus(false);
+        log('WebSocket disconnected', 'warning');
+      });
+
+      window.ASDF_WS.on('fees', (data) => {
+        updateCycleStats(data);
+      });
+
+      window.ASDF_WS.on('cycle_complete', (data) => {
+        log(`Cycle completed! Burned: ${formatTokens(data.totalBurned)}`, 'success');
+        fetchTokens();
+        updateCycleStatus('IDLE');
+      });
+
+      window.ASDF_WS.on('burn', (data) => {
+        log(`Burn: ${formatTokens(data.amountBurned)} ${data.symbol}`, 'success');
+      });
+
+      window.ASDF_WS.connect();
+    }
+
+    function initEventListeners() {
+      // Token selection - use _file as value since APIs need file paths
+      $('token-select').addEventListener('change', (e) => {
+        const file = e.target.value;
+        selectedToken = tokens.find(t => (t._file || t.mint) === file) || null;
+        updateTokenDetails();
+        updateButtonStates();
+      });
+
+      // Wallet
+      $('btn-refresh-wallet').addEventListener('click', fetchWalletStatus);
+
+      // Token management
+      $('btn-init-token').addEventListener('click', () => confirmAction('initToken'));
+      $('btn-set-root').addEventListener('click', () => confirmAction('setRoot'));
+      $('btn-create-token').addEventListener('click', () => confirmAction('createToken'));
+
+      // Volume
+      $('volume-sol').addEventListener('input', updateVolumeEstimate);
+      $('volume-rounds').addEventListener('input', updateVolumeEstimate);
+      $('btn-buy').addEventListener('click', () => confirmAction('buy'));
+      $('btn-sell').addEventListener('click', () => confirmAction('sell'));
+      $('btn-generate-volume').addEventListener('click', () => confirmAction('generateVolume'));
+
+      // Cycle
+      $('btn-check-fees').addEventListener('click', checkFees);
+      $('btn-sync-fees').addEventListener('click', syncFees);
+      $('btn-trigger-cycle').addEventListener('click', () => confirmAction('triggerCycle'));
+
+      // Log
+      $('btn-clear-log').addEventListener('click', clearLog);
+
+      // Modal
+      $('modal-close').addEventListener('click', closeModal);
+      $('modal-cancel').addEventListener('click', closeModal);
+      $('modal-confirm').addEventListener('click', executeAction);
+      $('modal-overlay').addEventListener('click', (e) => {
+        if (e.target === $('modal-overlay')) closeModal();
+      });
+    }
+
+    // ============================================================
+    // DATA FETCHING
+    // ============================================================
+
+    async function fetchInitialData() {
+      await Promise.all([
+        fetchWalletStatus(),
+        fetchTokens(),
+        fetchHealth(),
+      ]);
+    }
+
+    async function fetchWalletStatus() {
+      try {
+        const data = await window.ASDF_API.getWalletBalance();
+        if (data?.wallet) {
+          $('wallet-balance').textContent = `${formatSOL(data.wallet.balance?.lamports || 0)} SOL`;
+          $('wallet-address').textContent = shortenAddress(data.wallet.address, 6);
+          if (data.wallet.vault) {
+            $('vault-balance').textContent = `${formatSOL(data.wallet.vault.balance?.lamports || 0)} SOL`;
+            $('vault-address').textContent = shortenAddress(data.wallet.vault.address, 6);
+          }
+        }
+      } catch (error) {
+        log('Failed to fetch wallet status', 'error');
+      }
+    }
+
+    async function fetchTokens() {
+      try {
+        // Use control/tokens which includes file paths needed for API calls
+        const data = await window.ASDF_API.getDevnetTokens();
+        if (data?.tokens) {
+          tokens = data.tokens;
+          updateTokenSelect();
+          // Also fetch fees data for cycle stats
+          const feesData = await window.ASDF_API.getFees();
+          if (feesData) {
+            updateCycleStats(feesData);
+          }
+        }
+      } catch (error) {
+        log('Failed to fetch tokens', 'error');
+      }
+    }
+
+    async function fetchHealth() {
+      try {
+        const data = await window.ASDF_API.getHealth();
+        if (data) {
+          const badge = getHealthBadge(data.status);
+          $('daemon-status').textContent = `Daemon: ${badge.text}`;
+        }
+      } catch (error) {
+        $('daemon-status').textContent = 'Daemon: OFFLINE';
+      }
+    }
+
+    async function checkFees() {
+      log('Checking fees...', 'info');
+      try {
+        const data = await window.ASDF_API.getFees();
+        if (data) {
+          updateCycleStats(data);
+          log(`Total pending: ${formatSOL(data.totals?.pendingLamports || 0)} SOL`, 'info');
+        }
+      } catch (error) {
+        log('Failed to check fees', 'error');
+      }
+    }
+
+    async function syncFees() {
+      log('Syncing fees (polling daemon)...', 'info');
+      updateCycleStatus('SYNCING');
+      try {
+        const result = await window.ASDF_API.syncFees();
+        if (result?.success) {
+          log('Fees synced successfully', 'success');
+          await fetchTokens();
+        } else {
+          log('Sync returned no changes', 'warning');
+        }
+      } catch (error) {
+        log('Failed to sync fees', 'error');
+      }
+      updateCycleStatus('IDLE');
+    }
+
+    // ============================================================
+    // ACTIONS
+    // ============================================================
+
+    function confirmAction(action) {
+      pendingAction = action;
+      let title = 'Confirm Action';
+      let body = 'Are you sure you want to proceed?';
+
+      switch (action) {
+        case 'initToken':
+          title = 'Initialize TokenStats';
+          body = `Initialize TokenStats for <strong>${selectedToken?.symbol}</strong>?<br><br>This will create the on-chain account to track burns and fees.`;
+          break;
+        case 'setRoot':
+          title = 'Set as Root Token';
+          body = `Set <strong>${selectedToken?.symbol}</strong> as the ROOT token?<br><br>This token will receive 44.8% of all secondary token fees.<br><br><span class="text-warning">This action is significant!</span>`;
+          break;
+        case 'createToken':
+          const symbol = $('new-token-symbol').value.trim();
+          const name = $('new-token-name').value.trim();
+          if (!symbol || !name) {
+            showToast('Please enter token symbol and name', 'error');
+            return;
+          }
+          title = 'Create New Token';
+          body = `Create new token:<br><br><strong>${name}</strong> (${symbol})<br><br>This will deploy a new token on Pump.fun.`;
+          break;
+        case 'buy':
+          title = 'Buy Tokens';
+          body = `Buy <strong>${selectedToken?.symbol}</strong> with ${$('volume-sol').value} SOL?`;
+          break;
+        case 'sell':
+          title = 'Sell Tokens';
+          body = `Sell all <strong>${selectedToken?.symbol}</strong> tokens in wallet?`;
+          break;
+        case 'generateVolume':
+          const rounds = $('volume-rounds').value;
+          const sol = $('volume-sol').value;
+          title = 'Generate Volume';
+          body = `Generate volume for <strong>${selectedToken?.symbol}</strong>:<br><br>${rounds} round(s) of ${sol} SOL buy + sell<br><br>Estimated fees: ${$('volume-estimate').textContent}`;
+          break;
+        case 'triggerCycle':
+          title = 'Trigger Burn Cycle';
+          body = `Execute burn cycle for all tokens with pending fees?<br><br><strong>Total pending: ${$('cycle-pending').textContent}</strong><br><br>This will collect fees, buy tokens, and burn them permanently.`;
+          break;
+      }
+
+      $('modal-title').textContent = title;
+      $('modal-body').innerHTML = body;
+      $('modal-overlay').classList.remove('hidden');
+    }
+
+    function closeModal() {
+      $('modal-overlay').classList.add('hidden');
+      pendingAction = null;
+    }
+
+    async function executeAction() {
+      closeModal();
+      const action = pendingAction;
+
+      switch (action) {
+        case 'initToken':
+          await executeInitToken();
+          break;
+        case 'setRoot':
+          await executeSetRoot();
+          break;
+        case 'createToken':
+          await executeCreateToken();
+          break;
+        case 'buy':
+          await executeBuy();
+          break;
+        case 'sell':
+          await executeSell();
+          break;
+        case 'generateVolume':
+          await executeGenerateVolume();
+          break;
+        case 'triggerCycle':
+          await executeTriggerCycle();
+          break;
+      }
+    }
+
+    async function executeInitToken() {
+      if (!selectedToken) return;
+      const tokenFile = selectedToken._file;
+      if (!tokenFile) {
+        log('Token file path not available', 'error');
+        return;
+      }
+      log(`Initializing TokenStats for ${selectedToken.symbol}...`, 'info');
+      try {
+        const result = await window.ASDF_API.initTokenStats(tokenFile);
+        if (result?.success) {
+          log(`TokenStats initialized for ${selectedToken.symbol}`, 'success');
+          await fetchTokens();
+        } else {
+          log(`Failed to init TokenStats: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function executeSetRoot() {
+      if (!selectedToken) return;
+      const tokenFile = selectedToken._file;
+      if (!tokenFile) {
+        log('Token file path not available', 'error');
+        return;
+      }
+      log(`Setting ${selectedToken.symbol} as root token...`, 'info');
+      try {
+        const result = await window.ASDF_API.setRootToken(tokenFile);
+        if (result?.success) {
+          log(`${selectedToken.symbol} is now the ROOT token`, 'success');
+          await fetchTokens();
+        } else {
+          log(`Failed to set root: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function executeCreateToken() {
+      const symbol = $('new-token-symbol').value.trim();
+      const name = $('new-token-name').value.trim();
+      log(`Creating token ${symbol}...`, 'info');
+      try {
+        // createToken expects (name, symbol, isRoot) - not an object
+        const result = await window.ASDF_API.createToken(name, symbol, false);
+        if (result?.success) {
+          log(`Token ${symbol} created! Mint: ${shortenAddress(result.token?.mint)}`, 'success');
+          $('new-token-symbol').value = '';
+          $('new-token-name').value = '';
+          await fetchTokens();
+        } else {
+          log(`Failed to create token: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+    }
+
+    async function executeBuy() {
+      if (!selectedToken) return;
+      const tokenFile = selectedToken._file;
+      if (!tokenFile) {
+        log('Token file path not available', 'error');
+        return;
+      }
+      const sol = parseFloat($('volume-sol').value);
+      log(`Buying ${selectedToken.symbol} with ${sol} SOL...`, 'info');
+      updateVolumeStatus('Executing buy...');
+      try {
+        // Use generateVolume with 1 round for single buy
+        const result = await window.ASDF_API.generateVolume(tokenFile, 1, sol);
+        if (result?.success) {
+          log(`Bought ${selectedToken.symbol}!`, 'success');
+        } else {
+          log(`Buy failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+      updateVolumeStatus('Ready');
+    }
+
+    async function executeSell() {
+      if (!selectedToken) return;
+      const tokenFile = selectedToken._file;
+      if (!tokenFile) {
+        log('Token file path not available', 'error');
+        return;
+      }
+      log(`Selling all ${selectedToken.symbol}...`, 'info');
+      updateVolumeStatus('Executing sell...');
+      try {
+        const result = await window.ASDF_API.sellTokens(tokenFile);
+        if (result?.success) {
+          log(`Sold ${selectedToken.symbol}!`, 'success');
+        } else {
+          log(`Sell failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+      updateVolumeStatus('Ready');
+    }
+
+    async function executeGenerateVolume() {
+      if (!selectedToken) return;
+      const tokenFile = selectedToken._file;
+      if (!tokenFile) {
+        log('Token file path not available', 'error');
+        return;
+      }
+      const sol = parseFloat($('volume-sol').value);
+      const rounds = parseInt($('volume-rounds').value);
+      log(`Generating volume: ${rounds} rounds of ${sol} SOL...`, 'info');
+      updateVolumeStatus('Generating volume...');
+
+      try {
+        // Use the server's generateVolume which handles buy+sell cycles
+        const result = await window.ASDF_API.generateVolume(tokenFile, rounds, sol);
+        if (result?.success) {
+          log('Volume generation complete!', 'success');
+        } else {
+          log(`Volume generation failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+      updateVolumeStatus('Ready');
+    }
+
+    async function executeTriggerCycle() {
+      log('Triggering burn cycle...', 'info');
+      updateCycleStatus('EXECUTING');
+      try {
+        const result = await window.ASDF_API.triggerCycle();
+        if (result?.success) {
+          log('Burn cycle triggered successfully!', 'success');
+          log(`Tokens burned: ${result.tokensBurned || 0}`, 'info');
+          await fetchTokens();
+        } else {
+          log(`Cycle failed: ${result?.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Error: ${error.message}`, 'error');
+      }
+      updateCycleStatus('IDLE');
+    }
+
+    // ============================================================
+    // UI UPDATES
+    // ============================================================
+
+    function updateWsStatus(connected) {
+      const el = $('ws-status');
+      const dot = el.querySelector('.status-dot');
+      const text = el.querySelector('span:last-child');
+
+      if (connected) {
+        dot.className = 'status-dot status-dot-success';
+        text.textContent = 'Connected';
+        el.className = 'status-indicator status-connected';
+      } else {
+        dot.className = 'status-dot status-dot-danger';
+        text.textContent = 'Disconnected';
+        el.className = 'status-indicator status-disconnected';
+      }
+    }
+
+    function updateTokenSelect() {
+      const select = $('token-select');
+      const currentValue = select.value;
+
+      select.innerHTML = '<option value="">-- Select a token --</option>';
+      tokens.forEach(token => {
+        const option = document.createElement('option');
+        // Use _file as value since APIs need file paths
+        option.value = token._file || token.mint;
+        option.textContent = `${token.isRoot ? '👑 ' : ''}${token.symbol}${token.isRoot ? ' (ROOT)' : ''}`;
+        select.appendChild(option);
+      });
+
+      if (currentValue && tokens.find(t => (t._file || t.mint) === currentValue)) {
+        select.value = currentValue;
+      }
+    }
+
+    function updateTokenDetails() {
+      if (!selectedToken) {
+        $('token-mint').textContent = '--';
+        $('token-is-root').innerHTML = '--';
+        $('token-pending').textContent = '-- SOL';
+        $('token-burned').textContent = '--';
+        return;
+      }
+
+      $('token-mint').textContent = shortenAddress(selectedToken.mint, 6);
+      $('token-is-root').innerHTML = selectedToken.isRoot
+        ? '<span class="badge badge-warning">ROOT</span>'
+        : '<span class="badge badge-info">Secondary</span>';
+      $('token-pending').textContent = `${formatSOL(selectedToken.pendingLamports || 0)} SOL`;
+      $('token-burned').textContent = formatTokens(selectedToken.totalBurned || 0);
+    }
+
+    function updateButtonStates() {
+      const hasToken = !!selectedToken;
+      $('btn-init-token').disabled = !hasToken;
+      $('btn-set-root').disabled = !hasToken || selectedToken?.isRoot;
+      $('btn-buy').disabled = !hasToken;
+      $('btn-sell').disabled = !hasToken;
+      $('btn-generate-volume').disabled = !hasToken;
+    }
+
+    function updateVolumeEstimate() {
+      const sol = parseFloat($('volume-sol').value) || 0;
+      const rounds = parseInt($('volume-rounds').value) || 0;
+      // Estimate: ~0.3% creator fee, both buy and sell generate fees
+      const estimatedFees = sol * rounds * 2 * 0.003;
+      $('volume-estimate').textContent = `~${estimatedFees.toFixed(4)} SOL`;
+    }
+
+    function updateVolumeStatus(status) {
+      $('volume-status').innerHTML = `<span class="status-text">${status}</span>`;
+    }
+
+    function updateCycleStats(data) {
+      if (!data?.totals) return;
+      $('cycle-pending').textContent = `${formatSOL(data.totals.pendingLamports || 0)} SOL`;
+      const readyCount = (data.tokens || []).filter(t => (t.pendingLamports || 0) > 5500000).length;
+      $('cycle-tokens-ready').textContent = `${readyCount} / ${data.totals.tokenCount || 0}`;
+      // Update last cycle time if available
+      if (data.daemon?.lastCycleAt) {
+        $('cycle-last').textContent = formatTimeAgo(data.daemon.lastCycleAt);
+      }
+    }
+
+    function updateCycleStatus(status) {
+      const badge = $('cycle-status-badge');
+      badge.textContent = status;
+
+      const classes = {
+        'IDLE': 'badge-info',
+        'SYNCING': 'badge-warning',
+        'EXECUTING': 'badge-fire',
+        'COMPLETE': 'badge-success',
+      };
+
+      badge.className = `badge ${classes[status] || 'badge-info'}`;
+    }
+
+    function updateStatusBar() {
+      const config = window.ASDF_CONFIG.getConfig();
+      $('api-url').textContent = `API: ${config.api}`;
+      $('ws-url').textContent = `WS: ${config.ws}`;
+    }
+
+    // ============================================================
+    // LOGGING
+    // ============================================================
+
+    function log(message, type = 'info') {
+      const container = $('event-log');
+      const entry = document.createElement('div');
+      entry.className = `log-entry log-${type}`;
+
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-message">${message}</span>
+      `;
+
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+
+      // Keep only last 100 entries
+      while (container.children.length > 100) {
+        container.removeChild(container.firstChild);
+      }
+    }
+
+    function clearLog() {
+      const container = $('event-log');
+      container.innerHTML = '';
+      log('Log cleared', 'info');
+    }
+
+    // ============================================================
+    // TOAST NOTIFICATIONS
+    // ============================================================
+
+    function showToast(message, type = 'info') {
+      const container = $('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 5000);
+    }
+  </script>
+</body>
+</html>

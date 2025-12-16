@@ -17,5 +17,5 @@
     "types": ["node", "mocha"]
   },
   "include": ["src/**/*", "scripts/**/*", "tests/**/*", "lib/**/*"],
-  "exclude": ["node_modules", "dist", "target", "scripts/archive"]
+  "exclude": ["node_modules", "dist", "target", "scripts/archive", "src/archive"]
 }

@@ -12,8 +12,8 @@ import {
 import { AnchorProvider, Program, Wallet } from "@coral-xyz/anchor";
 import fs from "fs";
 import path from "path";
-import { getNetworkConfig, printNetworkBanner } from "../lib/network-config";
-import { getTypedAccounts } from "../lib/types";
+import { getNetworkConfig, printNetworkBanner } from "../src/network/config";
+import { getTypedAccounts } from "../src/core/types";
 
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 

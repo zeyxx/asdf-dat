@@ -29,14 +29,15 @@ import {
   PublicKey,
   SystemProgram,
 } from "@solana/web3.js";
-import { TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import { TOKEN_2022_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { AnchorProvider, Program, Wallet, Idl } from "@coral-xyz/anchor";
 import * as fs from "fs";
 import * as path from "path";
-import { getNetworkConfig, NetworkType } from "../lib/network-config";
+import { getNetworkConfig, NetworkType } from "../src/network/config";
 
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
+const MAYHEM_PROGRAM = new PublicKey("MAyhSmzXzV1pTf7LsNkrNwkWKTo4ougAJ1PPg47MD4e");
 
 const colors = {
   reset: "\x1b[0m",
@@ -182,7 +183,7 @@ ${colors.magenta}Vanity Pool Integration:${colors.reset}
   console.log(`${colors.bright}${colors.cyan}CREATE TOKEN2022 TOKEN (create_v2)${colors.reset}`);
   console.log("=".repeat(60) + "\n");
 
-  const config = getNetworkConfig(network);
+  const config = getNetworkConfig(['--network', network]);
   const rpcUrl = Array.isArray(config.rpcUrl) ? config.rpcUrl[0] : config.rpcUrl;
   const connection = new Connection(rpcUrl, "confirmed");
 
@@ -262,6 +263,31 @@ ${colors.magenta}Vanity Pool Integration:${colors.reset}
     PUMP_PROGRAM
   );
 
+  // Derive Mayhem PDAs (required by create_v2 even when is_mayhem_mode = false)
+  // Note: Mayhem uses hyphens in PDA seeds, not underscores
+  const [globalParams] = PublicKey.findProgramAddressSync(
+    [Buffer.from("global-params")],  // hyphen, not underscore
+    MAYHEM_PROGRAM
+  );
+
+  const [solVault] = PublicKey.findProgramAddressSync(
+    [Buffer.from("sol-vault")],  // hyphen, not underscore
+    MAYHEM_PROGRAM
+  );
+
+  const [mayhemState] = PublicKey.findProgramAddressSync(
+    [Buffer.from("mayhem-state"), mint.publicKey.toBuffer()],  // hyphen, not underscore
+    MAYHEM_PROGRAM
+  );
+
+  // Mayhem token vault is an ATA of the mayhemState for the mint (Token2022)
+  const mayhemTokenVault = getAssociatedTokenAddressSync(
+    mint.publicKey,
+    mayhemState,
+    true, // allowOwnerOffCurve = true for PDAs
+    TOKEN_2022_PROGRAM_ID
+  );
+
   log("📈", `Bonding Curve: ${bondingCurve.toString()}`, colors.cyan);
   log("📝", `Name: ${name}`, colors.cyan);
   log("🏷️", `Symbol: ${symbol}`, colors.cyan);
@@ -289,6 +315,12 @@ ${colors.magenta}Vanity Pool Integration:${colors.reset}
         systemProgram: SystemProgram.programId,
         token2022Program: TOKEN_2022_PROGRAM_ID,
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+        // Mayhem accounts (required by create_v2 even when is_mayhem_mode = false)
+        mayhemProgram: MAYHEM_PROGRAM,
+        globalParams,
+        solVault,
+        mayhemState,
+        mayhemTokenVault,
         eventAuthority,
         pumpProgram: PUMP_PROGRAM,
       })

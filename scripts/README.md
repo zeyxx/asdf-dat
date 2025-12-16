@@ -1,4 +1,4 @@
-# ASDF-DAT Scripts
+# ASDF Burn Engine Scripts
 
 Core operational scripts for the Optimistic Burn Protocol.
 

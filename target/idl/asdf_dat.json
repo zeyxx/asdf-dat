@@ -658,6 +658,25 @@
           "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
+          "name": "mayhem_program",
+          "writable": true
+        },
+        {
+          "name": "global_params"
+        },
+        {
+          "name": "sol_vault",
+          "writable": true
+        },
+        {
+          "name": "mayhem_state",
+          "writable": true
+        },
+        {
+          "name": "mayhem_token_vault",
+          "writable": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -1668,6 +1687,55 @@
         },
         {
           "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "migrate_dat_state",
+      "docs": [
+        "Migrate DATState account to add new fields (one-time migration)",
+        "This handles the account reallocation from 382 to 390 bytes",
+        "Adding: last_direct_fee_split_timestamp (i64 = 8 bytes)"
+      ],
+      "discriminator": [
+        195,
+        191,
+        79,
+        157,
+        50,
+        83,
+        128,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "dat_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  97,
+                  116,
+                  95,
+                  118,
+                  51
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "admin",
           "writable": true,
           "signer": true
         },

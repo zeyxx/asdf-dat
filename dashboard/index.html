@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ASDF Burn Engine | This is Fine</title>
+  <link rel="stylesheet" href="styles/base.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/dashboard.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="dashboard">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🔥🐕</span>
+        <div>
+          <div class="logo-text">ASDF Burn Engine</div>
+          <div class="logo-tagline">This is Fine</div>
+        </div>
+      </div>
+      <div class="header-right">
+        <select id="network-select" class="network-select">
+          <option value="devnet">DEVNET</option>
+          <option value="mainnet">MAINNET</option>
+        </select>
+        <div class="status-indicator" id="ws-status">
+          <span class="status-dot status-dot-danger"></span>
+          <span>Disconnected</span>
+        </div>
+        <a href="admin.html" class="btn btn-secondary btn-sm">Admin Panel</a>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="dashboard-main">
+      <!-- Hero Section -->
+      <section class="hero-section">
+        <h1 class="hero-title">Optimistic Burn Protocol</h1>
+        <p class="hero-subtitle">Creation > Extraction | Flush. Burn. Verify.</p>
+
+        <div class="hero-grid">
+          <div class="hero-card hero-card-fire">
+            <div class="hero-icon">🔥</div>
+            <div class="hero-value" id="total-burned">--</div>
+            <div class="hero-label">Total Tokens Burned</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-icon">💰</div>
+            <div class="hero-value" id="total-sol">-- SOL</div>
+            <div class="hero-label">SOL Collected</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-icon">⏳</div>
+            <div class="hero-value" id="pending-sol">-- SOL</div>
+            <div class="hero-label">Pending Fees</div>
+          </div>
+          <div class="hero-card">
+            <div class="hero-icon">📊</div>
+            <div class="hero-value" id="tokens-count">--</div>
+            <div class="hero-label">Tokens Tracked</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Daemon Status -->
+      <section class="section">
+        <h2 class="section-title">
+          <span class="section-title-icon">🖥️</span>
+          Daemon Status
+        </h2>
+        <div class="card">
+          <div class="card-body">
+            <div class="stat-grid">
+              <div class="stat-item">
+                <span class="stat-label">Status</span>
+                <span class="stat-value" id="daemon-status">
+                  <span class="badge badge-warning">--</span>
+                </span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Uptime</span>
+                <span class="stat-value" id="daemon-uptime">--</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Poll Count</span>
+                <span class="stat-value" id="poll-count">--</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Error Rate</span>
+                <span class="stat-value" id="error-rate">--%</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Last Poll</span>
+                <span class="stat-value" id="last-poll">--</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Token List -->
+      <section class="section">
+        <h2 class="section-title">
+          <span class="section-title-icon">🪙</span>
+          Tracked Tokens
+        </h2>
+        <div class="card">
+          <div class="card-body token-list">
+            <div class="token-row token-row-header">
+              <div>Token</div>
+              <div>Pending</div>
+              <div>Burned</div>
+              <div>Sent to Root</div>
+              <div>Status</div>
+            </div>
+            <div id="token-list-body">
+              <div class="loading">
+                <div class="spinner"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Treasury & Rebate -->
+      <section class="section">
+        <h2 class="section-title">
+          <span class="section-title-icon">🏦</span>
+          Treasury & Rebate
+        </h2>
+        <div class="treasury-grid">
+          <div class="treasury-card">
+            <div class="treasury-label">Root Treasury</div>
+            <div class="treasury-value" id="treasury-balance">-- SOL</div>
+          </div>
+          <div class="treasury-card">
+            <div class="treasury-label">Rebate Pool</div>
+            <div class="treasury-value" id="rebate-balance">-- SOL</div>
+          </div>
+          <div class="treasury-card">
+            <div class="treasury-label">Rebates Distributed</div>
+            <div class="treasury-value" id="rebates-count">--</div>
+          </div>
+          <div class="treasury-card">
+            <div class="treasury-label">Unique Recipients</div>
+            <div class="treasury-value" id="rebate-recipients">--</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recent Burns -->
+      <section class="section">
+        <h2 class="section-title">
+          <span class="section-title-icon">🔥</span>
+          Recent Burns
+        </h2>
+        <div class="card">
+          <div class="card-body burns-list" id="burns-list">
+            <div class="empty-state">
+              <div class="empty-state-icon">🔥</div>
+              <div class="empty-state-text">No burns yet. Generate some volume!</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Status Bar -->
+    <footer class="status-bar">
+      <div class="status-bar-left">
+        <span id="api-url">API: --</span>
+        <span id="ws-url">WS: --</span>
+      </div>
+      <div class="status-bar-right">
+        <span id="last-update">Last update: --</span>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Scripts -->
+  <script src="shared/config.js"></script>
+  <script src="shared/api.js"></script>
+  <script src="shared/websocket.js"></script>
+  <script src="shared/utils.js"></script>
+  <script>
+    /**
+     * ASDF Dashboard - Main Application
+     */
+
+    const { $, formatSOL, formatTokens, formatUptime, formatTimeAgo, shortenAddress, getSolscanTxUrl, getSolscanTokenUrl, getHealthBadge } = window.ASDF_UTILS;
+    // Use window globals directly to avoid redeclaration conflicts
+
+    // ============================================================
+    // STATE
+    // ============================================================
+
+    let refreshInterval = null;
+
+    // ============================================================
+    // INITIALIZATION
+    // ============================================================
+
+    document.addEventListener('DOMContentLoaded', () => {
+      initNetworkSelector();
+      initWebSocket();
+      startDashboard();
+      updateStatusBar();
+    });
+
+    function initNetworkSelector() {
+      const select = $('network-select');
+      select.value = window.ASDF_CONFIG.getCurrentNetwork();
+
+      select.addEventListener('change', (e) => {
+        window.ASDF_CONFIG.setCurrentNetwork(e.target.value);
+        window.ASDF_WS.reconnect();
+        fetchAllData();
+        updateStatusBar();
+      });
+    }
+
+    function initWebSocket() {
+      window.ASDF_WS.on('connected', () => {
+        updateWsStatus(true);
+        showToast('Connected to daemon', 'success');
+      });
+
+      window.ASDF_WS.on('disconnected', () => {
+        updateWsStatus(false);
+      });
+
+      window.ASDF_WS.on('fees', (data) => {
+        updateFeesFromWs(data);
+      });
+
+      window.ASDF_WS.on('burn', (data) => {
+        showToast(`Burn: ${formatTokens(data.amountBurned)} ${data.symbol}`, 'success');
+        fetchBurns();
+      });
+
+      window.ASDF_WS.on('cycle_complete', (data) => {
+        showToast('Cycle completed!', 'success');
+        fetchAllData();
+      });
+
+      window.ASDF_WS.connect();
+    }
+
+    function startDashboard() {
+      fetchAllData();
+      refreshInterval = setInterval(fetchAllData, window.ASDF_CONFIG.INTERVALS.health);
+    }
+
+    // ============================================================
+    // DATA FETCHING
+    // ============================================================
+
+    async function fetchAllData() {
+      await Promise.all([
+        fetchHealth(),
+        fetchFees(),
+        fetchTokensData(),
+        fetchTreasury(),
+        fetchRebatePool(),
+        fetchBurns(),
+      ]);
+      $('last-update').textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+    }
+
+    async function fetchHealth() {
+      try {
+        const data = await window.ASDF_API.getHealth();
+        updateHealth(data);
+      } catch (error) {
+        updateHealth(null);
+      }
+    }
+
+    async function fetchFees() {
+      try {
+        const data = await window.ASDF_API.getFees();
+        updateFees(data);
+      } catch (error) {
+        console.error('Failed to fetch fees:', error);
+      }
+    }
+
+    async function fetchTreasury() {
+      try {
+        const data = await window.ASDF_API.getTreasury();
+        updateTreasury(data);
+      } catch (error) {
+        console.error('Failed to fetch treasury:', error);
+      }
+    }
+
+    async function fetchRebatePool() {
+      try {
+        const data = await window.ASDF_API.getRebatePool();
+        updateRebatePool(data);
+      } catch (error) {
+        console.error('Failed to fetch rebate pool:', error);
+      }
+    }
+
+    async function fetchBurns() {
+      try {
+        const data = await window.ASDF_API.getBurns(10);
+        updateBurns(data);
+      } catch (error) {
+        console.error('Failed to fetch burns:', error);
+      }
+    }
+
+    async function fetchTokensData() {
+      try {
+        const data = await window.ASDF_API.getTokens();
+        updateTotalCollected(data);
+      } catch (error) {
+        console.error('Failed to fetch tokens data:', error);
+      }
+    }
+
+    function updateTotalCollected(data) {
+      if (!data?.tokens) return;
+      const totalCollected = data.tokens.reduce((sum, t) => sum + (t.totalCollectedLamports || 0), 0);
+      $('total-sol').textContent = `${formatSOL(totalCollected)} SOL`;
+    }
+
+    // ============================================================
+    // UI UPDATES
+    // ============================================================
+
+    function updateWsStatus(connected) {
+      const el = $('ws-status');
+      const dot = el.querySelector('.status-dot');
+      const text = el.querySelector('span:last-child');
+
+      if (connected) {
+        dot.className = 'status-dot status-dot-success';
+        text.textContent = 'Connected';
+        el.className = 'status-indicator status-connected';
+      } else {
+        dot.className = 'status-dot status-dot-danger';
+        text.textContent = 'Disconnected';
+        el.className = 'status-indicator status-disconnected';
+      }
+    }
+
+    function updateHealth(data) {
+      if (!data) {
+        $('daemon-status').innerHTML = '<span class="badge badge-danger">OFFLINE</span>';
+        $('daemon-uptime').textContent = '--';
+        $('poll-count').textContent = '--';
+        $('error-rate').textContent = '--%';
+        $('last-poll').textContent = '--';
+        return;
+      }
+
+      const badge = getHealthBadge(data.status);
+      $('daemon-status').innerHTML = `<span class="badge ${badge.class}">${badge.text}</span>`;
+      $('daemon-uptime').textContent = formatUptime(data.uptime);
+
+      if (data.daemon) {
+        $('poll-count').textContent = data.daemon.pollCount?.toLocaleString() || '--';
+        $('error-rate').textContent = `${((data.daemon.errorRate || 0) * 100).toFixed(1)}%`;
+        $('last-poll').textContent = data.daemon.lastPollMs ? formatTimeAgo(Date.now() - data.daemon.lastPollMs) : '--';
+      }
+    }
+
+    function updateFees(data) {
+      if (!data) return;
+
+      // Update hero metrics
+      $('pending-sol').textContent = `${formatSOL(data.totals?.pendingLamports || 0)} SOL`;
+      $('tokens-count').textContent = data.totals?.tokenCount || 0;
+
+      // Update token list
+      const container = $('token-list-body');
+      const tokens = data.tokens || [];
+
+      if (tokens.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🪙</div>
+            <div class="empty-state-text">No tokens tracked yet</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = tokens.map(token => `
+        <div class="token-row">
+          <div class="token-info">
+            <div>
+              <span class="token-symbol ${token.isRoot ? 'token-symbol-root' : ''}">${token.isRoot ? '👑 ' : ''}${token.symbol}</span>
+              ${token.isRoot ? '<span class="token-badge-root">ROOT</span>' : ''}
+            </div>
+            <a href="${getSolscanTokenUrl(token.mint)}" target="_blank" class="token-mint">${shortenAddress(token.mint)}</a>
+          </div>
+          <div class="token-value token-value-pending">${formatSOL(token.pendingLamports)} SOL</div>
+          <div class="token-value token-value-burned">${formatTokens(token.totalBurned || 0)}</div>
+          <div class="token-value">${token.isRoot ? '-' : formatSOL(token.sentToRoot || 0) + ' SOL'}</div>
+          <div><span class="badge ${token.pendingLamports > 0 ? 'badge-warning' : 'badge-success'}">${token.pendingLamports > 0 ? 'PENDING' : 'IDLE'}</span></div>
+        </div>
+      `).join('');
+    }
+
+    function updateFeesFromWs(data) {
+      // Real-time update from WebSocket
+      if (data.totals) {
+        $('pending-sol').textContent = `${formatSOL(data.totals.pendingLamports || 0)} SOL`;
+      }
+    }
+
+    function updateTreasury(data) {
+      if (!data?.treasury) {
+        $('treasury-balance').textContent = '-- SOL';
+        return;
+      }
+      $('treasury-balance').textContent = `${formatSOL(data.treasury.balance?.lamports || 0)} SOL`;
+    }
+
+    function updateRebatePool(data) {
+      if (!data) {
+        $('rebate-balance').textContent = '-- SOL';
+        $('rebates-count').textContent = '--';
+        $('rebate-recipients').textContent = '--';
+        return;
+      }
+      $('rebate-balance').textContent = `${formatSOL(data.balance?.lamports || 0)} SOL`;
+      if (data.stats) {
+        $('rebates-count').textContent = data.stats.rebatesCount?.toLocaleString() || '0';
+        $('rebate-recipients').textContent = data.stats.uniqueRecipients?.toLocaleString() || '0';
+      }
+    }
+
+    function updateBurns(data) {
+      const container = $('burns-list');
+      const burns = data?.recentBurns || [];
+
+      // Update hero total burned
+      if (data?.totalBurned) {
+        $('total-burned').textContent = formatTokens(data.totalBurned);
+      }
+
+      if (burns.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🔥</div>
+            <div class="empty-state-text">No burns yet. Generate some volume!</div>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = burns.map(burn => `
+        <div class="burn-item">
+          <div class="burn-info">
+            <span class="burn-icon">🔥</span>
+            <div class="burn-details">
+              <span class="burn-symbol">${burn.symbol}</span>
+              <span class="burn-amount">${formatTokens(burn.amountBurned)} burned</span>
+            </div>
+          </div>
+          <div>
+            <div class="burn-time">${formatTimeAgo(burn.timestamp)}</div>
+            <a href="${getSolscanTxUrl(burn.signature)}" target="_blank" class="burn-link">${shortenAddress(burn.signature, 6)}</a>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function updateStatusBar() {
+      const config = window.ASDF_CONFIG.getConfig();
+      $('api-url').textContent = `API: ${config.api}`;
+      $('ws-url').textContent = `WS: ${config.ws}`;
+    }
+
+    // ============================================================
+    // TOAST NOTIFICATIONS
+    // ============================================================
+
+    function showToast(message, type = 'info') {
+      const container = $('toast-container');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.remove();
+      }, 5000);
+    }
+  </script>
+</body>
+</html>

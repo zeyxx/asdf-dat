@@ -27,7 +27,8 @@ import { Connection, PublicKey, LAMPORTS_PER_SOL, Keypair } from '@solana/web3.j
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
-import { NETWORK_CONFIGS, NetworkType } from '../lib/network-config';
+import { NETWORK_CONFIGS, NetworkType } from '../src/network/config';
+import { loadAllTokensFromState } from '../src/utils/token-loader';
 
 // ============================================================================
 // Constants
@@ -567,66 +568,36 @@ async function checkRpcConnectivity(connection: Connection): Promise<CheckResult
 // Token Loading
 // ============================================================================
 
-function loadTokenConfigs(network: NetworkType): TokenConfig[] {
-  const tokens: TokenConfig[] = [];
-  const tokensDir = path.join(process.cwd(), `${network}-tokens`);
+async function loadTokenConfigs(
+  connection: Connection,
+  creatorPubkey: PublicKey
+): Promise<TokenConfig[]> {
+  // Use state-based loading (state file → API → on-chain discovery)
+  const configs = await loadAllTokensFromState(connection, creatorPubkey);
 
-  if (fs.existsSync(tokensDir)) {
-    const files = fs.readdirSync(tokensDir).filter((f) => f.endsWith('.json'));
-    for (const file of files) {
-      try {
-        const filePath = path.join(tokensDir, file);
-        const config = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        tokens.push({
-          mint: config.mint,
-          symbol: config.symbol,
-          name: config.name,
-          creator: config.creator,
-          isRoot: config.isRoot || false,
-          poolType: config.poolType,
-          bondingCurve: config.bondingCurve,
-          pool: config.pool,
-        });
-      } catch {
-        console.warn(`Warning: Failed to load token config: ${file}`);
-      }
-    }
-  }
-
-  // Also check root token file
-  const rootFile = path.join(process.cwd(), `${network}-token-root.json`);
-  if (fs.existsSync(rootFile)) {
-    try {
-      const config = JSON.parse(fs.readFileSync(rootFile, 'utf-8'));
-      // Only add if not already in list
-      if (!tokens.find((t) => t.mint === config.mint)) {
-        tokens.push({
-          mint: config.mint,
-          symbol: config.symbol,
-          name: config.name,
-          creator: config.creator,
-          isRoot: true,
-          poolType: config.poolType,
-          bondingCurve: config.bondingCurve,
-          pool: config.pool,
-        });
-      }
-    } catch {
-      console.warn('Warning: Failed to load root token config');
-    }
-  }
-
-  return tokens;
+  // Map to local TokenConfig format
+  return configs.map((c) => ({
+    mint: c.mint,
+    symbol: c.symbol,
+    name: c.name,
+    creator: c.creator,
+    isRoot: c.isRoot ?? false,
+    poolType: c.poolType,
+    bondingCurve: c.bondingCurve,
+  }));
 }
 
 // ============================================================================
 // Main Validation
 // ============================================================================
 
-async function runValidation(network: NetworkType): Promise<ValidationReport> {
+async function runValidation(
+  network: NetworkType,
+  creatorPubkey: PublicKey
+): Promise<ValidationReport> {
   const networkConfig = NETWORK_CONFIGS[network];
   const connection = new Connection(networkConfig.rpcUrl, 'confirmed');
-  const tokens = loadTokenConfigs(network);
+  const tokens = await loadTokenConfigs(connection, creatorPubkey);
 
   console.log('\n═══════════════════════════════════════════════════════');
   console.log(`  PRE-MAINNET LAUNCH VALIDATION (${network})`);
@@ -755,10 +726,11 @@ function printReport(report: ValidationReport): void {
 // CLI
 // ============================================================================
 
-function parseArgs(): { network: NetworkType; json: boolean } {
+function parseArgs(): { network: NetworkType; json: boolean; creator: string | undefined } {
   const args = process.argv.slice(2);
   let network: NetworkType = 'devnet';
   let json = false;
+  let creator: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -770,6 +742,8 @@ function parseArgs(): { network: NetworkType; json: boolean } {
       }
     } else if (arg === '--mainnet' || arg === '-m') {
       network = 'mainnet';
+    } else if (arg === '--creator' || arg === '-c') {
+      creator = args[++i];
     } else if (arg === '--json') {
       json = true;
     } else if (arg === '--help' || arg === '-h') {
@@ -779,6 +753,7 @@ Usage: npx ts-node scripts/validate-before-mainnet-launch.ts [options]
 Options:
   --network, -n <network>   Network: mainnet or devnet (default: devnet)
   --mainnet, -m             Shorthand for --network mainnet
+  --creator, -c <pubkey>    Creator pubkey (or set CREATOR env var)
   --json                    Output results as JSON
   --help, -h                Show this help
 
@@ -791,14 +766,24 @@ Exit Codes:
     }
   }
 
-  return { network, json };
+  // Try env
+  if (!creator) creator = process.env.CREATOR;
+
+  return { network, json, creator };
 }
 
 async function main(): Promise<void> {
-  const { network, json } = parseArgs();
+  const { network, json, creator } = parseArgs();
+
+  if (!creator) {
+    console.error('Error: Creator pubkey required. Use --creator or set CREATOR env var');
+    process.exit(1);
+  }
+
+  const creatorPubkey = new PublicKey(creator);
 
   try {
-    const report = await runValidation(network);
+    const report = await runValidation(network, creatorPubkey);
 
     if (json) {
       console.log(JSON.stringify(report, null, 2));
