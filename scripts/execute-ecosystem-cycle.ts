@@ -1998,11 +1998,16 @@ async function executeSecondaryWithAllocation(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    // Protocol fee recipient (different for Mayhem vs SPL)
+    // Protocol fee recipient (different for Mayhem / Token2022 / SPL)
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+    const TOKEN2022_FEE_RECIPIENT = new PublicKey('68yFSZxzLWJXkxxRGydZ63C6mHx1NLEDWmwN9Lb5yySg');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 
-    const protocolFeeRecipient = allocation.token.mayhemMode ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+    const protocolFeeRecipient = allocation.token.mayhemMode
+      ? MAYHEM_FEE_RECIPIENT
+      : allocation.token.isToken2022
+        ? TOKEN2022_FEE_RECIPIENT
+        : SPL_FEE_RECIPIENT;
 
     // Derive root treasury PDA (required for secondary tokens)
     const [rootTreasury] = PublicKey.findProgramAddressSync(
@@ -2479,10 +2484,15 @@ async function executeRootCycle(
       new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
     );
 
-    // Protocol fee recipient (different for Mayhem vs SPL)
+    // Protocol fee recipient (different for Mayhem / Token2022 / SPL)
     const MAYHEM_FEE_RECIPIENT = new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS');
+    const TOKEN2022_FEE_RECIPIENT = new PublicKey('68yFSZxzLWJXkxxRGydZ63C6mHx1NLEDWmwN9Lb5yySg');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
-    const protocolFeeRecipient = rootToken.mayhemMode ? MAYHEM_FEE_RECIPIENT : SPL_FEE_RECIPIENT;
+    const protocolFeeRecipient = rootToken.mayhemMode
+      ? MAYHEM_FEE_RECIPIENT
+      : rootToken.isToken2022
+        ? TOKEN2022_FEE_RECIPIENT
+        : SPL_FEE_RECIPIENT;
 
     // Select swap program based on pool type
     const swapProgram = isAmm ? PUMP_SWAP_PROGRAM : PUMP_PROGRAM;
