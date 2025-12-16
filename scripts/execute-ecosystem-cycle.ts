@@ -94,7 +94,8 @@ const PUMP_SWAP_PROGRAM = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FM
 const PUMPSWAP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
 const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
 const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
-const PUMPSWAP_GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
+// Volume accumulators - required by Pump.fun buy instruction
+const GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 
 // Dev sustainability wallet - receives 1% of secondary burns
@@ -2070,13 +2071,8 @@ async function executeSecondaryWithAllocation(
       const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(creator);
       const coinCreatorVaultAta = getAmmCreatorVaultAta(creator);
 
-      // Volume accumulator PDAs (PumpSwap uses same program)
-      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-        [Buffer.from('global_volume_accumulator')],
-        PUMP_SWAP_PROGRAM
-      );
-
-      const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
+      // Volume accumulator PDAs - required by PumpSwap AMM buy instruction
+      const [userVolumeAccumulatorAmm] = PublicKey.findProgramAddressSync(
         [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
         PUMP_SWAP_PROGRAM
       );
@@ -2164,8 +2160,8 @@ async function executeSecondaryWithAllocation(
           pumpSwapProgram: PUMP_SWAP_PROGRAM,
           coinCreatorVaultAta,
           coinCreatorVaultAuthority,
-          globalVolumeAccumulator,
-          userVolumeAccumulator,
+          globalVolumeAccumulator: GLOBAL_VOLUME_ACCUMULATOR,
+          userVolumeAccumulator: userVolumeAccumulatorAmm,
           feeConfig,
           feeProgram: FEE_PROGRAM,
         })
@@ -2201,12 +2197,7 @@ async function executeSecondaryWithAllocation(
       // CRITICAL: Pass calculated allocation, NOT null (to leave balance for other tokens)
       log('  📦', `Building bonding curve buy instruction (${formatSOL(allocation.allocation)} SOL)...`, colors.cyan);
 
-      // PumpFun volume accumulator accounts
-      const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-        [Buffer.from('global_volume_accumulator')],
-        PUMP_PROGRAM
-      );
-
+      // Volume accumulator PDAs - required by Pump.fun buy instruction
       const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
         [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
         PUMP_PROGRAM
@@ -2233,7 +2224,7 @@ async function executeSecondaryWithAllocation(
           creatorVault,
           pumpEventAuthority: PUMP_EVENT_AUTHORITY,
           pumpSwapProgram: PUMP_PROGRAM,
-          globalVolumeAccumulator,
+          globalVolumeAccumulator: GLOBAL_VOLUME_ACCUMULATOR,
           userVolumeAccumulator,
           feeConfig,
           feeProgram: FEE_PROGRAM,
@@ -2454,7 +2445,11 @@ async function executeRootCycle(
       program.programId
     );
 
-    const creator = rootToken.creator;
+    // Use token creator if available, fallback to CREATOR env (all tokens share same vault)
+    const creator = rootToken.creator ?? (process.env.CREATOR ? new PublicKey(process.env.CREATOR) : null);
+    if (!creator) {
+      throw new Error('Root token creator not found. Set CREATOR env variable.');
+    }
     const creatorVault = getBcCreatorVault(creator);
 
     const [rootTreasury] = PublicKey.findProgramAddressSync(
@@ -2492,14 +2487,10 @@ async function executeRootCycle(
     // Select swap program based on pool type
     const swapProgram = isAmm ? PUMP_SWAP_PROGRAM : PUMP_PROGRAM;
 
-    const [globalVolumeAccumulator] = PublicKey.findProgramAddressSync(
-      [Buffer.from('global_volume_accumulator')],
-      swapProgram
-    );
-
+    // Volume accumulator PDAs - required by Pump.fun buy instruction
     const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
       [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
-      swapProgram
+      PUMP_PROGRAM
     );
 
     const [feeConfig] = PublicKey.findProgramAddressSync(
@@ -2606,7 +2597,7 @@ async function executeRootCycle(
           pumpSwapProgram: PUMP_SWAP_PROGRAM,
           coinCreatorVaultAta,
           coinCreatorVaultAuthority,
-          globalVolumeAccumulator,
+          globalVolumeAccumulator: GLOBAL_VOLUME_ACCUMULATOR,
           userVolumeAccumulator,
           feeConfig,
           feeProgram: FEE_PROGRAM,
@@ -2651,7 +2642,7 @@ async function executeRootCycle(
           creatorVault,
           pumpEventAuthority: PUMP_EVENT_AUTHORITY,
           pumpSwapProgram: PUMP_PROGRAM,
-          globalVolumeAccumulator,
+          globalVolumeAccumulator: GLOBAL_VOLUME_ACCUMULATOR,
           userVolumeAccumulator,
           feeConfig,
           feeProgram: FEE_PROGRAM,

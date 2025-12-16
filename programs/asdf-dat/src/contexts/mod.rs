@@ -204,9 +204,9 @@ pub struct ExecuteBuy<'info> {
     pub pump_event_authority: AccountInfo<'info>,
     /// CHECK: Pump program
     pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Global volume accumulator (PDA)
+    /// CHECK: Global volume accumulator (PDA) - required by Pump.fun buy instruction
     pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
+    /// CHECK: User volume accumulator (PDA) - seeds: ["user_volume_accumulator", user]
     #[account(mut)]
     pub user_volume_accumulator: AccountInfo<'info>,
     /// CHECK: Fee config (PDA)
@@ -255,9 +255,9 @@ pub struct ExecuteBuySecondary<'info> {
     /// CHECK: Pump program - validated program ID via constraint
     #[account(constraint = pump_swap_program.key() == PUMP_PROGRAM @ ErrorCode::InvalidParameter)]
     pub pump_swap_program: AccountInfo<'info>,
-    /// CHECK: Global volume accumulator (PDA)
+    /// CHECK: Global volume accumulator (PDA) - required by Pump.fun buy instruction
     pub global_volume_accumulator: AccountInfo<'info>,
-    /// CHECK: User volume accumulator (PDA)
+    /// CHECK: User volume accumulator (PDA) - seeds: ["user_volume_accumulator", user]
     #[account(mut)]
     pub user_volume_accumulator: AccountInfo<'info>,
     /// CHECK: Fee config (PDA)

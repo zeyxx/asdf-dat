@@ -34,25 +34,26 @@ declare_id!("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 // The program provides record_external_buy() to record the results after orchestrator completes the buy
 
 /// Build account infos Vec on heap (separate function to isolate stack frame)
+/// CORRECT 16-account format based on successful devnet tx 3Rqh43z2...
 #[inline(never)]
 fn build_account_infos_root<'info>(accounts: &ExecuteBuy<'info>) -> Vec<AccountInfo<'info>> {
     let mut accs = Vec::with_capacity(16);
-    accs.push(accounts.pump_global_config.to_account_info());
-    accs.push(accounts.protocol_fee_recipient.to_account_info());
-    accs.push(accounts.asdf_mint.to_account_info());
-    accs.push(accounts.pool.to_account_info());
-    accs.push(accounts.pool_asdf_account.to_account_info());
-    accs.push(accounts.dat_asdf_account.to_account_info());
-    accs.push(accounts.dat_authority.to_account_info());
-    accs.push(accounts.system_program.to_account_info());
-    accs.push(accounts.token_program.to_account_info());
-    accs.push(accounts.creator_vault.to_account_info());
-    accs.push(accounts.pump_event_authority.to_account_info());
-    accs.push(accounts.pump_swap_program.to_account_info());
-    accs.push(accounts.global_volume_accumulator.to_account_info());
-    accs.push(accounts.user_volume_accumulator.to_account_info());
-    accs.push(accounts.fee_config.to_account_info());
-    accs.push(accounts.fee_program.to_account_info());
+    accs.push(accounts.pump_global_config.to_account_info());      // 0
+    accs.push(accounts.protocol_fee_recipient.to_account_info());  // 1
+    accs.push(accounts.asdf_mint.to_account_info());               // 2
+    accs.push(accounts.pool.to_account_info());                    // 3
+    accs.push(accounts.pool_asdf_account.to_account_info());       // 4
+    accs.push(accounts.dat_asdf_account.to_account_info());        // 5
+    accs.push(accounts.dat_authority.to_account_info());           // 6
+    accs.push(accounts.system_program.to_account_info());          // 7
+    accs.push(accounts.token_program.to_account_info());           // 8 - token_program BEFORE creator_vault!
+    accs.push(accounts.creator_vault.to_account_info());           // 9 - creator_vault AFTER token_program!
+    accs.push(accounts.pump_event_authority.to_account_info());    // 10
+    accs.push(accounts.pump_swap_program.to_account_info());       // 11
+    accs.push(accounts.global_volume_accumulator.to_account_info()); // 12
+    accs.push(accounts.user_volume_accumulator.to_account_info());   // 13
+    accs.push(accounts.fee_config.to_account_info());              // 14
+    accs.push(accounts.fee_program.to_account_info());             // 15
     accs
 }
 
@@ -94,25 +95,26 @@ fn execute_buy_inner(ctx: Context<ExecuteBuy>, buy_amount: u64) -> Result<()> {
 }
 
 /// Build account infos Vec on heap for secondary tokens (separate function to isolate stack frame)
+/// CORRECT 16-account format based on successful devnet tx 3Rqh43z2...
 #[inline(never)]
 fn build_account_infos_secondary<'info>(accounts: &ExecuteBuySecondary<'info>) -> Vec<AccountInfo<'info>> {
     let mut accs = Vec::with_capacity(16);
-    accs.push(accounts.pump_global_config.to_account_info());
-    accs.push(accounts.protocol_fee_recipient.to_account_info());
-    accs.push(accounts.asdf_mint.to_account_info());
-    accs.push(accounts.pool.to_account_info());
-    accs.push(accounts.pool_asdf_account.to_account_info());
-    accs.push(accounts.dat_asdf_account.to_account_info());
-    accs.push(accounts.dat_authority.to_account_info());
-    accs.push(accounts.system_program.to_account_info());
-    accs.push(accounts.token_program.to_account_info());
-    accs.push(accounts.creator_vault.to_account_info());
-    accs.push(accounts.pump_event_authority.to_account_info());
-    accs.push(accounts.pump_swap_program.to_account_info());
-    accs.push(accounts.global_volume_accumulator.to_account_info());
-    accs.push(accounts.user_volume_accumulator.to_account_info());
-    accs.push(accounts.fee_config.to_account_info());
-    accs.push(accounts.fee_program.to_account_info());
+    accs.push(accounts.pump_global_config.to_account_info());      // 0
+    accs.push(accounts.protocol_fee_recipient.to_account_info());  // 1
+    accs.push(accounts.asdf_mint.to_account_info());               // 2
+    accs.push(accounts.pool.to_account_info());                    // 3
+    accs.push(accounts.pool_asdf_account.to_account_info());       // 4
+    accs.push(accounts.dat_asdf_account.to_account_info());        // 5
+    accs.push(accounts.dat_authority.to_account_info());           // 6
+    accs.push(accounts.system_program.to_account_info());          // 7
+    accs.push(accounts.token_program.to_account_info());           // 8 - token_program BEFORE creator_vault!
+    accs.push(accounts.creator_vault.to_account_info());           // 9 - creator_vault AFTER token_program!
+    accs.push(accounts.pump_event_authority.to_account_info());    // 10
+    accs.push(accounts.pump_swap_program.to_account_info());       // 11
+    accs.push(accounts.global_volume_accumulator.to_account_info()); // 12
+    accs.push(accounts.user_volume_accumulator.to_account_info());   // 13
+    accs.push(accounts.fee_config.to_account_info());              // 14
+    accs.push(accounts.fee_program.to_account_info());             // 15
     accs
 }
 

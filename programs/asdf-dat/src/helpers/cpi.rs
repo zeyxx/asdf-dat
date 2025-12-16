@@ -125,7 +125,8 @@ pub fn split_fees_to_root<'info>(
     Ok(sol_for_root)
 }
 
-/// Minimal CPI executor for PumpFun buy
+/// Minimal CPI executor for PumpFun buy (CORRECT 16-account format)
+/// Based on successful devnet tx 3Rqh43z2Vt2BkSPbkchLKsJr4CZiNbqbfRgapJtuGqfoaKLuyCNYbRyvCwv7ksRRdsRPTjdQGCTfgeZQMmJGksHW
 #[inline(never)]
 pub fn execute_pumpfun_cpi<'info>(
     global_config: Pubkey,
@@ -146,25 +147,31 @@ pub fn execute_pumpfun_cpi<'info>(
     data.extend_from_slice(&max_sol_cost.to_le_bytes());
     data.push(0);
 
+    // CORRECT 16-account order (with volume accumulators):
+    // 0: global_config, 1: fee_recipient, 2: mint, 3: pool,
+    // 4: pool_token_account, 5: user_token_account, 6: user,
+    // 7: system_program, 8: token_program, 9: creator_vault,
+    // 10: event_authority, 11: pump_program, 12: global_volume_acc, 13: user_volume_acc,
+    // 14: fee_config, 15: fee_program
     let ix = Instruction {
         program_id: PUMP_PROGRAM,
         accounts: vec![
-            AccountMeta::new_readonly(global_config, false),
-            AccountMeta::new(fee_recipient, false),
-            AccountMeta::new(mint, false),
-            AccountMeta::new(pool, false),
-            AccountMeta::new(pool_token_account, false),
-            AccountMeta::new(user_token_account, false),
-            AccountMeta::new(user, true),
-            AccountMeta::new_readonly(account_infos[7].key(), false), // system
-            AccountMeta::new_readonly(account_infos[8].key(), false), // token
-            AccountMeta::new(account_infos[9].key(), false), // creator_vault
-            AccountMeta::new_readonly(account_infos[10].key(), false), // event_auth
-            AccountMeta::new_readonly(PUMP_PROGRAM, false),
-            AccountMeta::new_readonly(account_infos[12].key(), false), // global_vol
-            AccountMeta::new(account_infos[13].key(), false), // user_vol
-            AccountMeta::new_readonly(account_infos[14].key(), false), // fee_config
-            AccountMeta::new_readonly(account_infos[15].key(), false), // fee_program
+            AccountMeta::new_readonly(global_config, false),           // 0
+            AccountMeta::new(fee_recipient, false),                    // 1
+            AccountMeta::new(mint, false),                             // 2
+            AccountMeta::new(pool, false),                             // 3
+            AccountMeta::new(pool_token_account, false),               // 4
+            AccountMeta::new(user_token_account, false),               // 5
+            AccountMeta::new(user, true),                              // 6: signer
+            AccountMeta::new_readonly(account_infos[7].key(), false),  // 7: system
+            AccountMeta::new_readonly(account_infos[8].key(), false),  // 8: token_program (BEFORE creator_vault!)
+            AccountMeta::new(account_infos[9].key(), false),           // 9: creator_vault (AFTER token_program!)
+            AccountMeta::new_readonly(account_infos[10].key(), false), // 10: event_auth
+            AccountMeta::new_readonly(PUMP_PROGRAM, false),            // 11: pump_program
+            AccountMeta::new_readonly(account_infos[12].key(), false), // 12: global_volume_acc
+            AccountMeta::new(account_infos[13].key(), false),          // 13: user_volume_acc
+            AccountMeta::new_readonly(account_infos[14].key(), false), // 14: fee_config
+            AccountMeta::new_readonly(account_infos[15].key(), false), // 15: fee_program
         ],
         data,
     };
