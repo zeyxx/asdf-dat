@@ -228,7 +228,7 @@ export function isRetryableError(error: Error): boolean {
   }
 
   // Network errors
-  if (message.includes('econnreset') || message.includes('enotfound') || message.includes('etimedout')) {
+  if (message.includes('econnreset') || message.includes('enotfound') || message.includes('etimedout') || message.includes('fetch failed')) {
     return true;
   }
 

@@ -5,7 +5,7 @@
  * Each eligible token has equal probability of selection: 1/N
  */
 
-import { TokenConfig } from '../types';
+import { TokenConfig } from './types';
 
 export interface TokenAllocation {
   token: TokenConfig;

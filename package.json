@@ -13,6 +13,8 @@
     "dev": "ts-node src/cli.ts",
     "start": "node dist/cli.js",
     "test": "anchor test",
+    "test:unit": "mocha",
+    "test:all": "npm run test:unit && anchor test",
     "compile": "tsc",
     "daemon": "ts-node src/cli.ts",
     "init": "ts-node scripts/init-dat-state.ts",

@@ -2,11 +2,24 @@
 
 Core operational scripts for the Optimistic Burn Protocol.
 
+## 🎬 Complete Demo (Video Presentation)
+
+One-command demo showing the complete burn cycle:
+
+```bash
+CREATOR=84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68 \
+  npx ts-node scripts/demo-burn-engine.ts --network devnet
+```
+
+Shows: Volume → Fees → Burn → On-chain Proof
+Perfect for <3min video presentations.
+
 ## Quick Start
 
 ```bash
 export ANCHOR_PROVIDER_URL=https://api.devnet.solana.com
 export ANCHOR_WALLET=./devnet-wallet.json
+export CREATOR=84ddDW8Vvuc9NMTQQFMtd2SAhR3xvGEJgJ9Xqe2VMi68
 ```
 
 ## Core Operations

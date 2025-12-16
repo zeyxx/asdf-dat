@@ -71,12 +71,13 @@ const JITO_TIP_ACCOUNTS = {
 
 export const NETWORK_CONFIGS: Record<NetworkType, NetworkConfig> = {
   devnet: {
-    rpcUrl: process.env.DEVNET_RPC_URL || 'https://api.devnet.solana.com',
-    rpcFallbackUrl: undefined,
+    rpcUrl: process.env.HELIUS_DEVNET_RPC || 'https://api.devnet.solana.com',
+    rpcFallbackUrl: 'https://api.devnet.solana.com',
     rpcUrls: [
-      process.env.DEVNET_RPC_URL || 'https://api.devnet.solana.com',
-      'https://devnet.helius-rpc.com/?api-key=' + (process.env.HELIUS_API_KEY || ''),
-    ].filter((url) => url && !url.endsWith('=')), // Filter out empty API key URLs
+      process.env.HELIUS_DEVNET_RPC,
+      process.env.DEVNET_RPC_URL,
+      'https://api.devnet.solana.com', // Public fallback
+    ].filter((url): url is string => Boolean(url) && !url!.endsWith('=') && !url!.endsWith('api-key=')),
     wallet: 'devnet-wallet.json',
     tokens: loadDevnetTokens(),
     name: 'Devnet',
