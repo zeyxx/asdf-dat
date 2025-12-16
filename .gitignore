@@ -223,6 +223,7 @@ deploy/
 
 # Keep these files
 !.env.example
+!.env.template
 !ecosystem.config.js.example
 !wallet.json.example
 

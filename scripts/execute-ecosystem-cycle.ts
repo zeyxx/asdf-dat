@@ -38,6 +38,7 @@ import { AnchorProvider, Program, Wallet, BN, Idl } from '@coral-xyz/anchor';
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
 import * as fs from 'fs';
 import * as path from 'path';
+import { validateEnv } from '../src/utils/validate-env';
 import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../src/network/config';
 import { getCycleLogger } from '../src/observability/logger';
 import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../src/observability/tracing';
@@ -2961,6 +2962,9 @@ async function main() {
   // Parse network argument
   const args = process.argv.slice(2);
   const networkConfig = getNetworkConfig(args);
+
+  // Validate environment configuration
+  validateEnv(networkConfig.name === 'Mainnet' ? 'production' : 'development');
 
   // Parse dry-run flag
   const dryRun = args.includes('--dry-run');
