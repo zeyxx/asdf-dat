@@ -40,6 +40,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { validateEnv } from '../src/utils/validate-env';
 import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../src/network/config';
+import { RpcManager } from '../src/managers/rpc-manager';
 import { getCycleLogger } from '../src/observability/logger';
 import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../src/observability/tracing';
 import { monitoring, OperationType } from '../src/observability/monitoring';
@@ -2993,9 +2994,13 @@ async function main() {
   }
   log('🔒', 'Execution lock acquired', colors.green);
 
-  // Setup connection and provider using network config
+  // Setup connection with RPC manager for automatic failover
   const rpcUrl = process.env.RPC_URL || networkConfig.rpcUrl;
-  const connection = new Connection(rpcUrl, commitment);
+  const rpcManager = new RpcManager({
+    endpoints: networkConfig.rpcUrls.length > 0 ? networkConfig.rpcUrls : [rpcUrl],
+    commitment,
+  });
+  const connection = rpcManager.getConnection();
 
   const walletPath = process.env.WALLET_PATH || networkConfig.wallet;
   let adminKeypair: Keypair;
