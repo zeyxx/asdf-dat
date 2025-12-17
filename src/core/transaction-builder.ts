@@ -64,12 +64,16 @@ const DEV_WALLET = new PublicKey(
   "dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4"
 );
 
-// Mayhem mode has different fee recipient
+// Protocol fee recipients vary by token type
+// Pump.fun uses different recipients for SPL vs Token2022
 const MAYHEM_FEE_RECIPIENT = new PublicKey(
   "GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS"
 );
 const SPL_FEE_RECIPIENT = new PublicKey(
   "6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"
+);
+const TOKEN2022_FEE_RECIPIENT = new PublicKey(
+  "68yFSZxzLWP8YhzPV32Yz5k1WpYE2kNiWoL6n8cKzsHd"
 );
 
 // ============================================================================
@@ -672,12 +676,18 @@ export class TransactionBuilder {
       FEE_PROGRAM
     );
 
+    // Select protocol fee recipient based on token type
+    // Token2022 tokens use a different fee recipient than SPL tokens
     const protocolFeeRecipient = token.mayhemMode
       ? MAYHEM_FEE_RECIPIENT
-      : SPL_FEE_RECIPIENT;
+      : token.isToken2022
+        ? TOKEN2022_FEE_RECIPIENT
+        : SPL_FEE_RECIPIENT;
 
+    // ROOT TOKEN: Use executeBuy (not executeBuySecondary) - 100% burn, no split
+    // Note: execute_buy does NOT take rootTreasury (that's for secondaries only)
     const buyIx = await this.program.methods
-      .executeBuyRoot(new BN(allocation.toString()))
+      .executeBuy(new BN(allocation.toString()))
       .accounts({
         datState,
         datAuthority,
@@ -694,7 +704,6 @@ export class TransactionBuilder {
         userVolumeAccumulator,
         feeConfig,
         feeProgram: FEE_PROGRAM,
-        rootTreasury,
         tokenProgram,
         systemProgram: SystemProgram.programId,
       })

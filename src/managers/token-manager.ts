@@ -783,7 +783,7 @@ export class TokenManager {
   /**
    * Set root token manually
    */
-  setRootToken(mint: PublicKey): void {
+  async setRootToken(mint: PublicKey): Promise<void> {
     this.rootTokenMint = mint;
     const mintStr = mint.toBase58();
 
@@ -791,6 +791,25 @@ export class TokenManager {
     const tracked = this.trackedTokens.get(mintStr);
     if (tracked) {
       tracked.isRoot = true;
+
+      // Detect Token2022 from mint account owner
+      try {
+        const conn = await this.rpc.getConnection();
+        const mintInfo = await conn.getAccountInfo(mint);
+        if (mintInfo) {
+          // Token2022 program ID: TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb
+          const TOKEN_2022_PROGRAM_ID = new PublicKey(
+            "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+          );
+          tracked.isToken2022 = mintInfo.owner.equals(TOKEN_2022_PROGRAM_ID);
+          log.info("Token program detected", {
+            mint: mintStr,
+            isToken2022: tracked.isToken2022,
+          });
+        }
+      } catch (err) {
+        log.warn("Failed to detect token program", { mint: mintStr, error: (err as Error).message });
+      }
     }
 
     log.info("Root token set", { mint: mintStr });

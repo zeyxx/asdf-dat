@@ -349,8 +349,8 @@ export class Daemon {
           });
         }
 
-        // Set in TokenManager
-        this.tokenManager.setRootToken(rootMint);
+        // Set in TokenManager (async - detects Token2022)
+        await this.tokenManager.setRootToken(rootMint);
       } else {
         log.debug("No root token configured in DATState");
       }

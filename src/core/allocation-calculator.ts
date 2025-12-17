@@ -135,13 +135,20 @@ export class AllocationCalculator {
     );
 
     if (totalPending === 0n) {
-      log.debug("No pending fees to distribute");
+      log.debug("No secondary pending fees to distribute");
+
+      // ROOT INDEPENDENCE: Root can execute even with no secondary fees
+      // This aligns with CCM philosophy: root IS the infrastructure
+      const rootAllocation = rootToken && rootToken.pendingFeesLamports > 0n
+        ? this.createRootAllocation(rootToken, rootToken.pendingFeesLamports)
+        : rootToken
+          ? this.createRootAllocation(rootToken, 0n)
+          : null;
+
       return {
         viable: [],
         deferred: [],
-        rootAllocation: rootToken
-          ? this.createRootAllocation(rootToken, 0n)
-          : null,
+        rootAllocation,
         ratio: 0,
         totalDistributable: 0n,
         rootTreasuryContribution: 0n,

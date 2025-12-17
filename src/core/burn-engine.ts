@@ -139,8 +139,13 @@ export class BurnEngine {
       log.info("Calculating allocations from internal state");
       const allocation = this.allocator.calculate(tokens, vaultBalance);
 
-      if (allocation.viable.length === 0) {
-        log.info("No viable tokens for this cycle");
+      // ROOT INDEPENDENCE: Root can execute even with no viable secondaries
+      // This aligns with CCM philosophy: root IS the infrastructure
+      const hasViableRoot = allocation.rootAllocation &&
+        allocation.rootAllocation.allocation > 0n;
+
+      if (allocation.viable.length === 0 && !hasViableRoot) {
+        log.info("No viable tokens for this cycle (no secondaries, no root)");
         await this.clearProgress();
         return {
           success: true,
@@ -161,8 +166,9 @@ export class BurnEngine {
       const eligible = this.allocator.getEligibleTokens(allocation.viable);
       const selection = this.allocator.selectForCycle(eligible, currentSlot);
 
-      if (!selection.selected) {
-        log.info("No eligible tokens for selection");
+      // ROOT-ONLY CYCLE: Skip secondary selection check if root is viable
+      if (!selection.selected && !hasViableRoot) {
+        log.info("No eligible tokens for selection (no secondaries, no root)");
         await this.clearProgress();
         return {
           success: true,
@@ -176,35 +182,39 @@ export class BurnEngine {
         };
       }
 
-      // Step 4: Execute selected secondary token
-      progress.phase = "secondaries";
-      await this.persistProgress(progress);
+      // Step 4: Execute selected secondary token (if any)
+      if (selection.selected) {
+        progress.phase = "secondaries";
+        await this.persistProgress(progress);
 
-      log.info("Executing selected token", {
-        selected: selection.selected.symbol,
-        allocation: this.formatSOL(selection.selected.allocation),
-        eligibleCount: selection.eligible.length,
-      });
-
-      const result = await this.executeTokenWithRetry(
-        selection.selected,
-        rootMint,
-        false // isRoot
-      );
-
-      tokenResults.push(result);
-      progress.completedTokens.push(selection.selected.mint.toBase58());
-      await this.persistProgress(progress);
-
-      if (result.error) {
-        errors.push({
-          mint: selection.selected.mint,
-          phase: "buy",
-          message: result.error,
+        log.info("Executing selected token", {
+          selected: selection.selected.symbol,
+          allocation: this.formatSOL(selection.selected.allocation),
+          eligibleCount: selection.eligible.length,
         });
+
+        const result = await this.executeTokenWithRetry(
+          selection.selected,
+          rootMint,
+          false // isRoot
+        );
+
+        tokenResults.push(result);
+        progress.completedTokens.push(selection.selected.mint.toBase58());
+        await this.persistProgress(progress);
+
+        if (result.error) {
+          errors.push({
+            mint: selection.selected.mint,
+            phase: "buy",
+            message: result.error,
+          });
+        } else {
+          totalFlushedLamports += selection.selected.allocation;
+          totalBurnedTokens += result.burnedTokens;
+        }
       } else {
-        totalFlushedLamports += selection.selected.allocation;
-        totalBurnedTokens += result.burnedTokens;
+        log.info("Root-only cycle: no secondary tokens to process");
       }
 
       // Step 5: Execute root token if it has allocation
@@ -552,15 +562,25 @@ export class BurnEngine {
   // ============================================================================
 
   private trackedToConfig(token: TrackedToken): TokenConfig {
-    return {
+    const config = {
       mint: token.mint,
       symbol: token.symbol,
       bondingCurve: token.bondingCurve,
       poolType: token.poolType,
       creator: token.bondingCurve, // Derived from BC in Phase 1
-      isToken2022: false, // TODO: Detect from token
+      isToken2022: token.isToken2022 ?? false, // Use tracked value
       mayhemMode: false, // TODO: Detect from BC
     };
+
+    // Debug log for Token2022 detection
+    log.debug("Token config created", {
+      symbol: token.symbol,
+      isRoot: token.isRoot,
+      isToken2022: config.isToken2022,
+      trackedIsToken2022: token.isToken2022,
+    });
+
+    return config;
   }
 
   private isTransientError(error: unknown): boolean {

@@ -131,6 +131,9 @@ export interface TrackedToken {
   bondingCurve: PublicKey;
   poolType: PoolType;
 
+  // Token program info
+  isToken2022?: boolean;  // Token2022 vs SPL Token
+
   // Fee tracking
   pendingFeesLamports: bigint;
   totalCollectedLamports: bigint;
