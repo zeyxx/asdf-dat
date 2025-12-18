@@ -23,8 +23,9 @@ import { TokenConfig } from "../src/core/types";
 function parseArgs() {
   const args = process.argv.slice(2);
   let tokenId: string | undefined;
-  let cycles = 2;
-  let solPerCycle = 0.5;
+  let cycles = 2;           // default
+  let solPerCycle = 0.5;    // default
+  let cyclesSet = false;    // flag to track if cycles was explicitly set
   let all = false;
   let creator: string | undefined;
   let network: "devnet" | "mainnet" = "devnet";
@@ -41,11 +42,17 @@ function parseArgs() {
     } else if (arg === "--help" || arg === "-h") {
       showHelp();
       process.exit(0);
-    } else if (!tokenId) {
+    } else if (!tokenId && isNaN(Number(arg))) {
+      // Non-numeric string → token ID
       tokenId = arg;
-    } else if (!isNaN(parseInt(arg))) {
-      if (cycles === 2) cycles = parseInt(arg);
-      else solPerCycle = parseFloat(arg);
+    } else if (!isNaN(Number(arg))) {
+      // Numeric arg: first one is cycles, second is solPerCycle
+      if (!cyclesSet) {
+        cycles = parseInt(arg);
+        cyclesSet = true;
+      } else {
+        solPerCycle = parseFloat(arg);
+      }
     }
   }
 

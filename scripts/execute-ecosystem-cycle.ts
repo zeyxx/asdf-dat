@@ -1,59 +1,68 @@
 /**
- * Flush Orchestrator (Probabilistic O(1) Pattern)
+ * Flush Orchestrator V2 - Modular Architecture
  *
- * Optimistic Burn Protocol - executes the complete flush cycle:
- * Select ONE token → Collect fees → Buy tokens → Burn → Verify
+ * Uses refactored modules from src/cycle/ for clean separation of concerns:
+ * - TokenLoader: Token discovery (priority cascade)
+ * - TokenSelector: Probabilistic O(1) selection
+ * - FeeAllocator: Proportional distribution
+ * - DeadLetterQueue: Exponential backoff retry
+ * - CycleValidator: Pre-flight checks
+ * - DryRunReporter: Simulation mode
  *
- * PROBABILISTIC SELECTION (O(1) per cycle):
- * - Same pattern at every level: slot % eligible_count
- * - Tokens: Select ONE eligible token per cycle
- * - Users: Select ONE eligible user for rebate per cycle
- * - DATs: (Phase 2) Select ONE eligible DAT per cycle
- *
- * Flow:
- * 1. Query pending_fees from all TokenStats
- * 2. Get eligible tokens (pending_fees >= threshold)
- * 3. Select ONE token using: currentSlot % eligibleTokens.length
- * 4. Collect fees + buyback + burn for ONLY that token
- * 5. Other eligible tokens wait for next cycle (eventually consistent)
- * 6. Root cycle + user rebate selection
+ * This script ORCHESTRATES the cycle using modules and handles TRANSACTION EXECUTION.
  *
  * Usage:
- *   npx ts-node scripts/execute-ecosystem-cycle.ts [options]
- *
- * Options:
- *   --network devnet|mainnet   Select network (default: devnet)
- *   --dry-run                  Preview without executing
- *
- * Requirements:
- *   - TokenStats initialized for all tokens
- *   - Root token configured (set_root_token)
- *   - Fee daemon running (to populate pending_fees)
- *
- * Verify on-chain: all burns recorded, supply reduced, cycle count incremented.
+ *   npx ts-node scripts/execute-ecosystem-cycle-v2.ts --network devnet
+ *   npx ts-node scripts/execute-ecosystem-cycle-v2.ts --network devnet --dry-run
  */
 
-import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction, Commitment } from '@solana/web3.js';
-import { AnchorProvider, Program, Wallet, BN, Idl } from '@coral-xyz/anchor';
-import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount } from '@solana/spl-token';
+import { Connection, Keypair, PublicKey, LAMPORTS_PER_SOL, SystemProgram, Transaction, ComputeBudgetProgram, TransactionInstruction } from '@solana/web3.js';
+import { AnchorProvider, Program, Wallet, BN } from '@coral-xyz/anchor';
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID, getAccount, getAssociatedTokenAddress } from '@solana/spl-token';
 import * as fs from 'fs';
-import * as path from 'path';
+
+// Network & Config
+import { getNetworkConfig, parseNetworkArg, printNetworkBanner, isMainnet } from '../src/network/config';
 import { validateEnv } from '../src/utils/validate-env';
-import { getNetworkConfig, parseNetworkArg, printNetworkBanner, NetworkConfig, getCommitment, isMainnet } from '../src/network/config';
 import { RpcManager } from '../src/managers/rpc-manager';
+
+// Cycle Modules (Refactored Architecture)
+import {
+  TokenLoader,
+  TokenSelector,
+  FeeAllocator,
+  DeadLetterQueue,
+  CycleValidator,
+  DryRunReporter,
+  log,
+  logSection,
+  colors,
+  formatSOL,
+  formatNumber,
+  loadAndValidateWallet,
+  TokenAllocation,
+} from '../src/cycle';
+
+import type { TokenConfig } from '../src/cycle/types';
+
+// Core types & utilities
+import { DATState, TokenStats, getTypedAccounts } from '../src/core/types';
+import { withRetryAndTimeout, confirmTransactionWithRetry, getRecommendedPriorityFee } from '../src/network/rpc-utils';
+import { ExecutionLock, LockError } from '../src/utils/execution-lock';
 import { getCycleLogger } from '../src/observability/logger';
 import { withNewTrace, withSpan, getCurrentTraceId, addMetadata } from '../src/observability/tracing';
 import { monitoring, OperationType } from '../src/observability/monitoring';
+import { getAlerting, initAlerting } from '../src/observability/alerting';
+import { validateAlertingEnv } from '../src/utils/env-validator';
+
+// Pump.fun Integration
 import {
   getBcCreatorVault,
   getAmmCreatorVaultAta,
   deriveAmmCreatorVaultAuthority,
 } from '../src/pump/amm-utils';
-import { DATState, TokenStats, getTypedAccounts } from '../src/core/types';
-import { withRetryAndTimeout, confirmTransactionWithRetry, sleep as rpcSleep, isRetryableError, getRecommendedPriorityFee } from '../src/network/rpc-utils';
-import { ExecutionLock, LockError } from '../src/utils/execution-lock';
-import { getAlerting, initAlerting, CycleSummary } from '../src/observability/alerting';
-import { validateAlertingEnv } from '../src/utils/env-validator';
+
+// User rebate system
 import {
   deriveRebatePoolPda,
   deriveUserStatsPda,
@@ -61,19 +70,9 @@ import {
   selectUserForRebate,
   calculateRebateAmount,
 } from '../src/core/user-pool';
-import { getAssociatedTokenAddress } from '@solana/spl-token';
-// "Don't trust, verify" - trustless token verification
-import {
-  discoverAndVerifyTokens,
-  deriveTokenAddresses,
-  detectPoolType,
-  detectTokenProgram,
-  detectMayhemMode,
-} from '../src/core/token-verifier';
-import { VerifiedToken, StoredToken } from '../src/types';
 
 // ============================================================================
-// Constants & Configuration
+// Constants
 // ============================================================================
 
 const PROGRAM_ID = new PublicKey('ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui');
@@ -84,1885 +83,152 @@ const ROOT_TREASURY_SEED = Buffer.from('root_treasury');
 const USER_STATS_SEED = Buffer.from('user_stats_v1');
 const REBATE_POOL_SEED = Buffer.from('rebate_pool');
 
-// PumpFun Bonding Curve Program
+// Pump.fun / PumpSwap
 const PUMP_PROGRAM = new PublicKey('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P');
+const PUMP_SWAP_PROGRAM = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
 const PUMP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
 const PUMP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
+const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 const FEE_PROGRAM = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
 const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
-
-// PumpSwap AMM Program (for migrated tokens)
-const PUMP_SWAP_PROGRAM = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
-const PUMPSWAP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
-const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
-const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
-// Volume accumulators - required by Pump.fun buy instruction
 const GLOBAL_VOLUME_ACCUMULATOR = new PublicKey('Hq2wp8uJ9jCPsYgNHex8RtqdvMPfVGoYwjvF1ATiwn2Y');
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
+const PUMPSWAP_GLOBAL_CONFIG = new PublicKey('4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf');
+const PUMPSWAP_EVENT_AUTHORITY = new PublicKey('Ce6TQqeHC9p8KetsN6JsjHK7UTZk7nasjjnr7XxXp9F1');
 
-// Dev sustainability wallet - receives 1% of secondary burns
-// 1% today = 99% burns forever
+// Dev sustainability wallet - receives 1% of secondary burns (99% burned)
 const DEV_WALLET = new PublicKey('dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4');
-const DEV_FEE_BPS = 100; // 1%
 
-// ============================================================================
-// Scalability Constants (aligned with lib.rs execute_buy)
-// ============================================================================
-// These values must match the on-chain constants for proper allocation validation
-const RENT_EXEMPT_MINIMUM = 890_880;      // ~0.00089 SOL
-const SAFETY_BUFFER = 50_000;             // ~0.00005 SOL
-const ATA_RENT_RESERVE = 2_100_000;       // ~0.0021 SOL (for secondary ATA creation)
-const MINIMUM_BUY_AMOUNT = 100_000;       // ~0.0001 SOL
-
-// Fee split ratio: Secondary tokens send 44.8% to root, keeping 55.2% (fee_split_bps = 5520)
+// Fee split ratio: Secondary tokens send 44.8% to root, keeping 55.2%
 const SECONDARY_KEEP_RATIO = 0.552;
 
-// Minimum allocation required per token type
-const MIN_ALLOCATION_ROOT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + MINIMUM_BUY_AMOUNT;
-// = 890,880 + 50,000 + 100,000 = 1,040,880 lamports (~0.00104 SOL)
-
-// CRITICAL FIX: MIN_ALLOCATION_SECONDARY must account for the 44.8% split to root treasury
-// The allocated amount must be large enough that AFTER the split, there's enough for rent+buffer+ata+min_buy
-const MIN_AFTER_SPLIT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER + ATA_RENT_RESERVE + MINIMUM_BUY_AMOUNT;
-// = 890,880 + 50,000 + 2,100,000 + 100,000 = 3,140,880 lamports
-
-const MIN_ALLOCATION_SECONDARY = Math.ceil(MIN_AFTER_SPLIT / SECONDARY_KEEP_RATIO);
-// = 3,140,880 / 0.552 = 5,690,000 lamports (~0.00569 SOL)
-
-// MARKET-REGULATED THRESHOLD: TX_COST × 19 = 0.1 SOL
-// Eligibility = Efficiency: Only process when economically meaningful
-// At 0.1 SOL threshold, only 5% goes to TX fees (ratio 20:1)
-const TX_FEE_RESERVE_PER_TOKEN = 100_000_000; // 0.1 SOL - unified threshold
-
-// Total actual cost per secondary token (threshold-based)
-// Note: With 0.1 SOL threshold, MIN_ALLOCATION_SECONDARY is always satisfied
-const TOTAL_COST_PER_SECONDARY = TX_FEE_RESERVE_PER_TOKEN;
-// = 100,000,000 lamports (0.1 SOL)
-
-// OPERATIONAL BUFFER: Always maintain this balance for management operations
-// This is SACRED - never let admin wallet drop below this
+// Thresholds & Safety Margins
+const RENT_EXEMPT_MINIMUM = 890_880; // ~0.00089 SOL
+const SAFETY_BUFFER = 50_000; // ~0.00005 SOL
 const OPERATIONAL_BUFFER = 190_000_000; // 0.19 SOL
-
-// ANSI colors
-const colors = {
-  reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  cyan: '\x1b[36m',
-  green: '\x1b[32m',
-  yellow: '\x1b[33m',
-  red: '\x1b[31m',
-  magenta: '\x1b[35m',
-};
+const TX_FEE_RESERVE_PER_TOKEN = 100_000_000; // 0.1 SOL
 
 // ============================================================================
-// Dead-Letter Queue & Error Handling
+// Types
 // ============================================================================
 
-const DEAD_LETTER_FILE = '.dead-letter-tokens.json';
-
-interface DeadLetterEntry {
-  timestamp: string;
-  token: string;
-  mint: string;
-  error: string;
-  isTransient: boolean;
-  pendingFees: number;
-  allocation: number;
-  retryCount: number;
-  nextRetryAt?: string;  // ISO timestamp for auto-retry
-  status?: 'pending' | 'resolved' | 'expired';
-}
-
-const MAX_DLQ_RETRIES = 5;
-const DLQ_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-/**
- * Calculate next retry time with exponential backoff
- */
-function getNextRetryTime(retryCount: number): Date {
-  const baseDelayMs = 5 * 60 * 1000; // 5 minutes
-  const delay = baseDelayMs * Math.pow(2, retryCount - 1); // 5min, 10min, 20min, 40min, 80min
-  return new Date(Date.now() + delay);
-}
-
-/**
- * Process dead-letter queue: retry transient errors automatically
- * Called at the start of each cycle
- */
-function processDeadLetterQueue(): { retryable: string[]; expired: string[] } {
-  const retryable: string[] = [];
-  const expired: string[] = [];
-
-  if (!fs.existsSync(DEAD_LETTER_FILE)) {
-    return { retryable, expired };
-  }
-
-  let entries: DeadLetterEntry[];
-  try {
-    entries = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
-  } catch {
-    return { retryable, expired };
-  }
-
-  const now = Date.now();
-  let modified = false;
-
-  for (const entry of entries) {
-    // Skip already resolved/expired
-    if (entry.status === 'resolved' || entry.status === 'expired') {
-      continue;
-    }
-
-    const entryAge = now - new Date(entry.timestamp).getTime();
-
-    // Check if entry has expired (24h)
-    if (entryAge > DLQ_EXPIRY_MS) {
-      entry.status = 'expired';
-      expired.push(entry.token);
-      modified = true;
-      continue;
-    }
-
-    // Check if max retries exceeded
-    if (entry.retryCount >= MAX_DLQ_RETRIES) {
-      entry.status = 'expired';
-      expired.push(entry.token);
-      modified = true;
-      continue;
-    }
-
-    // Check if transient and ready for retry
-    if (entry.isTransient && entry.nextRetryAt) {
-      const retryTime = new Date(entry.nextRetryAt).getTime();
-      if (now >= retryTime) {
-        retryable.push(entry.mint);
-      }
-    }
-  }
-
-  // Save if modified
-  if (modified) {
-    fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
-  }
-
-  return { retryable, expired };
-}
-
-/**
- * Mark dead-letter entry as resolved
- */
-function markDeadLetterResolved(mint: string): void {
-  if (!fs.existsSync(DEAD_LETTER_FILE)) return;
-
-  try {
-    const entries: DeadLetterEntry[] = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
-    const entry = entries.find(e => e.mint === mint && e.status !== 'resolved');
-    if (entry) {
-      entry.status = 'resolved';
-      fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
-      log('✅', `DLQ: Marked ${entry.token} as resolved`, colors.green);
-    }
-  } catch {
-    // Ignore errors
-  }
-}
-
-/**
- * Append a failed token to the dead-letter file for manual review
- */
-function appendToDeadLetter(
-  token: { symbol: string; mint: PublicKey },
-  error: Error,
-  pendingFees: number,
-  allocation: number,
-  retryCount: number
-): void {
-  const isTransient = isRetryableError(error);
-  const entry: DeadLetterEntry = {
-    timestamp: new Date().toISOString(),
-    token: token.symbol,
-    mint: token.mint.toBase58(),
-    error: error.message,
-    isTransient,
-    pendingFees,
-    allocation,
-    retryCount,
-    nextRetryAt: isTransient ? getNextRetryTime(retryCount).toISOString() : undefined,
-    status: 'pending',
-  };
-
-  let entries: DeadLetterEntry[] = [];
-  try {
-    if (fs.existsSync(DEAD_LETTER_FILE)) {
-      entries = JSON.parse(fs.readFileSync(DEAD_LETTER_FILE, 'utf-8'));
-    }
-  } catch {
-    // File doesn't exist or is invalid - start fresh
-  }
-
-  entries.push(entry);
-
-  // Keep only last 100 entries
-  if (entries.length > 100) {
-    entries = entries.slice(-100);
-  }
-
-  fs.writeFileSync(DEAD_LETTER_FILE, JSON.stringify(entries, null, 2));
-  log('📝', `Added ${token.symbol} to dead-letter queue: ${DEAD_LETTER_FILE}`, colors.yellow);
-}
-
-/**
- * Check if error is CycleTooSoon (time threshold not met)
- * This is NOT a failure - just means token isn't ready yet
- */
-function isCycleTooSoonError(error: Error): boolean {
-  const message = error.message.toLowerCase();
-  return message.includes('cycletoosoon') ||
-    message.includes('cycle too soon') ||
-    message.includes('6003') ||
-    message.includes('cycle_too_soon');
-}
-
-/**
- * Execute token cycle with retry logic for transient errors
- */
-async function executeTokenWithRetry(
-  executeFn: () => Promise<CycleResult>,
-  token: { symbol: string; mint: PublicKey },
-  pendingFees: number,
-  allocation: number,
-  maxRetries: number = 3
-): Promise<CycleResult> {
-  let lastError: Error | null = null;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await executeFn();
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-
-      // CycleTooSoon = time threshold not met (graceful skip, not failure)
-      if (isCycleTooSoonError(lastError)) {
-        log('⏳', `${token.symbol}: Time threshold not met (CycleTooSoon) - will retry next cycle`, colors.yellow);
-        return {
-          token: token.symbol,
-          success: true, // Not a failure, just not ready
-          pendingFees,
-          allocation: 0,
-          error: 'DEFERRED: Time threshold not met (CycleTooSoon)',
-        };
-      }
-
-      // Check if it's a transient error worth retrying
-      if (!isRetryableError(lastError)) {
-        // Permanent error - don't retry, log to dead-letter
-        log('❌', `${token.symbol}: Permanent error (attempt ${attempt}): ${lastError.message}`, colors.red);
-        appendToDeadLetter(token, lastError, pendingFees, allocation, attempt);
-        return {
-          token: token.symbol,
-          success: false,
-          pendingFees,
-          allocation,
-          error: `PERMANENT: ${lastError.message}`,
-        };
-      }
-
-      // Transient error - retry with exponential backoff
-      if (attempt < maxRetries) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 8000);
-        log('⚠️', `${token.symbol}: Transient error (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms...`, colors.yellow);
-        log('  ', `Error: ${lastError.message}`, colors.yellow);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  // All retries exhausted - log to dead-letter
-  if (lastError) {
-    log('❌', `${token.symbol}: All ${maxRetries} retries exhausted`, colors.red);
-    appendToDeadLetter(token, lastError, pendingFees, allocation, maxRetries);
-  }
-
-  return {
-    token: token.symbol,
-    success: false,
-    pendingFees,
-    allocation,
-    error: `RETRIES_EXHAUSTED: ${lastError?.message || 'Unknown error'}`,
-  };
-}
-
-// ============================================================================
-// Types & Interfaces
-// ============================================================================
-
-// Pool type determines which CPI instruction to use
-type PoolType = 'bonding_curve' | 'pumpswap_amm';
-
-interface TokenConfig {
-  file: string;
-  symbol: string;
-  mint: PublicKey;
-  bondingCurve: PublicKey;  // For bonding_curve: the bonding curve address. For AMM: the pool address.
-  creator: PublicKey;
-  isRoot: boolean;
-  isToken2022: boolean;
-  mayhemMode: boolean;      // Determines fee recipient (Mayhem vs SPL)
-  poolType: PoolType;       // Determines bonding curve vs PumpSwap AMM
-  pendingFeesFromState?: number;  // Pending fees from daemon state file (fallback when TokenStats doesn't exist)
-  hasTokenStats?: boolean;  // From on-chain verification - true if TokenStats PDA exists
-}
-
-interface TokenAllocation {
-  token: TokenConfig;
-  pendingFees: number;
-  allocation: number;
-  isRoot: boolean;
-}
+// TokenConfig imported from ../src/cycle
 
 interface CycleResult {
   token: string;
   success: boolean;
-  pendingFees?: number;
-  allocation?: number;
-  buyTx?: string;
-  finalizeTx?: string;
-  burnTx?: string;
+  pendingFees: number;
+  allocation: number;
   tokensBurned?: number;
   error?: string;
-}
-
-// Dry-run report structure
-interface DryRunReport {
-  timestamp: string;
-  network: 'devnet' | 'mainnet';
-  status: 'READY' | 'INSUFFICIENT_FEES' | 'COOLDOWN_ACTIVE' | 'NO_TOKENS';
-
-  ecosystem: {
-    totalPendingFees: number;      // lamports
-    totalPendingFeesSOL: string;   // formatted
-    tokensTotal: number;
-    tokensEligible: number;
-    tokensDeferred: number;
-  };
-
-  tokens: Array<{
-    symbol: string;
-    mint: string;
-    isRoot: boolean;
-    pendingFees: number;
-    pendingFeesSOL: string;
-    allocation: number;
-    allocationSOL: string;
-    willProcess: boolean;
-    deferReason?: string;
-  }>;
-
-  thresholds: {
-    minAllocationSecondary: number;
-    minAllocationSecondarySOL: string;
-    minAllocationRoot: number;
-    minAllocationRootSOL: string;
-  };
-
-  costs: {
-    estimatedTxFeesPerToken: number;
-    estimatedTxFeesPerTokenSOL: string;
-    totalEstimatedCost: number;
-    totalEstimatedCostSOL: string;
-  };
-
-  warnings: string[];
-  recommendations: string[];
-}
-
-// ============================================================================
-// Probabilistic Token Selection (O(1) per cycle)
-// ============================================================================
-
-// BREAKEVEN ECONOMICS: Token eligible only if processing is profitable
-// No arbitrary threshold - market decides when token is ready
-// Eligible when: pending_fees >= processing_cost (TX_FEE_RESERVE_PER_TOKEN)
-
-/**
- * Get eligible tokens for cycle using breakeven economics
- * A token is eligible when its pending_fees cover the processing cost
- * This is libertarian (no arbitrary threshold) and scalable (auto-adjusts with gas)
- */
-function getEligibleTokens(allocations: TokenAllocation[]): TokenAllocation[] {
-  return allocations.filter(a => !a.isRoot && a.pendingFees >= TX_FEE_RESERVE_PER_TOKEN);
-}
-
-/**
- * Select ONE token for this cycle using slot-based deterministic selection
- * Same pattern as user rebate selection: slot % eligible_count
- *
- * @param eligibleTokens - Tokens with pending_fees >= threshold
- * @param currentSlot - Current Solana slot for deterministic selection
- * @returns Selected token or null if none eligible
- */
-function selectTokenForCycle(
-  eligibleTokens: TokenAllocation[],
-  currentSlot: number
-): TokenAllocation | null {
-  if (eligibleTokens.length === 0) {
-    return null;
-  }
-
-  // UNIFORM SELECTION: No sorting bias
-  // Each eligible token has equal probability: 1/N
-  // Slot-based deterministic selection ensures reproducibility
-  const selectedIndex = currentSlot % eligibleTokens.length;
-  return eligibleTokens[selectedIndex];
-}
-
-// ============================================================================
-// Dry-Run Functions
-// ============================================================================
-
-/**
- * Generate a dry-run report based on current allocations
- */
-function generateDryRunReport(
-  allocations: TokenAllocation[],
-  networkName: string,
-  rootToken: TokenConfig | undefined
-): DryRunReport {
-  const secondaries = allocations.filter(a => !a.isRoot);
-  const rootAlloc = allocations.find(a => a.isRoot);
-  const totalPending = secondaries.reduce((sum, a) => sum + a.pendingFees, 0);
-
-  // Calculate preliminary allocations (simulate normalizeAllocations logic)
-  const ratio = totalPending > 0 ? 1.0 : 0; // Assume 100% collection for preview
-  const preliminary = secondaries.map(alloc => ({
-    ...alloc,
-    allocation: Math.floor(alloc.pendingFees * ratio),
-  }));
-
-  const viable = preliminary.filter(a => a.allocation >= MIN_ALLOCATION_SECONDARY);
-  const deferred = preliminary.filter(a => a.allocation < MIN_ALLOCATION_SECONDARY && a.pendingFees > 0);
-
-  // Build warnings
-  const warnings: string[] = [];
-  const recommendations: string[] = [];
-
-  for (const d of deferred) {
-    warnings.push(`${d.token.symbol} will be deferred (${formatSOL(d.allocation)} < ${formatSOL(MIN_ALLOCATION_SECONDARY)} minimum)`);
-  }
-
-  if (totalPending === 0) {
-    warnings.push('No pending fees detected - run daemon or wait for fee accumulation');
-    recommendations.push('Start the fee monitor daemon: npx ts-node scripts/monitor-ecosystem-fees.ts');
-  }
-
-  if (viable.length === 0 && secondaries.length > 0) {
-    recommendations.push('Generate more volume to accumulate fees above threshold');
-    recommendations.push(`Target: ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL per token minimum`);
-  }
-
-  // Determine status
-  let status: DryRunReport['status'] = 'READY';
-  if (secondaries.length === 0 && !rootToken) {
-    status = 'NO_TOKENS';
-  } else if (totalPending === 0) {
-    status = 'INSUFFICIENT_FEES';
-  } else if (viable.length === 0) {
-    status = 'INSUFFICIENT_FEES';
-  }
-
-  // Estimate costs
-  const tokensToProcess = viable.length + (rootAlloc ? 1 : 0);
-  const estimatedTxCost = tokensToProcess * TX_FEE_RESERVE_PER_TOKEN;
-
-  // Build token details
-  const tokens: DryRunReport['tokens'] = [];
-
-  for (const alloc of preliminary) {
-    const isViable = alloc.allocation >= MIN_ALLOCATION_SECONDARY;
-    tokens.push({
-      symbol: alloc.token.symbol,
-      mint: alloc.token.mint.toBase58(),
-      isRoot: false,
-      pendingFees: alloc.pendingFees,
-      pendingFeesSOL: formatSOL(alloc.pendingFees),
-      allocation: alloc.allocation,
-      allocationSOL: formatSOL(alloc.allocation),
-      willProcess: isViable,
-      deferReason: !isViable && alloc.pendingFees > 0
-        ? `Below minimum (${formatSOL(alloc.allocation)} < ${formatSOL(MIN_ALLOCATION_SECONDARY)})`
-        : undefined,
-    });
-  }
-
-  // Add root token
-  if (rootAlloc) {
-    // Root gets 44.8% of all secondary fees
-    const rootReceived = Math.floor(viable.reduce((sum, v) => sum + v.allocation, 0) * 0.448);
-    tokens.push({
-      symbol: rootAlloc.token.symbol,
-      mint: rootAlloc.token.mint.toBase58(),
-      isRoot: true,
-      pendingFees: rootAlloc.pendingFees,
-      pendingFeesSOL: formatSOL(rootAlloc.pendingFees),
-      allocation: rootReceived + rootAlloc.pendingFees,
-      allocationSOL: formatSOL(rootReceived + rootAlloc.pendingFees),
-      willProcess: true,
-      deferReason: undefined,
-    });
-  }
-
-  return {
-    timestamp: new Date().toISOString(),
-    network: networkName as 'devnet' | 'mainnet',
-    status,
-    ecosystem: {
-      totalPendingFees: totalPending + (rootAlloc?.pendingFees || 0),
-      totalPendingFeesSOL: formatSOL(totalPending + (rootAlloc?.pendingFees || 0)),
-      tokensTotal: allocations.length,
-      tokensEligible: viable.length + (rootAlloc ? 1 : 0),
-      tokensDeferred: deferred.length,
-    },
-    tokens,
-    thresholds: {
-      minAllocationSecondary: MIN_ALLOCATION_SECONDARY,
-      minAllocationSecondarySOL: formatSOL(MIN_ALLOCATION_SECONDARY),
-      minAllocationRoot: MIN_ALLOCATION_ROOT,
-      minAllocationRootSOL: formatSOL(MIN_ALLOCATION_ROOT),
-    },
-    costs: {
-      estimatedTxFeesPerToken: TX_FEE_RESERVE_PER_TOKEN,
-      estimatedTxFeesPerTokenSOL: formatSOL(TX_FEE_RESERVE_PER_TOKEN),
-      totalEstimatedCost: estimatedTxCost,
-      totalEstimatedCostSOL: formatSOL(estimatedTxCost),
-    },
-    warnings,
-    recommendations,
-  };
-}
-
-/**
- * Print dry-run summary to console
- */
-function printDryRunSummary(report: DryRunReport): void {
-  const statusEmoji = {
-    READY: '✅',
-    INSUFFICIENT_FEES: '⚠️',
-    COOLDOWN_ACTIVE: '⏳',
-    NO_TOKENS: '❌',
-  };
-
-  const networkBanner = report.network === 'mainnet' ? colors.red + 'MAINNET' : colors.green + 'DEVNET';
-
-  console.log('\n' + colors.bright + colors.cyan);
-  console.log('══════════════════════════════════════════════════════════════════════════════');
-  console.log('  DRY RUN - Ecosystem Cycle Preview (' + networkBanner + colors.cyan + colors.bright + ')');
-  console.log('══════════════════════════════════════════════════════════════════════════════');
-  console.log(colors.reset + '\n');
-
-  console.log(`  Status: ${statusEmoji[report.status]} ${report.status}\n`);
-
-  // Ecosystem overview
-  console.log(colors.bright + '  ECOSYSTEM OVERVIEW' + colors.reset);
-  console.log('  ' + '─'.repeat(70));
-  console.log(`  Total Pending Fees    │ ${report.ecosystem.totalPendingFeesSOL}`);
-  console.log(`  Tokens Eligible       │ ${report.ecosystem.tokensEligible} / ${report.ecosystem.tokensTotal}`);
-  console.log(`  Tokens Deferred       │ ${report.ecosystem.tokensDeferred}`);
-  console.log('');
-
-  // Token allocations table
-  console.log(colors.bright + '  TOKEN ALLOCATIONS' + colors.reset);
-  console.log('  ' + '─'.repeat(70));
-  console.log(`  ${'Symbol'.padEnd(10)} │ ${'Pending'.padEnd(14)} │ ${'Allocation'.padEnd(14)} │ ${'Status'.padEnd(12)}`);
-  console.log('  ' + '─'.repeat(70));
-
-  for (const token of report.tokens) {
-    const statusText = token.isRoot
-      ? colors.magenta + 'ROOT' + colors.reset
-      : token.willProcess
-        ? colors.green + '✅ READY' + colors.reset
-        : colors.yellow + '⏭️ DEFER' + colors.reset;
-
-    console.log(
-      `  ${token.symbol.padEnd(10)} │ ${token.pendingFeesSOL.padEnd(14)} │ ${token.allocationSOL.padEnd(14)} │ ${statusText}`
-    );
-  }
-  console.log('  ' + '─'.repeat(70));
-  console.log('');
-
-  // Costs
-  console.log(colors.bright + '  ESTIMATED COSTS' + colors.reset);
-  console.log('  ' + '─'.repeat(70));
-  console.log(`  TX Fees per Token     │ ${report.costs.estimatedTxFeesPerTokenSOL}`);
-  console.log(`  Total Estimated Cost  │ ${report.costs.totalEstimatedCostSOL}`);
-  console.log('');
-
-  // Thresholds
-  console.log(colors.bright + '  THRESHOLDS' + colors.reset);
-  console.log('  ' + '─'.repeat(70));
-  console.log(`  Min Secondary         │ ${report.thresholds.minAllocationSecondarySOL} (allocation after split)`);
-  console.log(`  Min Root              │ ${report.thresholds.minAllocationRootSOL}`);
-  console.log('');
-
-  // Warnings
-  if (report.warnings.length > 0) {
-    console.log(colors.yellow + colors.bright + '  ⚠️  WARNINGS' + colors.reset);
-    console.log('  ' + '─'.repeat(70));
-    for (const warning of report.warnings) {
-      console.log(colors.yellow + `  - ${warning}` + colors.reset);
-    }
-    console.log('');
-  }
-
-  // Recommendations
-  if (report.recommendations.length > 0) {
-    console.log(colors.cyan + colors.bright + '  💡 RECOMMENDATIONS' + colors.reset);
-    console.log('  ' + '─'.repeat(70));
-    for (const rec of report.recommendations) {
-      console.log(colors.cyan + `  - ${rec}` + colors.reset);
-    }
-    console.log('');
-  }
-
-  console.log(colors.bright + colors.cyan);
-  console.log('══════════════════════════════════════════════════════════════════════════════');
-  console.log(colors.reset);
+  signature?: string;
 }
 
 // ============================================================================
 // Helper Functions
 // ============================================================================
 
-// Structured logger for file output and trace context
-const logger = getCycleLogger();
-
 /**
- * Dual logging: Console (visual) + Structured (file/trace)
- * Keeps visual feedback while adding structured logging
+ * Print dry-run summary to console
  */
-function log(icon: string, message: string, color = colors.reset, data?: Record<string, unknown>) {
-  // Console output for real-time feedback
-  const tracePrefix = getCurrentTraceId() ? `[${getCurrentTraceId()}] ` : '';
-  console.log(`${color}${tracePrefix}${icon} ${message}${colors.reset}`);
-
-  // Structured logger (captures trace context automatically)
-  const cleanMessage = `${icon} ${message}`.replace(/[\x1b\[\]0-9;m]/g, ''); // Strip ANSI
-  logger.info(cleanMessage, data);
-}
-
-function logSection(title: string) {
-  console.log(`\n${colors.bright}${colors.cyan}${'='.repeat(80)}`);
-  console.log(`  ${title}`);
-  console.log(`${'='.repeat(80)}${colors.reset}\n`);
-
-  // Structured log for section
-  logger.info(`=== ${title} ===`);
-}
-
-function formatSOL(lamports: number): string {
-  return (lamports / LAMPORTS_PER_SOL).toFixed(6);
-}
-
-// Use sleep from rpc-utils (imported as rpcSleep)
-const sleep = rpcSleep;
-
-/**
- * Validate wallet file format and return keypair
- * Throws descriptive error if file is invalid
- */
-function loadAndValidateWallet(walletPath: string): Keypair {
-  if (!fs.existsSync(walletPath)) {
-    throw new Error(`Wallet file not found: ${walletPath}`);
-  }
-
-  let walletData: unknown;
-  try {
-    const fileContent = fs.readFileSync(walletPath, 'utf-8');
-    walletData = JSON.parse(fileContent);
-  } catch (error) {
-    throw new Error(`Invalid wallet JSON: ${(error as Error).message}`);
-  }
-
-  // Validate it's an array of numbers
-  if (!Array.isArray(walletData)) {
-    throw new Error(`Invalid wallet format: Expected array of numbers, got ${typeof walletData}`);
-  }
-
-  // Validate array length (64 bytes for secret key)
-  if (walletData.length !== 64) {
-    throw new Error(`Invalid wallet format: Expected 64 bytes, got ${walletData.length}`);
-  }
-
-  // Validate all elements are numbers in valid range (0-255)
-  for (let i = 0; i < walletData.length; i++) {
-    const val = walletData[i];
-    if (typeof val !== 'number' || !Number.isInteger(val) || val < 0 || val > 255) {
-      throw new Error(`Invalid wallet format: Element at index ${i} is not a valid byte (0-255)`);
-    }
-  }
-
-  try {
-    return Keypair.fromSecretKey(new Uint8Array(walletData));
-  } catch (error) {
-    throw new Error(`Invalid keypair: ${(error as Error).message}`);
-  }
-}
-
-/**
- * Flush result interface from daemon API
- */
-interface FlushResult {
-  success: boolean;
-  tokensUpdated: number;
-  tokensFailed: number;
-  totalFlushed: number;
-  remainingPending: number;
-  timestamp?: number;
-  details?: Array<{
-    symbol: string;
-    mint: string;
-    amount: number;
-    success: boolean;
-    error?: string;
-  }>;
-}
-
-/**
- * Trigger daemon flush to ensure all pending fees are written on-chain
- * This solves the race condition between daemon detection and cycle execution
- * @returns FlushResult with detailed status, or null if daemon not available
- */
-async function triggerDaemonFlush(): Promise<FlushResult | null> {
-  const DAEMON_API_PORT = parseInt(process.env.DAEMON_API_PORT || '3030');
-  const DAEMON_API_URL = `http://localhost:${DAEMON_API_PORT}/flush`;
-  const DAEMON_API_KEY = process.env.DAEMON_API_KEY || '';
-  const MAX_RETRIES = 3;
-  const RETRY_DELAY_MS = 2000;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      log('🔄', `Triggering daemon flush (attempt ${attempt}/${MAX_RETRIES})...`, colors.cyan);
-
-      // Build headers with optional API key authentication
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (DAEMON_API_KEY) {
-        headers['X-Daemon-Key'] = DAEMON_API_KEY;
-      }
-
-      const response = await fetch(DAEMON_API_URL, {
-        method: 'POST',
-        headers,
-      });
-
-      // Safe JSON parsing with error handling
-      let result: FlushResult;
-      try {
-        result = await response.json() as FlushResult;
-      } catch (parseError) {
-        throw new Error(`Invalid JSON response from daemon: ${(parseError as Error).message}`);
-      }
-
-      // Check if all tokens were flushed successfully
-      if (result.success) {
-        log('✅', `Daemon flush completed: ${result.tokensUpdated} tokens updated, ${(result.totalFlushed / 1e9).toFixed(6)} SOL flushed`, colors.green);
-      } else if (result.tokensFailed > 0) {
-        log('⚠️', `Partial flush: ${result.tokensUpdated} succeeded, ${result.tokensFailed} failed. Remaining: ${(result.remainingPending / 1e9).toFixed(6)} SOL`, colors.yellow);
-        // Log failed tokens
-        result.details?.filter(d => !d.success).forEach(d => {
-          log('  ❌', `${d.symbol}: ${d.error}`, colors.red);
-        });
-      }
-
-      // Wait for blockchain confirmation (increased to 15s for reliable sync)
-      // This is CRITICAL to prevent race condition where on-chain state
-      // hasn't been updated yet when cycle reads pending_fees
-      log('⏳', 'Waiting 15s for blockchain confirmation...', colors.cyan);
-      await sleep(15000);
-      return result;
-
-    } catch (error) {
-      const errorMsg = (error as Error).message || String(error);
-
-      if (errorMsg.includes('ECONNREFUSED') || errorMsg.includes('fetch failed')) {
-        log('⚠️', 'Daemon not running - proceeding with on-chain pending_fees', colors.yellow);
-        return null;
-      }
-
-      if (attempt < MAX_RETRIES) {
-        log('⚠️', `Flush attempt ${attempt} failed: ${errorMsg}. Retrying in ${RETRY_DELAY_MS}ms...`, colors.yellow);
-        await sleep(RETRY_DELAY_MS);
-      } else {
-        log('⚠️', `All ${MAX_RETRIES} flush attempts failed: ${errorMsg}`, colors.yellow);
-        return null;
-      }
-    }
-  }
-
-  return null;
+function printDryRunSummary(report: any): void {
+  console.log('');
+  console.log(colors.bright + '  DRY-RUN REPORT' + colors.reset);
+  console.log('  ' + '═'.repeat(70));
+  console.log(`  Status: ${report.status}`);
+  console.log(`  Network: ${report.network}`);
+  console.log(`  Total Pending: ${report.ecosystem.totalPendingFeesSOL} SOL`);
+  console.log(`  Eligible Tokens: ${report.ecosystem.tokensEligible} / ${report.ecosystem.tokensTotal}`);
+  console.log('  ' + '═'.repeat(70));
+  console.log('');
 }
 
 // ============================================================================
-// Scalability Validation
-// ============================================================================
-
-interface EcosystemValidation {
-  canProceed: boolean;
-  secondaryCount: number;
-  minRequired: number;
-  available: number;
-  message: string;
-}
-
-/**
- * Pre-flight validation to check if collected fees are sufficient for all tokens
- * This is an early warning system before attempting distribution
- */
-function validateMinimumEcosystemFees(
-  tokens: TokenConfig[],
-  totalPending: number
-): EcosystemValidation {
-  const secondaryCount = tokens.filter(t => !t.isRoot).length;
-  const minRequired = secondaryCount * MIN_ALLOCATION_SECONDARY;
-
-  if (totalPending < minRequired) {
-    return {
-      canProceed: false,
-      secondaryCount,
-      minRequired,
-      available: totalPending,
-      message: `Pending fees (${formatSOL(totalPending)} SOL) < minimum required (${formatSOL(minRequired)} SOL) for ${secondaryCount} secondary tokens`
-    };
-  }
-
-  return {
-    canProceed: true,
-    secondaryCount,
-    minRequired,
-    available: totalPending,
-    message: `OK: ${formatSOL(totalPending)} SOL >= ${formatSOL(minRequired)} SOL minimum for ${secondaryCount} tokens`
-  };
-}
-
-/**
- * Calculate minimum SOL needed for ecosystem with N secondary tokens
- */
-function calculateMinimumEcosystemFees(secondaryCount: number): number {
-  return secondaryCount * MIN_ALLOCATION_SECONDARY;
-}
-
-// ============================================================================
-// Daemon Synchronization (Scalability Fix)
+// Transaction Execution Functions
 // ============================================================================
 
 /**
- * Wait for validator daemon to sync all secondary tokens' pending_fees
- * This ensures all tokens have their fees registered before the cycle executes
- *
- * @param program - Anchor program instance
- * @param tokens - Array of token configs to check
- * @param maxWaitMs - Maximum time to wait (default 60s)
- * @returns true if all tokens have pending_fees > 0, false if timeout
+ * Query pending fees from on-chain TokenStats
  */
-async function waitForDaemonSync(
-  program: Program,
-  tokens: TokenConfig[],
-  maxWaitMs: number = 60000
-): Promise<{ synced: boolean; tokensWithFees: string[]; tokensWithoutFees: string[] }> {
-  logSection('PRE-FLIGHT: DAEMON SYNCHRONIZATION CHECK');
-
-  const secondaryTokens = tokens.filter(t => !t.isRoot);
-  const startTime = Date.now();
-  let iteration = 0;
-
-  while (Date.now() - startTime < maxWaitMs) {
-    iteration++;
-    const tokensWithFees: string[] = [];
-    const tokensWithoutFees: string[] = [];
-
-    for (const token of secondaryTokens) {
-      try {
-        const [tokenStatsPDA] = PublicKey.findProgramAddressSync(
-          [TOKEN_STATS_SEED, token.mint.toBuffer()],
-          program.programId
-        );
-
-        const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
-        const pendingFees = tokenStats.pendingFeesLamports.toNumber();
-
-        if (pendingFees > 0) {
-          tokensWithFees.push(token.symbol);
-        } else {
-          tokensWithoutFees.push(token.symbol);
-        }
-      } catch (error) {
-        tokensWithoutFees.push(token.symbol);
-      }
-    }
-
-    if (tokensWithoutFees.length === 0) {
-      log('✅', `All ${secondaryTokens.length} secondary tokens have pending fees`, colors.green);
-      for (const symbol of tokensWithFees) {
-        log('  ✓', `${symbol}: pending_fees > 0`, colors.green);
-      }
-      return { synced: true, tokensWithFees, tokensWithoutFees };
-    }
-
-    if (iteration === 1) {
-      log('⏳', `Waiting for daemon to sync ${tokensWithoutFees.length} token(s)...`, colors.yellow);
-      for (const symbol of tokensWithoutFees) {
-        log('  ⏳', `${symbol}: pending_fees = 0 (waiting)`, colors.yellow);
-      }
-      for (const symbol of tokensWithFees) {
-        log('  ✓', `${symbol}: pending_fees > 0`, colors.green);
-      }
-    }
-
-    await sleep(5000); // Wait 5s before retry
-  }
-
-  // Timeout - proceed with available tokens
-  const finalTokensWithFees: string[] = [];
-  const finalTokensWithoutFees: string[] = [];
-
-  for (const token of secondaryTokens) {
-    try {
-      const [tokenStatsPDA] = PublicKey.findProgramAddressSync(
-        [TOKEN_STATS_SEED, token.mint.toBuffer()],
-        program.programId
-      );
-      const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
-      if (tokenStats.pendingFeesLamports.toNumber() > 0) {
-        finalTokensWithFees.push(token.symbol);
-      } else {
-        finalTokensWithoutFees.push(token.symbol);
-      }
-    } catch {
-      finalTokensWithoutFees.push(token.symbol);
-    }
-  }
-
-  log('⚠️', `Timeout after ${maxWaitMs / 1000}s - proceeding with ${finalTokensWithFees.length}/${secondaryTokens.length} tokens`, colors.yellow);
-  if (finalTokensWithoutFees.length > 0) {
-    log('ℹ️', `Tokens without pending fees will be DEFERRED: ${finalTokensWithoutFees.join(', ')}`, colors.cyan);
-  }
-
-  return { synced: false, tokensWithFees: finalTokensWithFees, tokensWithoutFees: finalTokensWithoutFees };
-}
-
-// ============================================================================
-// Token Configuration Loader
-// ============================================================================
-
-const DAEMON_API_URL = 'http://localhost:3030';
-
-/**
- * Try to load tokens from daemon API first, then state file, fallback to JSON files
- * Finally fall back to trustless on-chain discovery
- */
-async function loadEcosystemTokens(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
-  // Try daemon API first
-  const daemonTokens = await loadTokensFromDaemon();
-  if (daemonTokens.length > 0) {
-    return daemonTokens;
-  }
-
-  // Try state file (daemon persisted state)
-  log('⚠️', 'Daemon API not available, trying state file...', colors.yellow);
-  const stateTokens = loadTokensFromStateFile();
-  if (stateTokens.length > 0) {
-    return stateTokens;
-  }
-
-  // Try JSON files
-  log('⚠️', 'State file not available, trying JSON files...', colors.yellow);
-  try {
-    const fileTokens = loadTokensFromFiles(networkConfig);
-    if (fileTokens.length > 0) {
-      return fileTokens;
-    }
-  } catch {
-    // Fall through to trustless discovery
-  }
-
-  // Final fallback: Trustless on-chain discovery
-  log('🔍', 'No local tokens found, attempting on-chain discovery...', colors.cyan);
-  return loadTokensTrustless(connection, networkConfig);
-}
-
-/**
- * "Don't trust, verify" - Trustless on-chain token discovery
- * Discovers tokens via getProgramAccounts and verifies all data on-chain
- */
-async function loadTokensTrustless(connection: Connection, networkConfig: NetworkConfig): Promise<TokenConfig[]> {
-  try {
-    // Get creator from DATState
-    const [datStatePda] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], PROGRAM_ID);
-
-    // Load IDL
-    const idlPath = path.join(__dirname, '..', 'target', 'idl', 'asdf_dat.json');
-    if (!fs.existsSync(idlPath)) {
-      log('❌', 'IDL not found, cannot perform trustless discovery', colors.red);
-      return [];
-    }
-    const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8'));
-
-    // Create dummy provider for read-only access
-    const dummyWallet = {
-      publicKey: PublicKey.default,
-      signTransaction: async (tx: Transaction) => tx,
-      signAllTransactions: async (txs: Transaction[]) => txs,
-    };
-    const provider = new AnchorProvider(connection, dummyWallet as any, {});
-    const program = new Program(idl, provider);
-
-    // Fetch DATState to get admin (creator) and root token
-    let creator: PublicKey;
-    let rootTokenMint: PublicKey | null = null;
-    try {
-      const datState = await getTypedAccounts(program).datState.fetch(datStatePda);
-      creator = datState.admin;
-      rootTokenMint = datState.rootTokenMint;
-      log('✓', `Creator from DATState: ${creator.toBase58().slice(0, 8)}...`, colors.green);
-      if (rootTokenMint) {
-        log('✓', `Root token from DATState: ${rootTokenMint.toBase58().slice(0, 8)}...`, colors.green);
-      }
-    } catch (error) {
-      log('❌', `Failed to fetch DATState: ${(error as Error).message}`, colors.red);
-      return [];
-    }
-
-    // Discover and verify tokens
-    log('🔍', 'Discovering tokens on-chain...', colors.cyan);
-    const verifiedTokens = await discoverAndVerifyTokens(connection, creator, rootTokenMint ?? undefined);
-
-    if (verifiedTokens.length === 0) {
-      log('⚠️', 'No tokens discovered on-chain for this creator', colors.yellow);
-      return [];
-    }
-
-    // Convert VerifiedToken to TokenConfig
-    const tokens: TokenConfig[] = verifiedTokens.map(vt => ({
-      file: `verified:${vt.mint}`,
-      symbol: vt.symbol || vt.mint.slice(0, 4).toUpperCase(),
-      mint: new PublicKey(vt.mint),
-      bondingCurve: vt.bondingCurve,
-      creator: vt.creator,
-      isRoot: vt.isRoot,
-      isToken2022: vt.tokenProgram === 'Token2022',
-      mayhemMode: vt.isMayhemMode,
-      poolType: vt.poolType,
-      hasTokenStats: vt.hasTokenStats,
-    }));
-
-    for (const token of tokens) {
-      const typeIcon = token.isToken2022 ? '🪙' : '💰';
-      const poolIcon = token.poolType === 'pumpswap_amm' ? '🔄' : '📈';
-      const rootIcon = token.isRoot ? '👑' : '';
-      log('✓', `Verified ${token.symbol} ${rootIcon} (${typeIcon} ${token.isToken2022 ? 'Token2022' : 'SPL'}, ${poolIcon} ${token.poolType})`, colors.green);
-    }
-
-    log('📊', `Discovered ${tokens.length} tokens on-chain: ${tokens.filter(t => t.isRoot).length} root, ${tokens.filter(t => !t.isRoot).length} secondary`, colors.cyan);
-
-    return tokens;
-  } catch (error) {
-    log('❌', `Trustless discovery failed: ${(error as Error).message}`, colors.red);
-    return [];
-  }
-}
-
-/**
- * Load tokens from daemon state file (.asdf-state.json)
- * This is the most reliable source when daemon API is not accessible
- */
-function loadTokensFromStateFile(): TokenConfig[] {
-  const STATE_FILE = '.asdf-state.json';
-  const statePath = path.join(__dirname, '..', STATE_FILE);
-
-  if (!fs.existsSync(statePath)) {
-    log('⚠️', `State file not found: ${STATE_FILE}`, colors.yellow);
-    return [];
-  }
-
-  try {
-    const stateData = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
-
-    if (!stateData.tokens || stateData.tokens.length === 0) {
-      log('⚠️', 'State file has no tokens', colors.yellow);
-      return [];
-    }
-
-    const tokens: TokenConfig[] = [];
-
-    for (const t of stateData.tokens) {
-      const poolType: PoolType = t.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
-      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
-      const pendingFees = typeof t.pendingFeesLamports === 'string'
-        ? parseInt(t.pendingFeesLamports, 10)
-        : (t.pendingFeesLamports || 0);
-
-      tokens.push({
-        file: `state:${t.mint}`,
-        symbol: t.symbol,
-        mint: new PublicKey(t.mint),
-        bondingCurve: new PublicKey(t.bondingCurve),
-        creator: new PublicKey('11111111111111111111111111111111'), // Not needed from state
-        isRoot: t.isRoot === true,
-        isToken2022: false,
-        mayhemMode: false,
-        poolType,
-        pendingFeesFromState: pendingFees,
-      });
-      const feesInfo = pendingFees > 0 ? ` | ${(pendingFees / 1e9).toFixed(6)} SOL pending` : '';
-      log('✓', `Loaded ${t.symbol} from state (${poolIcon} ${poolType}${feesInfo})`, colors.green);
-    }
-
-    const rootTokens = tokens.filter(t => t.isRoot);
-    log('📊', `Loaded ${tokens.length} tokens from state: ${rootTokens.length} root, ${tokens.length - rootTokens.length} secondary`, colors.cyan);
-
-    return tokens;
-  } catch (error) {
-    log('⚠️', `Failed to load from state file: ${(error as Error).message}`, colors.yellow);
-    return [];
-  }
-}
-
-/**
- * Load tokens from daemon API (http://localhost:3030/tokens)
- */
-async function loadTokensFromDaemon(): Promise<TokenConfig[]> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-
-    const response = await fetch(`${DAEMON_API_URL}/tokens`, {
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      log('⚠️', `Daemon returned ${response.status}`, colors.yellow);
-      return [];
-    }
-
-    const data = await response.json() as { count: number; tokens: Array<{
-      mint: string;
-      symbol: string;
-      name: string;
-      isRoot: boolean;
-      bondingCurve: string;
-      poolType: string;
-      pendingFeesLamports: number;
-    }> };
-
-    if (!data.tokens || data.tokens.length === 0) {
-      log('⚠️', 'Daemon has no tokens', colors.yellow);
-      return [];
-    }
-
-    const tokens: TokenConfig[] = [];
-
-    for (const t of data.tokens) {
-      const poolType: PoolType = t.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
-      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
-
-      tokens.push({
-        file: `daemon:${t.mint}`,
-        symbol: t.symbol,
-        mint: new PublicKey(t.mint),
-        bondingCurve: new PublicKey(t.bondingCurve),
-        creator: new PublicKey('11111111111111111111111111111111'), // Not needed from daemon
-        isRoot: t.isRoot,
-        isToken2022: false, // Daemon doesn't track this yet
-        mayhemMode: false,
-        poolType,
-      });
-      log('✓', `Loaded ${t.symbol} from daemon (${poolIcon} ${poolType})`, colors.green);
-    }
-
-    const rootTokens = tokens.filter(t => t.isRoot);
-    log('📊', `Loaded ${tokens.length} tokens from daemon: ${rootTokens.length} root, ${tokens.length - rootTokens.length} secondary`, colors.cyan);
-
-    // If no root token, mark the first one as root (for now)
-    if (rootTokens.length === 0 && tokens.length > 0) {
-      log('⚠️', 'No root token marked, using first token as root', colors.yellow);
-      tokens[0].isRoot = true;
-    }
-
-    return tokens;
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (!msg.includes('abort')) {
-      log('⚠️', `Failed to load from daemon: ${msg}`, colors.yellow);
-    }
-    return [];
-  }
-}
-
-/**
- * Load tokens from JSON files (fallback)
- */
-function loadTokensFromFiles(networkConfig: NetworkConfig): TokenConfig[] {
-  const tokenFiles = networkConfig.tokens;
-  const tokens: TokenConfig[] = [];
-
-  for (const file of tokenFiles) {
-    const filePath = path.join(__dirname, '..', file);
-
-    if (!fs.existsSync(filePath)) {
-      log('⚠️', `Token file not found: ${file}`, colors.yellow);
-      continue;
-    }
-
-    try {
-      const tokenData = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-      const poolType: PoolType = tokenData.poolType === 'pumpswap_amm' ? 'pumpswap_amm' : 'bonding_curve';
-      const isRoot = tokenData.isRoot === true;
-      const isToken2022 = tokenData.tokenProgram === 'Token2022' || tokenData.mayhemMode === true;
-
-      tokens.push({
-        file,
-        symbol: tokenData.symbol || tokenData.name || 'UNKNOWN',
-        mint: new PublicKey(tokenData.mint),
-        bondingCurve: new PublicKey(tokenData.bondingCurve || tokenData.pool),
-        creator: new PublicKey(tokenData.creator),
-        isRoot,
-        isToken2022,
-        mayhemMode: tokenData.mayhemMode === true,
-        poolType,
-      });
-      const poolIcon = poolType === 'pumpswap_amm' ? '🔄' : '📈';
-      log('✓', `Loaded ${tokenData.symbol || tokenData.name} from ${file} (${poolIcon} ${poolType})`, colors.green);
-    } catch (error) {
-      log('❌', `Failed to load ${file}: ${(error as Error).message || String(error)}`, colors.red);
-    }
-  }
-
-  if (tokens.length === 0) {
-    throw new Error('No tokens loaded. Ensure daemon is running or token config files exist.');
-  }
-
-  const rootTokens = tokens.filter(t => t.isRoot);
-  if (rootTokens.length === 0) {
-    throw new Error('No root token found. Ensure at least one token has "isRoot": true');
-  }
-  if (rootTokens.length > 1) {
-    throw new Error('Multiple root tokens found. Only one root token is allowed.');
-  }
-
-  log('📊', `Loaded ${tokens.length} tokens from files: ${rootTokens.length} root, ${tokens.length - 1} secondary`, colors.cyan);
-  return tokens;
-}
-
-// ============================================================================
-// Step 1: Query Pending Fees
-// ============================================================================
-
 async function queryPendingFees(
   program: Program,
   tokens: TokenConfig[]
 ): Promise<TokenAllocation[]> {
-  logSection('STEP 1: QUERY PENDING FEES');
-
   const allocations: TokenAllocation[] = [];
 
   for (const token of tokens) {
-    if (token.isRoot) {
-      // Root token doesn't have pending fees from this mechanism
-      allocations.push({
-        token,
-        pendingFees: 0,
-        allocation: 0,
-        isRoot: true,
-      });
-      log('ℹ️', `${token.symbol} (ROOT): Skipped (will collect from root treasury)`, colors.cyan);
-      continue;
-    }
-
     try {
-      // Derive TokenStats PDA
-      const [tokenStatsPDA] = PublicKey.findProgramAddressSync(
+      const [tokenStatsPda] = PublicKey.findProgramAddressSync(
         [TOKEN_STATS_SEED, token.mint.toBuffer()],
         program.programId
       );
 
-      // Fetch TokenStats account
-      const tokenStats = await getTypedAccounts(program).tokenStats.fetch(tokenStatsPDA);
-
-      const pendingFees = tokenStats.pendingFeesLamports.toNumber();
+      const tokenStats = await (program.account as any).tokenStats.fetch(tokenStatsPda);
+      const pendingFees = (tokenStats as any).pendingFeesLamports?.toNumber() || 0;
 
       allocations.push({
         token,
         pendingFees,
-        allocation: 0, // Will be calculated in next step
-        isRoot: false,
+        allocation: 0, // Will be calculated by FeeAllocator
+        isRoot: token.isRoot,
       });
-
-      log('💰', `${token.symbol}: ${formatSOL(pendingFees)} SOL pending (${pendingFees} lamports)`,
-        pendingFees > 0 ? colors.green : colors.yellow);
-
     } catch (error) {
-      // TokenStats doesn't exist on-chain - try to use fees from daemon state file
-      if (token.pendingFeesFromState && token.pendingFeesFromState > 0) {
-        log('💾', `${token.symbol}: Using state file pending fees: ${formatSOL(token.pendingFeesFromState)} SOL`, colors.cyan);
-        allocations.push({
-          token,
-          pendingFees: token.pendingFeesFromState,
-          allocation: 0,
-          isRoot: false,
-        });
-      } else {
-        log('⚠️', `${token.symbol}: No TokenStats & no state fees (skipping)`, colors.yellow);
-      }
-      continue;
+      log('⚠️', `Failed to query ${token.symbol}: ${(error as Error).message}`, colors.yellow);
+      allocations.push({
+        token,
+        pendingFees: 0,
+        allocation: 0,
+        isRoot: token.isRoot,
+      });
     }
-  }
-
-  // Calculate total pending fees
-  const totalPending = allocations
-    .filter(a => !a.isRoot)
-    .reduce((sum, a) => sum + a.pendingFees, 0);
-
-  log('📊', `Total pending fees: ${formatSOL(totalPending)} SOL (${totalPending} lamports)`, colors.bright);
-
-  if (totalPending === 0) {
-    log('⚠️', 'No pending fees found. Ensure fee monitoring is running and has accumulated fees.', colors.yellow);
   }
 
   return allocations;
 }
 
-// ============================================================================
-// Step 2: Collect All SECONDARY Vault Fees
-// ============================================================================
-
-async function collectAllSecondaryVaultFees(
+/**
+ * Execute cycle for selected token
+ *
+ * This is the TRANSACTION EXECUTION logic that was NOT extracted to modules.
+ * It builds and signs Solana transactions for:
+ * - Collecting fees from creator vault
+ * - Buying tokens via Pump.fun/PumpSwap
+ * - Burning tokens
+ */
+async function executeTokenCycle(
   program: Program,
-  secondaryTokens: TokenConfig[],
-  rootMint: PublicKey,
-  adminKeypair: Keypair
-): Promise<number> {
-  logSection('STEP 2: COLLECT FEES FROM SECONDARY VAULTS');
+  connection: Connection,
+  adminKeypair: Keypair,
+  allocation: TokenAllocation,
+  datAuthority: PublicKey,
+  datAuthorityBump: number
+): Promise<CycleResult> {
+  const { token, allocation: solAllocation } = allocation;
 
-  const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
-  const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], program.programId);
+  const result: CycleResult = {
+    token: token.symbol,
+    success: false,
+    pendingFees: allocation.pendingFees,
+    allocation: solAllocation,
+  };
 
-  // Derive root treasury PDA (needed for collect_fees)
-  const [rootTreasury] = PublicKey.findProgramAddressSync(
-    [ROOT_TREASURY_SEED, rootMint.toBuffer()],
-    program.programId
-  );
+  // Validate allocation before proceeding
+  if (!solAllocation || solAllocation <= 0) {
+    log('⚠️', `${token.symbol}: Invalid allocation (${solAllocation || 0}) - skipping`, colors.yellow);
+    return result;
+  }
 
-  // Derive pump event authority
-  const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
-    [Buffer.from('__event_authority')],
-    PUMP_PROGRAM
-  );
+  try {
+    log('🔄', `Processing ${token.symbol} (BATCH TX)...`, colors.cyan);
 
-  let totalCollected = 0;
-
-  for (const token of secondaryTokens) {
-    const creator = token.creator;
-    const isAmm = token.poolType === 'pumpswap_amm';
-
+    // Derive all required PDAs
+    const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
     const [tokenStats] = PublicKey.findProgramAddressSync(
       [TOKEN_STATS_SEED, token.mint.toBuffer()],
       program.programId
     );
 
-    // Derive vault based on pool type
-    let creatorVault: PublicKey;
-    let creatorVaultAuthority: PublicKey | null = null;
-
-    if (isAmm) {
-      const [vaultAuth] = deriveAmmCreatorVaultAuthority(creator);
-      creatorVaultAuthority = vaultAuth;
-      creatorVault = getAmmCreatorVaultAta(creator);
-    } else {
-      creatorVault = getBcCreatorVault(creator);
-    }
-
-    // Check vault balance
-    let vaultBalance = 0;
-    if (isAmm) {
-      try {
-        const vaultAccount = await getAccount(program.provider.connection, creatorVault);
-        vaultBalance = Number(vaultAccount.amount);
-      } catch {
-        // Token account doesn't exist yet
-      }
-    } else {
-      vaultBalance = await program.provider.connection.getBalance(creatorVault);
-    }
-
-    log('💰', `${token.symbol}: ${formatSOL(vaultBalance)} ${isAmm ? 'WSOL' : 'SOL'} in vault`, colors.cyan);
-
-    if (vaultBalance === 0) {
-      log('  ⏭️', `Skipping ${token.symbol} - vault empty`, colors.yellow);
-      continue;
-    }
-
-    try {
-      if (isAmm) {
-        // AMM: collect_fees_amm + unwrap_wsol
-        const [datWsolAccount] = PublicKey.findProgramAddressSync(
-          [datAuthority.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
-          ASSOCIATED_TOKEN_PROGRAM
-        );
-
-        // Collect WSOL from AMM vault
-        const tx1 = await program.methods
-          .collectFeesAmm()
-          .accounts({
-            datState,
-            tokenStats,
-            tokenMint: token.mint,
-            datAuthority,
-            wsolMint: WSOL_MINT,
-            datWsolAccount,
-            creatorVaultAuthority: creatorVaultAuthority!,
-            creatorVaultAta: creatorVault,
-            pumpSwapProgram: PUMP_SWAP_PROGRAM,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([adminKeypair])
-          .rpc();
-
-        // Unwrap WSOL to native SOL
-        const tx2 = await program.methods
-          .unwrapWsol()
-          .accounts({
-            datState,
-            datAuthority,
-            datWsolAccount,
-            tokenProgram: TOKEN_PROGRAM_ID,
-          })
-          .signers([adminKeypair])
-          .rpc();
-
-        log('  ✅', `${token.symbol}: Collected ${formatSOL(vaultBalance)} SOL (from WSOL)`, colors.green);
-        totalCollected += vaultBalance;
-
-      } else {
-        // Bonding Curve: collect_fees with for_ecosystem=true
-        const tx = await program.methods
-          .collectFees(false, true) // is_root_token=false, for_ecosystem=true
-          .accounts({
-            datState,
-            tokenStats,
-            tokenMint: token.mint,
-            datAuthority,
-            creatorVault,
-            pumpEventAuthority,
-            pumpSwapProgram: PUMP_PROGRAM,
-            rootTreasury,
-            systemProgram: SystemProgram.programId,
-          })
-          .signers([adminKeypair])
-          .rpc();
-
-        // Check vault balance after collection
-        const vaultBalanceAfter = await program.provider.connection.getBalance(creatorVault);
-        const collected = vaultBalance - vaultBalanceAfter;
-
-        log('  ✅', `${token.symbol}: Collected ${formatSOL(collected)} SOL`, colors.green);
-        totalCollected += collected;
-      }
-
-    } catch (error) {
-      log('  ❌', `${token.symbol}: Failed - ${(error as Error).message?.slice(0, 100) || String(error)}`, colors.red);
-    }
-  }
-
-  log('💸', `Total collected from secondaries: ${formatSOL(totalCollected)} SOL`, colors.bright);
-  return totalCollected;
-}
-
-// ============================================================================
-// Step 3: Normalize Allocations (Scalable Version)
-// ============================================================================
-
-interface ScalableAllocationResult {
-  viable: TokenAllocation[];
-  skipped: TokenAllocation[];
-  ratio: number;
-}
-
-function normalizeAllocations(
-  allocations: TokenAllocation[],
-  actualCollected: number
-): ScalableAllocationResult {
-  logSection('STEP 3: CALCULATE PROPORTIONAL DISTRIBUTION (SCALABLE)');
-
-  const secondaries = allocations.filter(a => !a.isRoot);
-  const totalPending = secondaries.reduce((sum, a) => sum + a.pendingFees, 0);
-
-  if (totalPending === 0) {
-    log('⚠️', 'No pending fees to distribute', colors.yellow);
-    return { viable: [], skipped: [], ratio: 0 };
-  }
-
-  const ratio = actualCollected / totalPending;
-
-  log('📊', `Total pending: ${formatSOL(totalPending)} SOL`, colors.cyan);
-  log('💰', `Actual collected: ${formatSOL(actualCollected)} SOL`, colors.cyan);
-  log('📐', `Distribution ratio: ${ratio.toFixed(6)}`, ratio >= 0.95 ? colors.green : colors.yellow);
-  log('🔒', `Min allocation per secondary: ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`, colors.cyan);
-
-  if (ratio < 0.95) {
-    log('⚠️', 'Collected amount is significantly less than pending fees', colors.yellow);
-    log('ℹ️', 'This can happen if fees were spent or if pending_fees tracking is out of sync', colors.cyan);
-  }
-
-  // Phase 1: Calculate preliminary allocation for each secondary token
-  const preliminary = secondaries.map(alloc => ({
-    ...alloc,
-    allocation: Math.floor(alloc.pendingFees * ratio),
-  }));
-
-  // Phase 2: Filter tokens that meet minimum allocation requirements
-  const viable = preliminary.filter(a => a.allocation >= MIN_ALLOCATION_SECONDARY);
-  const skipped = preliminary.filter(a => a.allocation < MIN_ALLOCATION_SECONDARY);
-
-  // Phase 3: Redistribute skipped allocations to viable tokens proportionally
-  if (viable.length > 0 && skipped.length > 0) {
-    const skippedTotal = skipped.reduce((sum, a) => sum + a.allocation, 0);
-    const viableTotal = viable.reduce((sum, a) => sum + a.allocation, 0);
-
-    if (viableTotal > 0) {
-      // Redistribute proportionally based on each viable token's share
-      const redistributionRatio = (viableTotal + skippedTotal) / viableTotal;
-      viable.forEach(a => {
-        a.allocation = Math.floor(a.allocation * redistributionRatio);
-      });
-      log('🔄', `Redistributed ${formatSOL(skippedTotal)} SOL from ${skipped.length} deferred tokens`, colors.cyan);
-    }
-  }
-
-  // Display allocation table with status
-  console.log('\n' + colors.bright + 'Token Allocations:' + colors.reset);
-  console.log('─'.repeat(90));
-  console.log(`${'Token'.padEnd(12)} ${'Pending Fees'.padEnd(18)} ${'Allocated'.padEnd(18)} ${'Min Required'.padEnd(18)} ${'Status'.padEnd(12)}`);
-  console.log('─'.repeat(90));
-
-  for (const alloc of preliminary) {
-    const isViable = alloc.allocation >= MIN_ALLOCATION_SECONDARY;
-    const status = isViable ? '✅ VIABLE' : '⏭️ DEFERRED';
-    const statusColor = isViable ? colors.green : colors.yellow;
-    console.log(
-      `${alloc.token.symbol.padEnd(12)} ${formatSOL(alloc.pendingFees).padEnd(18)} ` +
-      `${formatSOL(alloc.allocation).padEnd(18)} ${formatSOL(MIN_ALLOCATION_SECONDARY).padEnd(18)} ` +
-      `${statusColor}${status}${colors.reset}`
-    );
-  }
-  console.log('─'.repeat(90));
-
-  // Log deferred tokens for transparency
-  if (skipped.length > 0) {
-    console.log('');
-    log('ℹ️', `${skipped.length} token(s) deferred - will accumulate and process in next cycle:`, colors.yellow);
-    for (const s of skipped) {
-      log('⏭️', `${s.token.symbol}: ${formatSOL(s.allocation)} SOL < ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL minimum`, colors.yellow);
-    }
-  }
-
-  // Summary
-  console.log('');
-  log('📊', `Viable tokens: ${viable.length}/${secondaries.length}`, viable.length > 0 ? colors.green : colors.yellow);
-  if (viable.length > 0) {
-    const totalViableAllocation = viable.reduce((sum, a) => sum + a.allocation, 0);
-    log('💰', `Total viable allocation: ${formatSOL(totalViableAllocation)} SOL`, colors.green);
-  }
-
-  return { viable, skipped, ratio };
-}
-
-// ============================================================================
-// Step 4: Execute Secondary Cycles with DYNAMIC Allocation
-// ============================================================================
-
-/**
- * Get the actual datAuthority balance
- */
-async function getDatAuthorityBalance(connection: Connection, programId: PublicKey): Promise<number> {
-  const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], programId);
-  const balance = await connection.getBalance(datAuthority);
-  return balance;
-}
-
-/**
- * Get the vault balance for a token (N+1 pattern: fees are still in vault)
- */
-async function getTokenVaultBalance(connection: Connection, token: TokenConfig): Promise<number> {
-  if (token.poolType === 'pumpswap_amm') {
-    // AMM: Check WSOL ATA balance
-    const vaultAta = getAmmCreatorVaultAta(token.creator);
-    try {
-      const account = await connection.getTokenAccountBalance(vaultAta);
-      return Number(account.value.amount);
-    } catch {
-      return 0; // ATA doesn't exist yet
-    }
-  } else {
-    // Bonding Curve: Check native SOL balance
-    const vault = getBcCreatorVault(token.creator);
-    return await connection.getBalance(vault);
-  }
-}
-
-/**
- * Calculate dynamic allocation based on actual remaining balance
- * CRITICAL: Reserves minimum allocations for remaining tokens before calculating current allocation
- * This ensures all tokens can be processed if there's enough total balance
- */
-function calculateDynamicAllocation(
-  availableBalance: number,
-  tokenPendingFees: number,
-  totalRemainingPending: number,
-  numRemainingTokens: number
-): { allocation: number; viable: boolean; reason: string } {
-  // Reserve rent-exempt minimum for datAuthority account
-  const RESERVE_FOR_ACCOUNT = RENT_EXEMPT_MINIMUM + SAFETY_BUFFER;
-
-  // CRITICAL FIX: Reserve TOTAL COST (allocation + TX fees) for OTHER remaining tokens
-  // This ensures each subsequent token can be fully processed
-  const otherTokensCount = numRemainingTokens - 1;
-  const reserveForOtherTokens = otherTokensCount * TOTAL_COST_PER_SECONDARY;
-
-  // Total reserved = account reserve + other tokens' minimums
-  const totalReserved = RESERVE_FOR_ACCOUNT + reserveForOtherTokens;
-
-  const distributable = availableBalance - totalReserved;
-
-  if (distributable <= 0) {
-    return {
-      allocation: 0,
-      viable: false,
-      reason: `No balance after reserving ${formatSOL(totalReserved)} (${otherTokensCount} other tokens)`
-    };
-  }
-
-  // Check if we have enough for minimum allocation
-  if (distributable < MIN_ALLOCATION_SECONDARY) {
-    return {
-      allocation: distributable,
-      viable: false,
-      reason: `Available ${formatSOL(distributable)} < minimum ${formatSOL(MIN_ALLOCATION_SECONDARY)}`
-    };
-  }
-
-  // Calculate proportional allocation from distributable (what's left after reservations)
-  // This token gets its fair share based on pending_fees ratio
-  const pendingRatio = totalRemainingPending > 0 ? tokenPendingFees / totalRemainingPending : 1 / numRemainingTokens;
-
-  // Max allocation is either proportional share or all distributable (if last token)
-  let allocation: number;
-  if (numRemainingTokens === 1) {
-    // Last token gets all remaining distributable
-    allocation = distributable;
-  } else {
-    // Calculate proportional share, but cap at distributable to leave room for others
-    allocation = Math.floor(distributable * pendingRatio);
-
-    // Ensure at least minimum allocation
-    allocation = Math.max(allocation, MIN_ALLOCATION_SECONDARY);
-
-    // Cap at distributable (shouldn't happen but safety check)
-    allocation = Math.min(allocation, distributable);
-  }
-
-  return { allocation, viable: true, reason: 'OK' };
-}
-
-/**
- * Execute secondary tokens with SHARED VAULT support
- *
- * ARCHITECTURE: All tokens share the SAME creator vault (single creator = single vault)
- *
- * Flow:
- * 1. Check shared vault balance ONCE
- * 2. Calculate proportional allocations based on pending_fees ratio
- * 3. First token: collect (drains vault to datAuthority) + buy (with its SHARE only)
- * 4. Other tokens: collect (vault empty, no-op) + buy (from remaining datAuthority balance)
- * 5. All collected fees are used for buyback & burn (100%)
- */
-async function executeSecondaryTokensDynamic(
-  program: Program,
-  connection: Connection,
-  secondaryAllocations: TokenAllocation[],
-  adminKeypair: Keypair
-): Promise<{ results: { [key: string]: CycleResult }; viable: TokenAllocation[]; deferred: TokenAllocation[] }> {
-  logSection('STEP 2: EXECUTE SECONDARY TOKEN CYCLES (SHARED VAULT N+1)');
-
-  const results: { [key: string]: CycleResult } = {};
-  const viable: TokenAllocation[] = [];
-  const deferred: TokenAllocation[] = [];
-
-  if (secondaryAllocations.length === 0) {
-    return { results, viable, deferred };
-  }
-
-  // STEP 1: Check SHARED vault balance (all tokens use same creator = same vault)
-  // Use first token to get the shared vault address
-  const sharedVaultBalance = await getTokenVaultBalance(connection, secondaryAllocations[0].token);
-
-  log('📊', `SHARED VAULT STATUS:`, colors.bright);
-  log('  💰', `Total fees in shared vault: ${formatSOL(sharedVaultBalance)} SOL`, colors.cyan);
-  log('  👥', `Secondary tokens to process: ${secondaryAllocations.length}`, colors.cyan);
-
-  const MIN_FEES_FOR_SPLIT = 5_500_000; // 0.0055 SOL (program minimum)
-
-  // STEP 2: Check if we have enough total fees for at least one token
-  if (sharedVaultBalance < MIN_FEES_FOR_SPLIT) {
-    log('⚠️', `Shared vault ${formatSOL(sharedVaultBalance)} < minimum ${formatSOL(MIN_FEES_FOR_SPLIT)} SOL`, colors.yellow);
-    log('ℹ️', `All secondary tokens will be DEFERRED until more fees accumulate`, colors.cyan);
-
-    for (const allocation of secondaryAllocations) {
-      deferred.push(allocation);
-      results[allocation.token.symbol] = {
-        token: allocation.token.symbol,
-        success: true, // Deferred is not a failure
-        pendingFees: allocation.pendingFees,
-        allocation: 0,
-        error: `DEFERRED: Shared vault insufficient (${formatSOL(sharedVaultBalance)} SOL)`,
-      };
-    }
-    return { results, viable, deferred };
-  }
-
-  // STEP 3: Calculate proportional allocations based on pending_fees
-  // pending_fees comes from daemon tracking per-token trading activity
-  const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
-
-  log('📐', `Calculating proportional distribution:`, colors.cyan);
-  log('  📊', `Total tracked pending fees: ${formatSOL(totalPending)} SOL`, colors.cyan);
-
-  // If no pending_fees tracked (daemon not running), distribute equally
-  const useEqualDistribution = totalPending === 0;
-  if (useEqualDistribution) {
-    log('  ⚠️', `No pending_fees tracked - using equal distribution`, colors.yellow);
-  }
-
-  // Calculate each token's allocation from the shared vault
-  const allocationsWithShare: Array<TokenAllocation & { calculatedShare: number; isViable: boolean }> = [];
-
-  for (const allocation of secondaryAllocations) {
-    let share: number;
-
-    if (useEqualDistribution) {
-      // Equal distribution when daemon hasn't tracked fees
-      share = Math.floor(sharedVaultBalance / secondaryAllocations.length);
-    } else {
-      // Proportional distribution based on pending_fees ratio
-      const ratio = allocation.pendingFees / totalPending;
-      share = Math.floor(sharedVaultBalance * ratio);
-    }
-
-    const isViable = share >= MIN_FEES_FOR_SPLIT;
-
-    allocationsWithShare.push({
-      ...allocation,
-      calculatedShare: share,
-      isViable,
-    });
-
-    const statusIcon = isViable ? '✅' : '⏭️';
-    const statusColor = isViable ? colors.green : colors.yellow;
-    log(`  ${statusIcon}`, `${allocation.token.symbol}: ${formatSOL(share)} SOL (${useEqualDistribution ? 'equal' : ((allocation.pendingFees / totalPending * 100).toFixed(1) + '%')})`, statusColor);
-  }
-
-  // Sort by share descending - process largest allocations first
-  const sorted = allocationsWithShare.sort((a, b) => b.calculatedShare - a.calculatedShare);
-
-  console.log('');
-  log('🔄', `Processing ${sorted.filter(a => a.isViable).length} viable tokens, deferring ${sorted.filter(a => !a.isViable).length}`, colors.bright);
-  console.log('');
-
-  // STEP 4: Execute each token's cycle
-  // First token will collect from vault (drains it)
-  // Subsequent tokens will collect from empty vault (no-op) but use remaining datAuthority balance
-  let isFirstToken = true;
-
-  for (const allocation of sorted) {
-    if (!allocation.isViable) {
-      // Token's share is below minimum - defer to next cycle
-      log('⏭️', `${allocation.token.symbol} DEFERRED: share ${formatSOL(allocation.calculatedShare)} < ${formatSOL(MIN_FEES_FOR_SPLIT)} minimum`, colors.yellow);
-      deferred.push(allocation);
-      results[allocation.token.symbol] = {
-        token: allocation.token.symbol,
-        success: true, // Deferred is not a failure
-        pendingFees: allocation.pendingFees,
-        allocation: allocation.calculatedShare,
-        error: `DEFERRED: Share below minimum`,
-      };
-      console.log('');
-      continue;
-    }
-
-    // Update allocation with calculated share
-    allocation.allocation = allocation.calculatedShare;
-
-    log('🔄', `Processing ${allocation.token.symbol}:`, colors.cyan);
-    log('  💰', `Allocated share: ${formatSOL(allocation.calculatedShare)} SOL`, colors.cyan);
-    if (isFirstToken) {
-      log('  📦', `Will collect ${formatSOL(sharedVaultBalance)} SOL from shared vault`, colors.cyan);
-    } else {
-      log('  📦', `Vault already drained - using datAuthority balance`, colors.cyan);
-    }
-
-    // Execute the cycle with retry wrapper for transient errors
-    // This allows graceful degradation - if one token fails, continue with others
-    const result = await executeTokenWithRetry(
-      () => executeSecondaryWithAllocation(program, allocation, adminKeypair),
-      allocation.token,
-      allocation.pendingFees,
-      allocation.calculatedShare,
-      3 // maxRetries
-    );
-    results[allocation.token.symbol] = result;
-
-    if (result.success) {
-      viable.push(allocation);
-      isFirstToken = false; // Only first successful token drains the vault
-    } else {
-      // Token failed but we continue with others (graceful degradation)
-      log('⚠️', `${allocation.token.symbol} failed but continuing with remaining tokens`, colors.yellow);
-    }
-
-    console.log('');
-  }
-
-  return { results, viable, deferred };
-}
-
-async function executeSecondaryWithAllocation(
-  program: Program,
-  allocation: TokenAllocation,
-  adminKeypair: Keypair
-): Promise<CycleResult> {
-  const result: CycleResult = {
-    token: allocation.token.symbol,
-    success: false,
-    pendingFees: allocation.pendingFees,
-    allocation: allocation.allocation,
-  };
-
-  // Validate allocation before proceeding
-  if (!allocation.allocation || allocation.allocation <= 0) {
-    log('⚠️', `${allocation.token.symbol}: Invalid allocation (${allocation.allocation || 0}) - skipping`, colors.yellow);
-    return result;
-  }
-
-  try {
-    log('🔄', `Processing ${allocation.token.symbol} (BATCH TX)...`, colors.cyan);
-
-    // Derive all required PDAs
-    const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
-    const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], program.programId);
-    const [tokenStats] = PublicKey.findProgramAddressSync(
-      [TOKEN_STATS_SEED, allocation.token.mint.toBuffer()],
-      program.programId
-    );
-
-    // Get state to determine root token and other params
+    // Get state to determine root token
     const state = await getTypedAccounts(program).datState.fetch(datState);
     const rootMint = state.rootTokenMint;
 
@@ -1970,34 +236,33 @@ async function executeSecondaryWithAllocation(
       throw new Error('Root token not configured in DAT state');
     }
 
-    // Derive other required accounts
-    // Use the token's creator (DAT Authority), NOT the admin wallet
-    const creator = allocation.token.creator;
+    // Derive creator vault
+    const creator = token.creator;
     const [creatorVault] = PublicKey.findProgramAddressSync(
       [Buffer.from('creator-vault'), creator.toBuffer()],
       PUMP_PROGRAM
     );
 
-    const tokenProgram = allocation.token.isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+    const tokenProgram = token.isToken2022 ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
 
     // Derive ATA for DAT authority
     const [datAsdfAccount] = PublicKey.findProgramAddressSync(
       [
         datAuthority.toBuffer(),
         tokenProgram.toBuffer(),
-        allocation.token.mint.toBuffer(),
+        token.mint.toBuffer(),
       ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL') // Associated Token Program
+      ASSOCIATED_TOKEN_PROGRAM
     );
 
     // Derive pool accounts
     const [poolAsdfAccount] = PublicKey.findProgramAddressSync(
       [
-        allocation.token.bondingCurve.toBuffer(),
+        token.bondingCurve.toBuffer(),
         tokenProgram.toBuffer(),
-        allocation.token.mint.toBuffer(),
+        token.mint.toBuffer(),
       ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      ASSOCIATED_TOKEN_PROGRAM
     );
 
     // Protocol fee recipient (different for Mayhem / Token2022 / SPL)
@@ -2005,9 +270,9 @@ async function executeSecondaryWithAllocation(
     const TOKEN2022_FEE_RECIPIENT = new PublicKey('68yFSZxzLWJXkxxRGydZ63C6mHx1NLEDWmwN9Lb5yySg');
     const SPL_FEE_RECIPIENT = new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs');
 
-    const protocolFeeRecipient = allocation.token.mayhemMode
+    const protocolFeeRecipient = token.mayhemMode
       ? MAYHEM_FEE_RECIPIENT
-      : allocation.token.isToken2022
+      : token.isToken2022
         ? TOKEN2022_FEE_RECIPIENT
         : SPL_FEE_RECIPIENT;
 
@@ -2021,7 +286,7 @@ async function executeSecondaryWithAllocation(
     const instructions: TransactionInstruction[] = [];
 
     // Get dynamic priority fee for better inclusion during congestion
-    const priorityFee = await getRecommendedPriorityFee(program.provider.connection);
+    const priorityFee = await getRecommendedPriorityFee(connection);
     log('  💰', `Priority fee: ${priorityFee.toLocaleString()} microlamports`, colors.cyan);
 
     // Add compute budget for complex batch transaction (collect + buy + finalize + burn)
@@ -2037,14 +302,14 @@ async function executeSecondaryWithAllocation(
     );
 
     // Route based on pool type
-    if (allocation.token.poolType === 'pumpswap_amm') {
+    if (token.poolType === 'pumpswap_amm') {
       // ═══════════════════════════════════════════════════════════════════════
       // PumpSwap AMM: Collect + Unwrap + Wrap + Buy (optimized N+1 pattern)
       // ═══════════════════════════════════════════════════════════════════════
       log('  📦', `Building AMM batch (collect + unwrap + wrap + buy)...`, colors.cyan);
 
       // Derive AMM-specific PDAs
-      const pool = allocation.token.bondingCurve; // For AMM, this is the pool address
+      const pool = token.bondingCurve; // For AMM, this is the pool address
 
       // DAT's WSOL account
       const [datWsolAccount] = PublicKey.findProgramAddressSync(
@@ -2058,7 +323,7 @@ async function executeSecondaryWithAllocation(
 
       // Pool's token accounts (base = token, quote = WSOL)
       const [poolBaseTokenAccount] = PublicKey.findProgramAddressSync(
-        [pool.toBuffer(), tokenProgram.toBuffer(), allocation.token.mint.toBuffer()],
+        [pool.toBuffer(), tokenProgram.toBuffer(), token.mint.toBuffer()],
         ASSOCIATED_TOKEN_PROGRAM
       );
 
@@ -2074,7 +339,6 @@ async function executeSecondaryWithAllocation(
       );
 
       // Coin creator vault accounts (for buy)
-      // Use deriveAmmCreatorVaultAuthority which uses correct seeds: ["creator_vault", creator]
       const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(creator);
       const coinCreatorVaultAta = getAmmCreatorVaultAta(creator);
 
@@ -2096,7 +360,7 @@ async function executeSecondaryWithAllocation(
         .accounts({
           datState,
           tokenStats,
-          tokenMint: allocation.token.mint,
+          tokenMint: token.mint,
           datAuthority,
           datWsolAccount,
           creatorVaultAuthority,
@@ -2109,7 +373,7 @@ async function executeSecondaryWithAllocation(
 
       instructions.push(collectAmmIx);
 
-      // Step 2: Unwrap WSOL → SOL (moves from datWsolAccount to datAuthority)
+      // Step 2: Unwrap WSOL → SOL
       log('  📦', `Building unwrap_wsol instruction...`, colors.cyan);
       const unwrapIx = await program.methods
         .unwrapWsol()
@@ -2125,9 +389,9 @@ async function executeSecondaryWithAllocation(
       instructions.push(unwrapIx);
 
       // Step 3: Wrap SOL → WSOL for AMM buy
-      log('  📦', `Building wrap_wsol instruction (${formatSOL(allocation.allocation)} SOL)...`, colors.cyan);
+      log('  📦', `Building wrap_wsol instruction (${formatSOL(solAllocation)} SOL)...`, colors.cyan);
       const wrapIx = await program.methods
-        .wrapWsol(new BN(allocation.allocation))
+        .wrapWsol(new BN(solAllocation))
         .accounts({
           datState,
           datAuthority,
@@ -2140,9 +404,9 @@ async function executeSecondaryWithAllocation(
 
       instructions.push(wrapIx);
 
-      // Step 4: Calculate desired tokens based on allocation (simplified - in prod use price oracle)
-      const desiredTokens = new BN(1_000_000); // 1M tokens minimum, will get actual amount from CPI
-      const maxSolCost = new BN(allocation.allocation);
+      // Step 4: Buy tokens with AMM
+      const desiredTokens = new BN(1_000_000); // 1M tokens minimum
+      const maxSolCost = new BN(solAllocation);
 
       const buyIx = await program.methods
         .executeBuyAmm(desiredTokens, maxSolCost)
@@ -2152,7 +416,7 @@ async function executeSecondaryWithAllocation(
           datTokenAccount: datAsdfAccount,
           pool,
           globalConfig: PUMPSWAP_GLOBAL_CONFIG,
-          baseMint: allocation.token.mint,
+          baseMint: token.mint,
           quoteMint: WSOL_MINT,
           datWsolAccount,
           poolBaseTokenAccount,
@@ -2188,7 +452,7 @@ async function executeSecondaryWithAllocation(
         .accounts({
           datState,
           tokenStats,
-          tokenMint: allocation.token.mint,
+          tokenMint: token.mint,
           datAuthority,
           creatorVault,
           pumpEventAuthority,
@@ -2200,9 +464,8 @@ async function executeSecondaryWithAllocation(
 
       instructions.push(collectIx);
 
-      // Step 2: Buy tokens with PROPORTIONAL allocation from shared vault
-      // CRITICAL: Pass calculated allocation, NOT null (to leave balance for other tokens)
-      log('  📦', `Building bonding curve buy instruction (${formatSOL(allocation.allocation)} SOL)...`, colors.cyan);
+      // Step 2: Buy tokens with proportional allocation
+      log('  📦', `Building bonding curve buy instruction (${formatSOL(solAllocation)} SOL)...`, colors.cyan);
 
       // Volume accumulator PDAs - required by Pump.fun buy instruction
       const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
@@ -2215,16 +478,14 @@ async function executeSecondaryWithAllocation(
         FEE_PROGRAM
       );
 
-      // Pass calculated allocation (proportional share from shared vault)
-      // This leaves remaining balance in datAuthority for other secondary tokens
       const buyIx = await program.methods
-        .executeBuySecondary(new BN(allocation.allocation))
+        .executeBuySecondary(new BN(solAllocation))
         .accounts({
           datState,
           datAuthority,
           datAsdfAccount,
-          pool: allocation.token.bondingCurve,
-          asdfMint: allocation.token.mint,
+          pool: token.bondingCurve,
+          asdfMint: token.mint,
           poolAsdfAccount,
           pumpGlobalConfig: PUMP_GLOBAL_CONFIG,
           protocolFeeRecipient,
@@ -2265,7 +526,7 @@ async function executeSecondaryWithAllocation(
         datState,
         tokenStats,
         datAuthority,
-        asdfMint: allocation.token.mint,
+        asdfMint: token.mint,
         datAsdfAccount,
         tokenProgram,
       })
@@ -2274,9 +535,8 @@ async function executeSecondaryWithAllocation(
     instructions.push(burnIx);
 
     // Dev sustainability fee - 1% of secondary share (after split)
-    // This is the 99/1 split: 99% burned, 1% keeps infrastructure running
     log('  📦', 'Building dev fee instruction...', colors.cyan);
-    const secondaryShareLamports = Math.floor(allocation.allocation * SECONDARY_KEEP_RATIO);
+    const secondaryShareLamports = Math.floor(solAllocation * SECONDARY_KEEP_RATIO);
     const devFeeIx = await program.methods
       .transferDevFee(new BN(secondaryShareLamports))
       .accounts({
@@ -2290,14 +550,14 @@ async function executeSecondaryWithAllocation(
     instructions.push(devFeeIx);
 
     // Create and send batch transaction
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: compute + collect + buy + finalize + burn + devFee)...`, colors.cyan);
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions)...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
 
     // Get latest blockhash with retry (30s timeout for mainnet)
     const { blockhash, lastValidBlockHeight } = await withRetryAndTimeout(
-      () => program.provider.connection.getLatestBlockhash('confirmed'),
+      () => connection.getLatestBlockhash('confirmed'),
       { maxRetries: 3 },
       30000
     );
@@ -2308,38 +568,25 @@ async function executeSecondaryWithAllocation(
     // Sign for simulation
     tx.sign(adminKeypair);
 
-    // CRITICAL: Simulate transaction BEFORE sending to detect instruction failures
-    // This prevents finalize from running if buy fails (which would lose pending_fees)
+    // Simulate transaction BEFORE sending to detect instruction failures
     log('  🔍', 'Simulating transaction...', colors.cyan);
     const simulation = await withRetryAndTimeout(
-      () => program.provider.connection.simulateTransaction(tx),
+      () => connection.simulateTransaction(tx),
       { maxRetries: 2, baseDelayMs: 500 },
       30000
     );
 
     if (simulation.value.err) {
-      // Parse simulation error to identify which instruction failed
+      // Parse simulation error
       const errStr = JSON.stringify(simulation.value.err);
       const logs = simulation.value.logs || [];
-
-      // Check if it's a buy instruction failure
-      const isBuyFailure = logs.some(log =>
-        log.includes('execute_buy') ||
-        log.includes('slippage') ||
-        log.includes('insufficient')
-      );
-
-      if (isBuyFailure) {
-        throw new Error(`Simulation failed at BUY instruction (finalize skipped to preserve pending_fees): ${errStr}`);
-      }
-
       throw new Error(`Simulation failed: ${errStr}. Logs: ${logs.slice(-5).join(' | ')}`);
     }
     log('  ✅', 'Simulation passed, sending transaction...', colors.green);
 
     // Send with retry (45s timeout for mainnet) - skipPreflight since already simulated
     const signature = await withRetryAndTimeout(
-      () => program.provider.connection.sendRawTransaction(tx.serialize(), {
+      () => connection.sendRawTransaction(tx.serialize(), {
         skipPreflight: true,
         preflightCommitment: 'confirmed',
       }),
@@ -2349,23 +596,21 @@ async function executeSecondaryWithAllocation(
 
     // Wait for confirmation with retry
     await confirmTransactionWithRetry(
-      program.provider.connection,
+      connection,
       signature,
       blockhash,
       lastValidBlockHeight,
       { maxRetries: 3 }
     );
 
-    result.buyTx = signature;
-    result.finalizeTx = signature; // Same TX
-    result.burnTx = signature; // Same TX
+    result.signature = signature;
 
     // Fetch final stats to get burned amount
     const finalStats = await getTypedAccounts(program).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
     log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
-    log('  ✅', `${allocation.token.symbol} cycle complete (1 TX instead of 3)!`, colors.bright);
+    log('  ✅', `${token.symbol} cycle complete!`, colors.bright);
 
     result.success = true;
     return result;
@@ -2378,66 +623,24 @@ async function executeSecondaryWithAllocation(
   }
 }
 
-// ============================================================================
-// Step 4b: Finalize Deferred Tokens (preserve pending_fees)
-// ============================================================================
-
 /**
- * Finalize deferred tokens with actually_participated=false
- * This preserves their pending_fees for the next cycle
+ * Execute root token cycle (independent of secondaries)
  */
-async function finalizeDeferredTokens(
-  program: Program,
-  skippedAllocations: TokenAllocation[],
-  adminKeypair: Keypair
-): Promise<void> {
-  if (skippedAllocations.length === 0) return;
-
-  logSection('FINALIZE DEFERRED TOKENS (PRESERVE PENDING_FEES)');
-
-  for (const allocation of skippedAllocations) {
-    try {
-      const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
-      const [tokenStats] = PublicKey.findProgramAddressSync(
-        [TOKEN_STATS_SEED, allocation.token.mint.toBuffer()],
-        program.programId
-      );
-
-      log('⏭️', `Finalizing ${allocation.token.symbol} (deferred - preserving pending_fees)...`, colors.yellow);
-
-      const finalizeTx = await program.methods
-        .finalizeAllocatedCycle(false) // Token did NOT participate - preserve pending_fees
-        .accounts({
-          datState,
-          tokenStats,
-          admin: adminKeypair.publicKey,
-        })
-        .signers([adminKeypair])
-        .rpc();
-
-      log('  ✅', `${allocation.token.symbol}: pending_fees preserved, TX: ${finalizeTx.slice(0, 16)}...`, colors.green);
-
-    } catch (error) {
-      const errorMsg = (error as Error).message || String(error);
-      log('  ⚠️', `${allocation.token.symbol}: Failed to finalize deferred - ${errorMsg}`, colors.yellow);
-    }
-  }
-}
-
-// ============================================================================
-// Step 5: Execute Root Cycle
-// ============================================================================
-
 async function executeRootCycle(
   program: Program,
+  connection: Connection,
+  adminKeypair: Keypair,
   rootToken: TokenConfig,
-  adminKeypair: Keypair
+  datAuthority: PublicKey,
+  datAuthorityBump: number
 ): Promise<CycleResult> {
-  logSection('STEP 3: EXECUTE ROOT TOKEN CYCLE');
+  logSection('ROOT CYCLE (INDEPENDENT)');
 
   const result: CycleResult = {
     token: rootToken.symbol,
     success: false,
+    pendingFees: 0,
+    allocation: 0,
   };
 
   try {
@@ -2446,7 +649,6 @@ async function executeRootCycle(
 
     // Derive PDAs
     const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
-    const [datAuthority] = PublicKey.findProgramAddressSync([DAT_AUTHORITY_SEED], program.programId);
     const [tokenStats] = PublicKey.findProgramAddressSync(
       [TOKEN_STATS_SEED, rootToken.mint.toBuffer()],
       program.programId
@@ -2474,7 +676,7 @@ async function executeRootCycle(
         tokenProgram.toBuffer(),
         rootToken.mint.toBuffer(),
       ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      ASSOCIATED_TOKEN_PROGRAM
     );
 
     const [poolAsdfAccount] = PublicKey.findProgramAddressSync(
@@ -2483,7 +685,7 @@ async function executeRootCycle(
         tokenProgram.toBuffer(),
         rootToken.mint.toBuffer(),
       ],
-      new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
+      ASSOCIATED_TOKEN_PROGRAM
     );
 
     // Protocol fee recipient (different for Mayhem / Token2022 / SPL)
@@ -2499,10 +701,10 @@ async function executeRootCycle(
     // Select swap program based on pool type
     const swapProgram = isAmm ? PUMP_SWAP_PROGRAM : PUMP_PROGRAM;
 
-    // Volume accumulator PDAs - required by Pump.fun buy instruction
+    // Volume accumulator PDAs
     const [userVolumeAccumulator] = PublicKey.findProgramAddressSync(
       [Buffer.from('user_volume_accumulator'), datAuthority.toBuffer()],
-      PUMP_PROGRAM
+      swapProgram
     );
 
     const [feeConfig] = PublicKey.findProgramAddressSync(
@@ -2518,19 +720,18 @@ async function executeRootCycle(
     // Build instructions array for batch transaction
     const instructions: TransactionInstruction[] = [];
 
-    // Get dynamic priority fee for better inclusion during congestion
-    const priorityFee = await getRecommendedPriorityFee(program.provider.connection);
+    // Get dynamic priority fee
+    const priorityFee = await getRecommendedPriorityFee(connection);
     log('  💰', `Priority fee: ${priorityFee.toLocaleString()} microlamports`, colors.cyan);
 
-    // Add compute budget for complex batch transaction
+    // Add compute budget
     instructions.push(
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: priorityFee })
     );
 
     if (isAmm) {
-      // AMM: Fees collected in Step 2 (unwrapped to SOL) + treasury SOL
-      // Need to wrap SOL → WSOL, then execute buy + burn
+      // AMM: Wrap SOL → WSOL, then buy
       log('  📦', 'AMM: Building wrap_wsol + buy instructions...', colors.cyan);
 
       // Derive AMM-specific accounts
@@ -2549,23 +750,20 @@ async function executeRootCycle(
         ASSOCIATED_TOKEN_PROGRAM
       );
 
-      // Coin creator vault accounts (for root AMM buy)
-      // Use deriveAmmCreatorVaultAuthority which uses correct seeds: ["creator_vault", creator]
       const [coinCreatorVaultAuthority] = deriveAmmCreatorVaultAuthority(rootToken.creator);
       const coinCreatorVaultAta = getAmmCreatorVaultAta(rootToken.creator);
 
-      // PumpSwap global config
       const [pumpSwapGlobalConfig] = PublicKey.findProgramAddressSync(
         [Buffer.from('global')],
         PUMP_SWAP_PROGRAM
       );
 
       // Get available SOL balance for wrap
-      const datAuthorityBalance = await program.provider.connection.getBalance(datAuthority);
+      const datAuthorityBalance = await connection.getBalance(datAuthority);
       const availableForWrap = Math.max(0, datAuthorityBalance - RENT_EXEMPT_MINIMUM - SAFETY_BUFFER);
 
       if (availableForWrap > 0) {
-        // Step 1: Wrap SOL → WSOL for AMM buy
+        // Step 1: Wrap SOL → WSOL
         const wrapIx = await program.methods
           .wrapWsol(new BN(availableForWrap))
           .accounts({
@@ -2584,7 +782,7 @@ async function executeRootCycle(
 
       // Step 2: Execute buy via AMM
       const desiredTokens = new BN(1_000_000);
-      const maxSolCost = new BN(10_000_000_000); // 10 SOL max (will use actual balance)
+      const maxSolCost = new BN(10_000_000_000); // 10 SOL max
 
       const buyIx = await program.methods
         .executeBuyAmm(desiredTokens, maxSolCost)
@@ -2622,7 +820,7 @@ async function executeRootCycle(
       // Bonding Curve: Collect fees + execute buy
       log('  📦', 'Building collect fees instruction...', colors.cyan);
       const collectIx = await program.methods
-        .collectFees(true, true) // is_root_token=true, for_ecosystem=true (skip vault threshold check)
+        .collectFees(true, true) // is_root_token=true, for_ecosystem=true
         .accounts({
           datState,
           tokenStats,
@@ -2666,8 +864,7 @@ async function executeRootCycle(
       instructions.push(buyIx);
     }
 
-    // Finalize instruction for root token (reset pending_fees)
-    // This was missing - root token pending_fees accumulated indefinitely
+    // Finalize instruction
     log('  📦', 'Building finalize instruction...', colors.cyan);
     const finalizeIx = await program.methods
       .finalizeAllocatedCycle(true) // Token participated - reset pending_fees
@@ -2679,7 +876,7 @@ async function executeRootCycle(
       .instruction();
     instructions.push(finalizeIx);
 
-    // Burn instruction (same for both BC and AMM)
+    // Burn instruction
     log('  📦', 'Building burn instruction...', colors.cyan);
     const burnIx = await program.methods
       .burnAndUpdate()
@@ -2695,87 +892,15 @@ async function executeRootCycle(
 
     instructions.push(burnIx);
 
-    // Process user rebate (if eligible user exists)
-    // This is the LAST instruction in the ROOT cycle batch
-    let selectedUserForRebate = null;
-    try {
-      log('  🎲', 'Checking for eligible rebate users...', colors.cyan);
-
-      // Get eligible users
-      const eligibleUsers = await getEligibleUsers(program, program.programId);
-
-      if (eligibleUsers.length > 0) {
-        // Get current slot for random selection
-        const currentSlot = await program.provider.connection.getSlot();
-        selectedUserForRebate = selectUserForRebate(eligibleUsers, currentSlot);
-
-        if (selectedUserForRebate) {
-          log('  🎯', `Selected user for rebate: ${selectedUserForRebate.pubkey.toBase58().slice(0, 8)}...`, colors.cyan);
-          log('  💰', `Pending: ${selectedUserForRebate.pendingContribution.toNumber() / 1e9} $ASDF`, colors.cyan);
-
-          // Derive rebate pool accounts
-          const [rebatePool] = deriveRebatePoolPda(program.programId);
-          // IMPORTANT: Rebate pool uses ASDF mint from DAT state, NOT root token mint
-          // On devnet: root=TROOT, but asdfMint=FROOT in DAT state
-          const datStateAccount = await getTypedAccounts(program).datState.fetch(datState);
-          const asdfMint = datStateAccount.asdfMint;
-
-          // Get rebate pool ATA
-          const rebatePoolAta = await getAssociatedTokenAddress(
-            asdfMint,
-            rebatePool,
-            true // Allow owner off curve (PDA)
-          );
-
-          // Get user ATA
-          const userAta = await getAssociatedTokenAddress(
-            asdfMint,
-            selectedUserForRebate.pubkey,
-            false
-          );
-
-          // Calculate rebate amount (0.552% of pending)
-          const rebateAmount = calculateRebateAmount(selectedUserForRebate.pendingContribution);
-          log('  🎁', `Rebate amount: ${rebateAmount.toNumber() / 1e9} $ASDF`, colors.cyan);
-
-          // Build process_user_rebate instruction
-          const rebateIx = await program.methods
-            .processUserRebate()
-            .accounts({
-              datState,
-              rebatePool,
-              rebatePoolAta,
-              userStats: selectedUserForRebate.statsPda,
-              user: selectedUserForRebate.pubkey,
-              userAta,
-              admin: adminKeypair.publicKey,
-              tokenProgram,
-            })
-            .instruction();
-
-          instructions.push(rebateIx);
-          log('  📦', 'Added process_user_rebate instruction to batch', colors.cyan);
-        }
-      } else {
-        log('  ℹ️', 'No eligible users for rebate this cycle', colors.cyan);
-      }
-    } catch (error) {
-      // Rebate processing is optional - don't fail the whole cycle
-      log('  ⚠️', `Rebate check failed (non-fatal): ${(error as Error).message}`, colors.yellow);
-    }
-
     // Create and send batch transaction
-    const batchDesc = selectedUserForRebate
-      ? 'compute + collect + buy + finalize + burn + rebate'
-      : 'compute + collect + buy + finalize + burn';
-    log('  🚀', `Sending BATCH TX (${instructions.length} instructions: ${batchDesc})...`, colors.cyan);
+    log('  🚀', `Sending BATCH TX (${instructions.length} instructions)...`, colors.cyan);
 
     const tx = new Transaction();
     instructions.forEach(ix => tx.add(ix));
 
-    // Get latest blockhash with retry (30s timeout for mainnet)
+    // Get latest blockhash with retry
     const { blockhash, lastValidBlockHeight } = await withRetryAndTimeout(
-      () => program.provider.connection.getLatestBlockhash('confirmed'),
+      () => connection.getLatestBlockhash('confirmed'),
       { maxRetries: 3 },
       30000
     );
@@ -2786,38 +911,24 @@ async function executeRootCycle(
     // Sign for simulation
     tx.sign(adminKeypair);
 
-    // CRITICAL: Simulate transaction BEFORE sending to detect instruction failures
-    // This prevents finalize from running if buy fails (which would lose pending_fees)
+    // Simulate transaction BEFORE sending
     log('  🔍', 'Simulating transaction...', colors.cyan);
     const simulation = await withRetryAndTimeout(
-      () => program.provider.connection.simulateTransaction(tx),
+      () => connection.simulateTransaction(tx),
       { maxRetries: 2, baseDelayMs: 500 },
       30000
     );
 
     if (simulation.value.err) {
-      // Parse simulation error to identify which instruction failed
       const errStr = JSON.stringify(simulation.value.err);
       const logs = simulation.value.logs || [];
-
-      // Check if it's a buy instruction failure
-      const isBuyFailure = logs.some(log =>
-        log.includes('execute_buy') ||
-        log.includes('slippage') ||
-        log.includes('insufficient')
-      );
-
-      if (isBuyFailure) {
-        throw new Error(`Simulation failed at BUY instruction (finalize skipped to preserve pending_fees): ${errStr}`);
-      }
-
       throw new Error(`Simulation failed: ${errStr}. Logs: ${logs.slice(-5).join(' | ')}`);
     }
     log('  ✅', 'Simulation passed, sending transaction...', colors.green);
 
-    // Send with retry (45s timeout for mainnet) - skipPreflight since already simulated
+    // Send with retry
     const signature = await withRetryAndTimeout(
-      () => program.provider.connection.sendRawTransaction(tx.serialize(), {
+      () => connection.sendRawTransaction(tx.serialize(), {
         skipPreflight: true,
         preflightCommitment: 'confirmed',
       }),
@@ -2825,23 +936,22 @@ async function executeRootCycle(
       45000
     );
 
-    // Wait for confirmation with retry
+    // Wait for confirmation
     await confirmTransactionWithRetry(
-      program.provider.connection,
+      connection,
       signature,
       blockhash,
       lastValidBlockHeight,
       { maxRetries: 3 }
     );
 
-    result.buyTx = signature;
-    result.burnTx = signature; // Same TX
+    result.signature = signature;
 
     const finalStats = await getTypedAccounts(program).tokenStats.fetch(tokenStats);
     result.tokensBurned = finalStats.totalBurned.toNumber();
 
     log('  ✅', `BATCH TX confirmed: ${signature.slice(0, 20)}...`, colors.green);
-    log('  ✅', `${rootToken.symbol} cycle complete (1 TX instead of 3)!`, colors.bright);
+    log('  ✅', `${rootToken.symbol} cycle complete!`, colors.bright);
 
     result.success = true;
     return result;
@@ -2854,481 +964,387 @@ async function executeRootCycle(
   }
 }
 
-// ============================================================================
-// Step 6: Display Summary
-// ============================================================================
+/**
+ * Execute user rebate selection and distribution
+ */
+async function executeUserRebate(
+  program: Program,
+  connection: Connection,
+  adminKeypair: Keypair
+): Promise<void> {
+  try {
+    logSection('USER REBATE (PROBABILISTIC SELECTION)');
 
-function displayCycleSummary(
-  normalized: { viable: TokenAllocation[]; skipped: TokenAllocation[]; ratio: number },
-  results: { [key: string]: CycleResult },
-  totalCollected: number
-) {
-  logSection('ECOSYSTEM CYCLE SUMMARY');
+    // Get eligible users
+    const eligibleUsers = await getEligibleUsers(program, PROGRAM_ID);
 
-  // Overall stats
-  console.log(colors.bright + '💰 Financial Summary:' + colors.reset);
-  console.log(`   Total Collected: ${formatSOL(totalCollected)} SOL`);
-  console.log(`   Distribution Ratio: ${normalized.ratio.toFixed(6)}`);
-  console.log(`   Min Allocation (Secondary): ${formatSOL(MIN_ALLOCATION_SECONDARY)} SOL`);
-  console.log('');
-
-  // Scalability stats
-  const totalSecondaries = normalized.viable.length + normalized.skipped.length;
-  console.log(colors.bright + '📈 Scalability Report:' + colors.reset);
-  console.log(`   Total Secondary Tokens: ${totalSecondaries}`);
-  console.log(`   ${colors.green}Viable (processed): ${normalized.viable.length}${colors.reset}`);
-  console.log(`   ${colors.yellow}Deferred (accumulating): ${normalized.skipped.length}${colors.reset}`);
-  console.log('');
-
-  // Cycle results table
-  console.log(colors.bright + '🔄 Cycle Results:' + colors.reset);
-  console.log('─'.repeat(110));
-  console.log(
-    `${'Token'.padEnd(12)} ${'Status'.padEnd(14)} ${'Allocated'.padEnd(15)} ` +
-    `${'Buy Tx'.padEnd(18)} ${'Finalize Tx'.padEnd(18)} ${'Burn Tx'.padEnd(18)}`
-  );
-  console.log('─'.repeat(110));
-
-  let successCount = 0;
-  let failureCount = 0;
-  let deferredCount = 0;
-
-  for (const [symbol, result] of Object.entries(results)) {
-    const isDeferred = result.error?.startsWith('DEFERRED:');
-    let statusIcon: string;
-    let statusText: string;
-    let statusColor: string;
-
-    if (isDeferred) {
-      statusIcon = '⏭️';
-      statusText = 'Deferred';
-      statusColor = colors.yellow;
-      deferredCount++;
-    } else if (result.success) {
-      statusIcon = '✅';
-      statusText = 'Success';
-      statusColor = colors.green;
-      successCount++;
-    } else {
-      statusIcon = '❌';
-      statusText = 'Failed';
-      statusColor = colors.red;
-      failureCount++;
+    if (eligibleUsers.length === 0) {
+      log('ℹ️', 'No eligible users for rebate', colors.cyan);
+      return;
     }
 
-    const allocation = result.allocation ? formatSOL(result.allocation) : 'N/A';
-    const buyTx = result.buyTx ? result.buyTx.slice(0, 16) + '...' : '-';
-    const finalizeTx = result.finalizeTx ? result.finalizeTx.slice(0, 16) + '...' : '-';
-    const burnTx = result.burnTx ? result.burnTx.slice(0, 16) + '...' : '-';
+    // Probabilistic selection: currentSlot % eligible.length
+    const currentSlot = await connection.getSlot();
+    const selectedUser = selectUserForRebate(eligibleUsers, currentSlot);
 
-    console.log(
-      statusColor +
-      `${symbol.padEnd(12)} ${(statusIcon + ' ' + statusText).padEnd(14)} ` +
-      `${allocation.padEnd(15)} ${buyTx.padEnd(18)} ${finalizeTx.padEnd(18)} ${burnTx.padEnd(18)}` +
-      colors.reset
+    if (!selectedUser) {
+      log('ℹ️', 'No user selected this cycle', colors.cyan);
+      return;
+    }
+
+    log('🎯', `Selected user: ${selectedUser.pubkey.toBase58().slice(0, 8)}...`, colors.green);
+    log('💰', `Pending: ${selectedUser.pendingContribution.toNumber() / 1e9} $ASDF`, colors.cyan);
+
+    // Derive PDAs
+    const [datState] = PublicKey.findProgramAddressSync([DAT_STATE_SEED], program.programId);
+    const [rebatePool] = deriveRebatePoolPda(program.programId);
+
+    // Get ASDF mint from DAT state (not root token mint!)
+    // On devnet: root=TROOT, but asdfMint=FROOT in DAT state
+    const datStateAccount = await getTypedAccounts(program).datState.fetch(datState);
+    const asdfMint = datStateAccount.asdfMint;
+    const tokenProgram = TOKEN_PROGRAM_ID; // ASDF is always SPL Token
+
+    // Get rebate pool ATA
+    const rebatePoolAta = await getAssociatedTokenAddress(
+      asdfMint,
+      rebatePool,
+      true // Allow owner off curve (PDA)
     );
 
-    // Show error details for failures (not deferrals)
-    if (!result.success && result.error && !isDeferred) {
-      console.log(`     ${colors.red}Error: ${result.error}${colors.reset}`);
-    }
-  }
+    // Get user ATA
+    const userAta = await getAssociatedTokenAddress(
+      asdfMint,
+      selectedUser.pubkey,
+      false
+    );
 
-  console.log('─'.repeat(110));
-  console.log('');
+    // Calculate rebate amount (0.552% of pending)
+    const rebateAmount = calculateRebateAmount(selectedUser.pendingContribution);
+    log('🎁', `Rebate amount: ${rebateAmount.toNumber() / 1e9} $ASDF`, colors.cyan);
 
-  // Summary stats
-  console.log(colors.bright + '📊 Execution Summary:' + colors.reset);
-  console.log(`   Total Tokens: ${Object.keys(results).length}`);
-  console.log(`   ${colors.green}Successful: ${successCount}${colors.reset}`);
-  console.log(`   ${colors.yellow}Deferred: ${deferredCount}${colors.reset}`);
-  console.log(`   ${colors.red}Failed: ${failureCount}${colors.reset}`);
-  console.log('');
+    // Build and execute rebate transaction
+    log('📦', 'Building process_user_rebate transaction...', colors.cyan);
 
-  if (failureCount > 0) {
-    console.log(colors.red + '❌ Some cycles failed. Review errors above.' + colors.reset);
-  } else if (deferredCount > 0) {
-    console.log(colors.yellow + '⏭️  Some tokens deferred due to insufficient allocation.' + colors.reset);
-    console.log(colors.cyan + '   They will accumulate and process in next cycle.' + colors.reset);
-  } else {
-    console.log(colors.green + '✅ All cycles executed successfully!' + colors.reset);
+    const tx = await program.methods
+      .processUserRebate()
+      .accounts({
+        datState,
+        rebatePool,
+        rebatePoolAta,
+        userStats: selectedUser.statsPda,
+        user: selectedUser.pubkey,
+        userAta,
+        admin: adminKeypair.publicKey,
+        tokenProgram,
+      })
+      .signers([adminKeypair])
+      .rpc();
+
+    log('✅', `Rebate TX: ${tx.slice(0, 20)}...`, colors.green);
+    log('✅', `User ${selectedUser.pubkey.toBase58().slice(0, 8)}... received ${rebateAmount.toNumber() / 1e9} $ASDF`, colors.green);
+
+  } catch (error) {
+    // Rebate processing is optional - don't fail the whole cycle
+    log('⚠️', `User rebate failed (non-fatal): ${(error as Error).message}`, colors.yellow);
   }
 }
 
 // ============================================================================
-// Main Execution
+// Main Function
 // ============================================================================
 
 async function main() {
-  // Parse network argument
-  const args = process.argv.slice(2);
-  const networkConfig = getNetworkConfig(args);
+  console.log('');
+  console.log(colors.bright + '═'.repeat(80) + colors.reset);
+  console.log(colors.bright + '  🔥 ASDF BURN ENGINE V2 - Modular Architecture' + colors.reset);
+  console.log(colors.bright + '═'.repeat(80) + colors.reset);
+  console.log('');
 
-  // Validate environment configuration
+  // Parse CLI args
+  const networkArg = parseNetworkArg(process.argv);
+  const dryRun = process.argv.includes('--dry-run');
+
+  // Initialize network config
+  const networkConfig = getNetworkConfig(process.argv);
+
+  // Validate environment
   validateEnv(networkConfig.name === 'Mainnet' ? 'production' : 'development');
-
-  // Parse dry-run flag
-  const dryRun = args.includes('--dry-run');
-
-  // Determine commitment level based on network (finalized for mainnet, confirmed for devnet)
-  const commitment: Commitment = getCommitment(networkConfig);
-  const onMainnet = isMainnet(networkConfig);
-
-  console.log(colors.bright + colors.magenta);
-  console.log('╔════════════════════════════════════════════════════════════════════════════╗');
-  console.log('║                    ECOSYSTEM CYCLE ORCHESTRATOR                             ║');
-  console.log('║              Hierarchical Token Buyback & Burn System                       ║');
-  console.log('╚════════════════════════════════════════════════════════════════════════════╝');
-  console.log(colors.reset + '\n');
+  let alertingConfig;
+  if (!dryRun) {
+    alertingConfig = validateAlertingEnv();
+  }
 
   // Print network banner
   printNetworkBanner(networkConfig);
+  const walletPath = `./${networkConfig.name.toLowerCase()}-wallet.json`;
+  const adminKeypair = loadAndValidateWallet(walletPath);
 
-  // Acquire execution lock (prevents concurrent cycles)
+  log('👤', `Admin: ${adminKeypair.publicKey.toBase58()}`, colors.cyan);
+  log('🌐', `Network: ${networkConfig.name}`, colors.cyan);
+  log('📡', `RPC: ${networkConfig.rpcUrls[0].slice(0, 50)}...`, colors.cyan);
+  console.log('');
+
+  // Create connection
+  const connection = new Connection(networkConfig.rpcUrls[0], {
+    commitment: 'confirmed',
+    confirmTransactionInitialTimeout: 60000,
+  });
+
+  // Initialize Anchor program
+  const provider = new AnchorProvider(connection, new Wallet(adminKeypair), {
+    commitment: 'confirmed',
+    preflightCommitment: 'confirmed',
+  });
+
+  const idl = JSON.parse(
+    fs.readFileSync('./target/idl/asdf_dat.json', 'utf-8')
+  );
+  const program = new Program(idl, provider);
+
+  // Initialize RPC Manager
+  const rpcManager = new RpcManager({ endpoints: networkConfig.rpcUrls });
+
+  // Get DAT authority
+  const [datAuthority, datAuthorityBump] = PublicKey.findProgramAddressSync(
+    [DAT_AUTHORITY_SEED],
+    PROGRAM_ID
+  );
+
+  // Initialize execution lock
   const executionLock = new ExecutionLock();
-  if (!executionLock.acquire('ecosystem-cycle')) {
+  if (!executionLock.acquire('ecosystem-cycle-v2')) {
     const status = executionLock.getStatus();
-    log('❌', `Cannot start: Another cycle is already running (PID: ${status.lockInfo?.pid})`, colors.red);
+    log('⛔', `Cannot start: Another cycle is already running (PID: ${status.lockInfo?.pid})`, colors.red);
     log('ℹ️', `Started: ${new Date(status.lockInfo?.timestamp || 0).toISOString()}`, colors.cyan);
     process.exit(1);
   }
   log('🔒', 'Execution lock acquired', colors.green);
 
-  // Setup connection with RPC manager for automatic failover
-  const rpcUrl = process.env.RPC_URL || networkConfig.rpcUrl;
-  const rpcManager = new RpcManager({
-    endpoints: networkConfig.rpcUrls.length > 0 ? networkConfig.rpcUrls : [rpcUrl],
-    commitment,
-  });
-  const connection = rpcManager.getConnection();
-
-  const walletPath = process.env.WALLET_PATH || networkConfig.wallet;
-  let adminKeypair: Keypair;
-  try {
-    adminKeypair = loadAndValidateWallet(walletPath);
-  } catch (error) {
-    executionLock.release();
-    throw error;
+  // Initialize observability (if not dry-run)
+  let alerting;
+  if (!dryRun && alertingConfig) {
+    alerting = initAlerting(alertingConfig as any);
   }
-
-  const provider = new AnchorProvider(
-    connection,
-    new Wallet(adminKeypair),
-    { commitment }
-  );
-
-  // Load IDL
-  const idlPath = path.join(__dirname, '../target/idl/asdf_dat.json');
-  const idl = JSON.parse(fs.readFileSync(idlPath, 'utf-8')) as Idl;
-  const program = new Program(idl, provider);
-
-  log('🔗', `Connected to: ${rpcUrl}`, colors.cyan);
-  log('👤', `Admin: ${adminKeypair.publicKey.toBase58()}`, colors.cyan);
-  log('📜', `Program: ${networkConfig.programId}`, colors.cyan);
-  log('⚙️', `Commitment: ${commitment} (${onMainnet ? 'MAINNET' : 'DEVNET'})`, colors.cyan);
-  console.log('');
-
-  // Process dead-letter queue for auto-retry of transient errors
-  const dlqStatus = processDeadLetterQueue();
-  if (dlqStatus.retryable.length > 0) {
-    log('🔄', `DLQ: ${dlqStatus.retryable.length} entries ready for retry`, colors.yellow);
-  }
-  if (dlqStatus.expired.length > 0) {
-    log('⏰', `DLQ: ${dlqStatus.expired.length} entries expired (manual review needed)`, colors.red);
-  }
-
-  // CHECK: Operational buffer (0.19 SOL minimum must remain after cycle)
-  const adminBalance = await connection.getBalance(adminKeypair.publicKey);
-  const estimatedCycleCost = TX_FEE_RESERVE_PER_TOKEN * 3; // Rough estimate: 1 secondary + 1 root + buffer
-  const remainingAfterCycle = adminBalance - estimatedCycleCost;
-
-  log('💰', `Admin balance: ${formatSOL(adminBalance)} SOL`, colors.cyan);
-
-  if (remainingAfterCycle < OPERATIONAL_BUFFER) {
-    log('❌', `INSUFFICIENT BUFFER: ${formatSOL(remainingAfterCycle)} would remain < ${formatSOL(OPERATIONAL_BUFFER)} required`, colors.red);
-    log('ℹ️', `Top up admin wallet to at least ${formatSOL(OPERATIONAL_BUFFER + estimatedCycleCost)} SOL`, colors.yellow);
-    executionLock.release();
-    process.exit(1);
-  }
-
-  log('✅', `Buffer OK: ${formatSOL(remainingAfterCycle)} will remain (>= ${formatSOL(OPERATIONAL_BUFFER)} required)`, colors.green);
-  console.log('');
-
-  // Initialize alerting (reuse existing singleton if daemon already initialized it)
-  const alertingEnv = validateAlertingEnv();
-  const alerting = initAlerting({
-    webhookUrl: alertingEnv.WEBHOOK_URL || '',
-    webhookType: alertingEnv.WEBHOOK_TYPE,
-    enabled: alertingEnv.ALERT_ENABLED,
-    rateLimitWindowMs: alertingEnv.ALERT_RATE_LIMIT_WINDOW,
-    rateLimitMaxAlerts: alertingEnv.ALERT_RATE_LIMIT_MAX,
-    minAlertIntervalMs: alertingEnv.ALERT_COOLDOWN_MS,
-  }, {
-    errorRatePercent: alertingEnv.ALERT_ERROR_RATE_THRESHOLD,
-    pollLagMultiplier: alertingEnv.ALERT_POLL_LAG_MULTIPLIER,
-    pendingFeesStuckMinutes: alertingEnv.ALERT_PENDING_STUCK_MINUTES,
-    failedCyclesConsecutive: alertingEnv.ALERT_FAILED_CYCLES_MAX,
-  });
 
   try {
-    // Load all ecosystem tokens from network config
-    const tokens = await loadEcosystemTokens(connection, networkConfig);
-    const rootToken = tokens.find(t => t.isRoot);
-    const secondaryTokens = tokens.filter(t => !t.isRoot);
+    // ========================================================================
+    // ORCHESTRATION via Refactored Modules
+    // ========================================================================
+
+    // Initialize modules
+    const tokenLoader = new TokenLoader(PROGRAM_ID);
+    const tokenSelector = new TokenSelector();
+    const feeAllocator = new FeeAllocator();
+    const dlq = new DeadLetterQueue();
+    const validator = new CycleValidator();
+    const dryRunReporter = new DryRunReporter();
+
+    // STEP 0: Validate operational buffer
+    const adminBalance = await connection.getBalance(adminKeypair.publicKey);
+    log('💰', `Admin balance: ${formatSOL(adminBalance)} SOL`, colors.cyan);
+
+    if (adminBalance < OPERATIONAL_BUFFER) {
+      throw new Error(`Insufficient balance: ${formatSOL(adminBalance)} < ${formatSOL(OPERATIONAL_BUFFER)} required`);
+    }
+
+    // STEP 1: Load tokens (priority cascade: API → State → JSON → On-chain)
+    logSection('STEP 1: LOAD ECOSYSTEM TOKENS');
+    const tokens = await tokenLoader.loadEcosystemTokens(connection, networkConfig);
+    const rootToken = tokens.find((t) => t.isRoot);
 
     if (!rootToken) {
       throw new Error('Root token not found');
     }
 
-    // Execute the complete ecosystem cycle
-    const startTime = Date.now();
+    log('✅', `Loaded ${tokens.length} tokens (${tokens.filter(t => !t.isRoot).length} secondaries + root)`, colors.green);
+    console.log('');
 
-    // Pre-flight: Trigger daemon flush to ensure fees are synced on-chain
-    // This solves the race condition where daemon detects fees but hasn't flushed yet
-    const flushResult = await triggerDaemonFlush();
+    // STEP 2: Process Dead-Letter Queue (auto-retry failed tokens)
+    logSection('STEP 2: DEAD-LETTER QUEUE');
+    const dlqStatus = dlq.process();
 
-    // Verify flush succeeded for all tokens (critical for fee consistency)
+    if (dlqStatus.retryable.length > 0) {
+      log('🔄', `${dlqStatus.retryable.length} tokens ready for retry`, colors.yellow);
+    }
+    if (dlqStatus.expired.length > 0) {
+      log('⏰', `${dlqStatus.expired.length} tokens expired (manual review needed)`, colors.red);
+    }
+    if (dlqStatus.retryable.length === 0 && dlqStatus.expired.length === 0) {
+      log('✅', 'DLQ empty', colors.green);
+    }
+    console.log('');
+
+    // STEP 3: Pre-flight validation (daemon flush + sync)
+    logSection('STEP 3: PRE-FLIGHT VALIDATION');
+
+    const flushResult = await validator.triggerDaemonFlush();
     if (flushResult && flushResult.tokensFailed > 0) {
-      log('⚠️', `Flush partially failed: ${flushResult.tokensFailed} tokens did not flush`, colors.yellow);
-      log('⚠️', `Tokens affected may have incorrect pending_fees - proceeding with caution`, colors.yellow);
-      // Note: We don't abort here because:
-      // 1. Some tokens may still work
-      // 2. On-chain state might be stale but still valid
-      // 3. Failed tokens will be skipped naturally if pending_fees = 0
+      log('⚠️', `Daemon flush: ${flushResult.tokensFailed} tokens failed`, colors.yellow);
     }
 
-    // Pre-flight: Wait for daemon synchronization (optional, 30s timeout)
-    // This helps ensure all tokens have their pending_fees populated
-    const syncResult = await waitForDaemonSync(program, tokens, 30000);
-    if (!syncResult.synced && syncResult.tokensWithoutFees.length > 0) {
-      log('ℹ️', `Proceeding with ${syncResult.tokensWithFees.length} synced tokens`, colors.cyan);
+    const syncResult = await validator.waitForDaemonSync(program, tokens, 30000);
+    if (syncResult.synced) {
+      log('✅', 'All tokens synced with daemon', colors.green);
+    } else {
+      log('ℹ️', `Proceeding with ${syncResult.tokensWithFees.length}/${tokens.length} synced tokens`, colors.cyan);
     }
+    console.log('');
 
-    // Step 1: Query pending fees (for display/allocation calculation)
+    // STEP 4: Query pending fees from on-chain TokenStats
+    logSection('STEP 4: QUERY PENDING FEES');
     const allocations = await queryPendingFees(program, tokens);
 
-    // DRY-RUN MODE: Generate report and exit without executing
-    if (dryRun) {
-      const report = generateDryRunReport(allocations, networkConfig.name, rootToken);
+    const totalPending = allocations.reduce((sum, a) => sum + a.pendingFees, 0);
+    log('📊', `Total pending fees: ${formatSOL(totalPending)} SOL`, colors.cyan);
+    console.log('');
 
-      // Print console summary
+    // STEP 5: Dry-run mode (exit early if requested)
+    if (dryRun) {
+      logSection('DRY-RUN MODE');
+      const report = dryRunReporter.generate(allocations, networkConfig.name, rootToken);
       printDryRunSummary(report);
 
-      // Write JSON report
+      // Save report
       const reportDir = 'reports';
       if (!fs.existsSync(reportDir)) {
         fs.mkdirSync(reportDir, { recursive: true });
       }
       const reportFile = `${reportDir}/dry-run-${Date.now()}.json`;
       fs.writeFileSync(reportFile, JSON.stringify(report, null, 2));
-      console.log(colors.green + `  📄 Report saved: ${reportFile}` + colors.reset);
-      console.log('');
+      log('📄', `Report saved: ${reportFile}`, colors.green);
 
-      // Release lock and exit
       executionLock.release();
-      log('🔓', 'Execution lock released (dry-run complete)', colors.green);
       process.exit(0);
     }
 
-    // Get secondary allocations for processing
+    // STEP 6: Probabilistic token selection (O(1))
+    logSection('STEP 6: PROBABILISTIC TOKEN SELECTION');
+
     const secondaryAllocations = allocations.filter(a => !a.isRoot);
-
-    if (secondaryAllocations.length === 0) {
-      log('⚠️', 'No secondary tokens with pending fees. Skipping secondary cycles.', colors.yellow);
-    }
-
-    // ========================================================================
-    // PROBABILISTIC TOKEN SELECTION (O(1) per cycle)
-    // Same pattern as user rebates: slot % eligible_count
-    // ========================================================================
-    logSection('STEP 2: PROBABILISTIC TOKEN SELECTION');
-
-    // Get eligible tokens (pending_fees >= threshold)
-    const eligibleTokens = getEligibleTokens(secondaryAllocations);
+    const eligibleTokens = tokenSelector.getEligibleTokens(secondaryAllocations);
     const currentSlot = await connection.getSlot();
+    const selectedToken = tokenSelector.selectForCycle(eligibleTokens, currentSlot);
 
-    log('📊', `Token Selection Status:`, colors.bright);
-    log('  👥', `Total secondary tokens: ${secondaryAllocations.length}`, colors.cyan);
-    log('  ✅', `Eligible tokens (>= ${formatSOL(TX_FEE_RESERVE_PER_TOKEN)} SOL processing cost): ${eligibleTokens.length}`, colors.cyan);
-    log('  🎰', `Current slot: ${currentSlot}`, colors.cyan);
+    log('📊', `Secondary tokens: ${secondaryAllocations.length}`, colors.cyan);
+    log('✅', `Eligible tokens: ${eligibleTokens.length}`, colors.cyan);
+    log('🎰', `Current slot: ${currentSlot}`, colors.cyan);
 
-    // Select ONE token for this cycle
-    const selectedToken = selectTokenForCycle(eligibleTokens, currentSlot);
-
-    let results: { [key: string]: CycleResult } = {};
-    let actualViable: TokenAllocation[] = [];
-    let actualDeferred: TokenAllocation[] = [];
-
-    if (!selectedToken) {
-      log('⚠️', 'No eligible tokens for this cycle. All tokens below threshold.', colors.yellow);
-      // Mark all as deferred
-      for (const alloc of secondaryAllocations) {
-        actualDeferred.push(alloc);
-        results[alloc.token.symbol] = {
-          token: alloc.token.symbol,
-          success: true,
-          pendingFees: alloc.pendingFees,
-          allocation: 0,
-          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < processing cost ${formatSOL(TX_FEE_RESERVE_PER_TOKEN)}`,
-        };
-      }
-    } else {
-      // Show selection result
+    if (selectedToken) {
       const selectedIndex = currentSlot % eligibleTokens.length;
-      log('🎯', `SELECTED: ${selectedToken.token.symbol} (index ${selectedIndex} of ${eligibleTokens.length})`, colors.green);
+      log('🎯', `SELECTED: ${selectedToken.token.symbol} (index ${selectedIndex})`, colors.green);
       log('  💰', `Pending fees: ${formatSOL(selectedToken.pendingFees)} SOL`, colors.cyan);
-
-      // Show other eligible tokens that will wait for next cycle
-      const otherEligible = eligibleTokens.filter(t => t.token.symbol !== selectedToken.token.symbol);
-      if (otherEligible.length > 0) {
-        log('⏳', `Other eligible (next cycles): ${otherEligible.map(t => t.token.symbol).join(', ')}`, colors.yellow);
-      }
-
-      console.log('');
-
-      // Execute cycle for ONLY the selected token
-      const cycleResult = await executeSecondaryTokensDynamic(
-        program,
-        connection,
-        [selectedToken], // Only pass the selected token
-        adminKeypair
-      );
-
-      results = cycleResult.results;
-      actualViable = cycleResult.viable;
-      actualDeferred = cycleResult.deferred;
-
-      // Mark other eligible tokens as deferred (they'll be selected in future cycles)
-      for (const alloc of otherEligible) {
-        actualDeferred.push(alloc);
-        results[alloc.token.symbol] = {
-          token: alloc.token.symbol,
-          success: true,
-          pendingFees: alloc.pendingFees,
-          allocation: 0,
-          error: `WAITING: Will be selected in future cycle`,
-        };
-      }
-
-      // Mark ineligible tokens as deferred
-      const ineligible = secondaryAllocations.filter(a =>
-        !eligibleTokens.some(e => e.token.symbol === a.token.symbol)
-      );
-      for (const alloc of ineligible) {
-        actualDeferred.push(alloc);
-        results[alloc.token.symbol] = {
-          token: alloc.token.symbol,
-          success: true,
-          pendingFees: alloc.pendingFees,
-          allocation: 0,
-          error: `DEFERRED: pending ${formatSOL(alloc.pendingFees)} < threshold`,
-        };
-      }
+    } else {
+      log('⚠️', 'No eligible tokens for this cycle', colors.yellow);
     }
-
-    // Calculate total pending for ratio display
-    const totalPending = secondaryAllocations.reduce((sum, a) => sum + a.pendingFees, 0);
-    const ratio = 1.0;
-
-    // Step 2b: Finalize deferred tokens (preserve their pending_fees for next cycle)
-    await finalizeDeferredTokens(program, actualDeferred, adminKeypair);
-
-    // Step 3: Execute ROOT cycle (INDEPENDENT & SACRED)
-    // Root always executes regardless of secondary outcomes
-    // Root has its own cooldown check - not dependent on secondary processing
-    logSection('ROOT CYCLE (INDEPENDENT)');
-
-    // ROOT executes independently - no cooldown wait
-    // If CycleTooSoon, handled gracefully in executeRootCycle
-    const rootResult = await executeRootCycle(program, rootToken, adminKeypair);
-    results[rootToken.symbol] = rootResult;
-
-    // Step 4: Display summary
-    const endTime = Date.now();
-    const duration = ((endTime - startTime) / 1000).toFixed(2);
-
-    // Calculate total collected from viable results
-    const totalCollected = actualViable.reduce((sum, a) => sum + (a.allocation || 0), 0);
-
-    displayCycleSummary({ viable: actualViable, skipped: actualDeferred, ratio }, results, totalCollected);
-
-    console.log(colors.bright + `⏱️  Total execution time: ${duration}s` + colors.reset);
     console.log('');
 
-    // Release lock before exit
-    const released = executionLock.release();
-    if (released) {
-      log('🔓', 'Execution lock released', colors.green);
-    } else {
-      log('⚠️', 'Warning: Could not release execution lock - may need manual cleanup', colors.yellow);
+    // STEP 7: Execute selected token cycle (TX execution)
+    const results: { [key: string]: CycleResult } = {};
+    let tokensBurnedTotal = 0;
+
+    if (selectedToken) {
+      logSection('STEP 7: EXECUTE SELECTED TOKEN CYCLE');
+
+      const result = await executeTokenCycle(
+        program,
+        connection,
+        adminKeypair,
+        selectedToken,
+        datAuthority,
+        datAuthorityBump
+      );
+
+      results[selectedToken.token.symbol] = result;
+      tokensBurnedTotal += result.tokensBurned || 0;
+
+      // Mark other eligible tokens as WAITING
+      for (const token of eligibleTokens) {
+        if (token.token.symbol !== selectedToken.token.symbol) {
+          results[token.token.symbol] = {
+            token: token.token.symbol,
+            success: true,
+            pendingFees: token.pendingFees,
+            allocation: 0,
+            error: 'WAITING: Will be selected in future cycle',
+          };
+        }
+      }
     }
 
-    // Exit with appropriate code
-    const hasFailures = Object.values(results).some(r => !r.success);
+    // STEP 8: Execute root cycle (independent)
+    const rootResult = await executeRootCycle(
+      program,
+      connection,
+      adminKeypair,
+      rootToken,
+      datAuthority,
+      datAuthorityBump
+    );
+    results[rootToken.symbol] = rootResult;
+    tokensBurnedTotal += rootResult.tokensBurned || 0;
 
-    // Calculate total burned for alert
-    const totalBurned = Object.values(results)
-      .filter(r => r.success && r.tokensBurned)
-      .reduce((sum, r) => sum + (r.tokensBurned || 0), 0);
+    // STEP 9: User rebate selection and distribution
+    await executeUserRebate(program, connection, adminKeypair);
 
-    // Send success/partial success alert
-    const cycleSummary: CycleSummary = {
-      success: !hasFailures,
-      tokensProcessed: actualViable.length + 1, // +1 for root
-      tokensDeferred: actualDeferred.length,
-      totalBurned,
-      totalFeesSOL: totalCollected / LAMPORTS_PER_SOL,
-      durationMs: endTime - startTime,
-      network: networkConfig.name,
-    };
+    // STEP 10: Summary
+    logSection('CYCLE COMPLETE');
 
-    await alerting.sendCycleSuccess(cycleSummary).catch((err) => {
-      log('⚠️', `Failed to send cycle success alert: ${err.message}`, colors.yellow);
-    });
+    const tokensProcessed = Object.values(results).filter(r => r.success && r.allocation > 0).length;
+    const tokensDeferred = Object.values(results).filter(r => r.error?.startsWith('WAITING') || r.error?.startsWith('DEFERRED')).length;
+    const tokensFailed = Object.values(results).filter(r => !r.success).length;
 
-    process.exit(hasFailures ? 1 : 0);
+    log('📊', 'Cycle Summary:', colors.bright);
+    log('  ✅', `Processed: ${tokensProcessed} tokens`, colors.green);
+    log('  ⏳', `Deferred: ${tokensDeferred} tokens`, colors.yellow);
+    log('  ❌', `Failed: ${tokensFailed} tokens`, colors.red);
+    log('  🔥', `Total burned: ${formatNumber(tokensBurnedTotal)} tokens`, colors.green);
+    console.log('');
 
+    // Send alert (if configured)
+    if (alerting) {
+      const cycleSummary = {
+        success: tokensFailed === 0,
+        tokensProcessed,
+        tokensDeferred,
+        totalBurned: tokensBurnedTotal,
+        totalFeesSOL: totalPending / LAMPORTS_PER_SOL,
+        durationMs: Date.now(),
+        network: networkConfig.name,
+      };
+
+      await alerting.sendCycleSuccess(cycleSummary).catch((err) => {
+        log('⚠️', `Failed to send cycle success alert: ${err.message}`, colors.yellow);
+      });
+    }
+
+    log('✅', 'Cycle complete', colors.green);
   } catch (error) {
-    // Always release lock on error
-    const released = executionLock.release();
-    if (released) {
-      log('🔓', 'Execution lock released (error)', colors.yellow);
-    } else {
-      log('⚠️', 'Warning: Could not release execution lock - may need manual cleanup', colors.yellow);
+    log('❌', `Cycle failed: ${(error as Error).message}`, colors.red);
+    console.error(error);
+
+    if (alerting) {
+      const errorMessage = (error as Error).message || String(error);
+      await alerting.sendCycleFailure(errorMessage, {
+        network: networkConfig.name,
+        stack: (error as Error).stack?.slice(0, 500),
+      }).catch((alertErr) => {
+        console.error(`Failed to send cycle failure alert: ${alertErr.message}`);
+      });
     }
 
-    // Send failure alert
-    const errorMessage = (error as Error).message || String(error);
-    await alerting.sendCycleFailure(errorMessage, {
-      network: networkConfig.name,
-      stack: (error as Error).stack?.slice(0, 500),  // Truncate stack for alert
-    }).catch((alertErr) => {
-      console.error(`Failed to send cycle failure alert: ${alertErr.message}`);
-    });
-
-    console.error(colors.red + '\n❌ Fatal error:' + colors.reset);
-    console.error(colors.red + errorMessage + colors.reset);
-    console.error((error as Error).stack);
     process.exit(1);
+  } finally {
+    executionLock.release();
+    log('🔓', 'Execution lock released', colors.green);
   }
 }
 
-// Run if executed directly
-if (require.main === module) {
-  // Wrap entire execution in trace context for observability
-  withNewTrace('ecosystem-cycle', async () => {
-    const traceId = getCurrentTraceId();
-    console.log(`\n[Trace: ${traceId}] Starting ecosystem cycle...\n`);
-    logger.info('Ecosystem cycle started', { traceId });
+// ============================================================================
+// Entry Point
+// ============================================================================
 
-    await main();
-
-    logger.info('Ecosystem cycle completed', { traceId });
-  }).catch((error) => {
-    logger.error('Ecosystem cycle failed', { error: (error as Error).message });
-    console.error(error);
-    process.exit(1);
-  });
-}
-
-export { main as executeEcosystemCycle };
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
