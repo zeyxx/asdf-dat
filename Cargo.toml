@@ -1,6 +1,6 @@
 [workspace]
 members = [
-    "programs/asdf-dat"
+    "programs/asdf-burn-engine"
 ]
 resolver = "2"
 

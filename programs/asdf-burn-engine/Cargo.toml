@@ -1,12 +1,12 @@
 [package]
-name = "asdf-dat"
+name = "asdf-burn-engine"
 version = "0.1.0"
-description = "ASDF DAT"
+description = "ASDF Burn Engine - Optimistic Burn Protocol"
 edition = "2021"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "asdf_dat"
+name = "asdf_burn_engine"
 
 [features]
 no-entrypoint = []

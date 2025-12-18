@@ -2,6 +2,15 @@
 
 Optimistic burn protocol for sustainable token economics.
 
+## Naming Convention
+
+| Context | Name | Usage |
+|---------|------|-------|
+| **Protocol** | Optimistic Burn Protocol | Ensemble des apps ASDF |
+| **Product** | ASDF Burn Engine | Cette app (burn mechanism) |
+| **Repo** | asdf-burn-engine | Nom technique du repo |
+| **On-chain** | DAT* (dat_v3, auth_v3) | PDAs legacy, ne pas changer |
+
 ## Quick Reference
 
 ```

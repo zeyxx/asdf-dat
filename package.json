@@ -1,10 +1,10 @@
 {
-  "name": "asdf-dat",
+  "name": "asdf-burn-engine",
   "version": "2.0.0",
-  "description": "ASDF DAT - Optimistic Burn Protocol Daemon",
+  "description": "ASDF Burn Engine - Optimistic Burn Protocol",
   "main": "dist/cli.js",
   "bin": {
-    "asdf-dat": "./dist/cli.js"
+    "asdf-burn-engine": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
