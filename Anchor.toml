@@ -3,13 +3,13 @@ seeds = false
 skip-lint = false
 
 [programs.localnet]
-asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
+asdf_burn_engine = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [programs.devnet]
-asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
+asdf_burn_engine = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [programs.mainnet]
-asdf_dat = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
+asdf_burn_engine = "ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui"
 
 [registry]
 url = "https://api.apr.dev"
