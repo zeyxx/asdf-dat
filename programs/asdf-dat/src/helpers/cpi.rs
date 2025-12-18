@@ -18,7 +18,7 @@ pub fn collect_creator_fee_cpi<'info>(
     let instruction = Box::new(Instruction {
         program_id: PUMP_PROGRAM,
         accounts: vec![
-            AccountMeta::new(dat_authority.key(), false),
+            AccountMeta::new(dat_authority.key(), true),  // signer = true for invoke_signed
             AccountMeta::new(creator_vault.key(), false),
             AccountMeta::new_readonly(system_program.key(), false),
             AccountMeta::new_readonly(pump_event_authority.key(), false),

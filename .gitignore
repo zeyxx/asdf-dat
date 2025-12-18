@@ -362,5 +362,9 @@ debug
 # Rust backup files
 programs/**/backup-*
 programs/**/*.backup-*
-CLAUDE.md
+
+# State directory (runtime)
+.state/
+
+# Temporary wallet files
 cinema-creator-wallet.json

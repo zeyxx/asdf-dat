@@ -457,6 +457,7 @@ export class ApiServer {
         totalCollectedLamports: Number(t.totalCollectedLamports),
         totalBurnedTokens: t.totalBurnedTokens.toString(),
         discoveredAt: t.discoveredAt,
+        isToken2022: t.isToken2022,
       })),
     };
 

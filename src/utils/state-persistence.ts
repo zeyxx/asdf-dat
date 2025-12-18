@@ -51,6 +51,7 @@ export function serializeToken(token: TrackedToken): SerializedToken {
     lastBurnSignature: token.lastBurnSignature,
     discoveredAt: token.discoveredAt,
     lastUpdatedAt: token.lastUpdatedAt,
+    isToken2022: token.isToken2022,
   };
 }
 
@@ -72,6 +73,7 @@ export function deserializeToken(data: SerializedToken): TrackedToken {
     lastBurnSignature: data.lastBurnSignature,
     discoveredAt: data.discoveredAt,
     lastUpdatedAt: data.lastUpdatedAt,
+    isToken2022: data.isToken2022,
   };
 }
 

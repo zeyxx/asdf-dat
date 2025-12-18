@@ -42,9 +42,10 @@ export interface BurnRecord {
   network: string;
 }
 
-// Minimum threshold for cycle execution
+// Minimum threshold for cycle execution (per token)
 // Devnet: 0.006 SOL for testing, Mainnet: 0.1 SOL for efficiency
-const MIN_CYCLE_THRESHOLD = 6_000_000n; // 0.006 SOL (devnet-friendly)
+const DEVNET_THRESHOLD = 6_000_000n;   // 0.006 SOL (devnet-friendly)
+const MAINNET_THRESHOLD = 100_000_000n; // 0.1 SOL (matches FLUSH_THRESHOLD)
 
 export interface CycleManagerConfig {
   network: "devnet" | "mainnet";
@@ -140,6 +141,13 @@ export class CycleManager {
   }
 
   /**
+   * Get network-specific threshold per token
+   */
+  private getThreshold(): bigint {
+    return this.config.network === "mainnet" ? MAINNET_THRESHOLD : DEVNET_THRESHOLD;
+  }
+
+  /**
    * Check if cycle is ready to execute
    * Returns eligible tokens and total pending fees
    */
@@ -150,6 +158,7 @@ export class CycleManager {
     reason?: string;
   }> {
     const tokens = this.tokenManager.getTrackedTokens();
+    const threshold = this.getThreshold();
 
     if (tokens.length === 0) {
       return {
@@ -164,9 +173,9 @@ export class CycleManager {
     const totals = this.feeTracker.getTotals();
     const totalPending = totals.pendingLamports;
 
-    // Find eligible tokens (above threshold)
+    // Find eligible tokens (above per-token threshold)
     const eligibleTokens = tokens.filter(
-      t => t.pendingFeesLamports >= MIN_CYCLE_THRESHOLD
+      t => t.pendingFeesLamports >= threshold
     );
 
     if (eligibleTokens.length === 0) {
@@ -174,7 +183,7 @@ export class CycleManager {
         ready: false,
         eligibleTokens: [],
         totalPending,
-        reason: `No tokens above threshold (${Number(MIN_CYCLE_THRESHOLD) / LAMPORTS_PER_SOL} SOL)`,
+        reason: `No tokens above threshold (${Number(threshold) / LAMPORTS_PER_SOL} SOL per token)`,
       };
     }
 

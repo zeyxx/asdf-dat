@@ -320,6 +320,7 @@ export interface SerializedToken {
   lastBurnSignature?: string;
   discoveredAt: number;
   lastUpdatedAt: number;
+  isToken2022?: boolean;        // Token2022 vs SPL Token program
 }
 
 // ============================================================
@@ -518,28 +519,26 @@ export interface WsBurnEvent extends WsEvent {
 }
 
 // ============================================================
-// CONSTANTS
+// CONSTANTS - Re-exported from core/constants.ts (single source of truth)
 // ============================================================
 
-export const LAMPORTS_PER_SOL = 1_000_000_000n;
+export {
+  LAMPORTS_PER_SOL,
+  SECONDARY_KEEP_RATIO,
+  ROOT_SHARE_RATIO,
+  FLUSH_THRESHOLD,           // 0.1 SOL per token
+  MIN_FEES_FOR_SPLIT,        // ~0.0055 SOL
+  TX_FEE_RESERVE_PER_TOKEN,  // ~0.007 SOL
+  STATE_VERSION,
+  MAX_PROCESSED_SIGNATURES,
+} from "../core/constants";
 
-// Fee split ratios
-export const SECONDARY_KEEP_RATIO = 0.552;   // 55.2%
-export const ROOT_SHARE_RATIO = 0.448;       // 44.8%
+// State format version (types-specific)
+export const STATE_VERSION_V2 = 2; // New "verify everything" format
 
-// Thresholds (in lamports)
-export const FLUSH_THRESHOLD = 10_000_000n;           // 0.01 SOL
-export const MIN_FEES_FOR_SPLIT = 5_500_000n;         // ~0.0055 SOL
-export const TX_FEE_RESERVE_PER_TOKEN = 7_000_000n;   // ~0.007 SOL
-
-// Pump.fun programs
+// Pump.fun programs (string versions for backward compat)
 export const PUMP_BONDING_PROGRAM = "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P";
 export const PUMPSWAP_AMM_PROGRAM = "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA";
 
-// Token mints
+// Token mints (string version)
 export const WSOL_MINT = "So11111111111111111111111111111111111111112";
-
-// State persistence
-export const STATE_VERSION = 1;   // Legacy V1 format
-export const STATE_VERSION_V2 = 2; // New "verify everything" format
-export const MAX_PROCESSED_SIGNATURES = 10_000;

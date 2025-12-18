@@ -136,6 +136,15 @@ export class TokenManager {
   /**
    * Discover tokens via getProgramAccounts
    * Creator is at offset 49 in Pump.fun bonding curve layout
+   *
+   * IMPORTANT: Token2022 tokens have a DIFFERENT BC layout where mint
+   * is NOT at offset 8, even for 82-byte accounts. The only reliable
+   * way to get the mint is via getTokenAccountsByOwner on the BC.
+   *
+   * Strategy:
+   * 1. Get all BC accounts filtered by creator
+   * 2. For each BC, try to resolve mint via token accounts
+   * 3. Fallback to offset 8 only for SPL tokens
    */
   private async discoverFromProgramAccounts(): Promise<DiscoveredToken[]> {
     const pumpProgramId = new PublicKey(PUMP_BONDING_PROGRAM);
@@ -145,7 +154,7 @@ export class TokenManager {
     const filters: GetProgramAccountsFilter[] = [
       {
         memcmp: {
-          offset: 49, // Creator offset in bonding curve (after discriminator + mint + virtual_token_reserves + virtual_sol_reserves + real_token_reserves + real_sol_reserves + token_total_supply)
+          offset: 49, // Creator offset in bonding curve
           bytes: this.creatorPubkey.toBase58(),
         },
       },
@@ -156,14 +165,78 @@ export class TokenManager {
         this.rpc.getConnection().getProgramAccounts(pumpProgramId, { filters })
       );
 
-      for (const { pubkey, account } of accounts) {
-        const token = this.parseBondingCurveAccount(pubkey, account);
-        if (token) {
-          discovered.push(token);
+      log.info("Found BC accounts", { count: accounts.length });
+
+      // Import resolveMintFromBC for reliable mint resolution
+      const { resolveMintFromBC } = await import("../core/token-verifier");
+
+      // Process in batches to avoid rate limits
+      const BATCH_SIZE = 5;
+      for (let i = 0; i < accounts.length; i += BATCH_SIZE) {
+        const batch = accounts.slice(i, i + BATCH_SIZE);
+
+        const resolvePromises = batch.map(async ({ pubkey, account }) => {
+          // First try to resolve via token accounts (works for ALL tokens)
+          const resolved = await resolveMintFromBC(this.rpc.getConnection(), pubkey);
+
+          if (resolved) {
+            return {
+              mint: resolved.mint,
+              bondingCurve: pubkey,
+              poolType: "bonding_curve" as const,
+              discoveredAt: Date.now(),
+              isToken2022: resolved.tokenProgram === "Token2022",
+            };
+          }
+
+          // Fallback: try reading mint from offset 8 (old SPL format only)
+          const data = account.data;
+          if (data.length >= 81) {
+            try {
+              const mint = new PublicKey(Uint8Array.from(data.subarray(8, 40)));
+              // Verify this is a valid mint by checking it's not all zeros
+              if (!mint.equals(PublicKey.default)) {
+                return {
+                  mint,
+                  bondingCurve: pubkey,
+                  poolType: "bonding_curve" as const,
+                  discoveredAt: Date.now(),
+                  isToken2022: false,
+                };
+              }
+            } catch {
+              // Invalid mint bytes
+            }
+          }
+
+          log.warn("Could not resolve mint for BC", {
+            bondingCurve: pubkey.toBase58().slice(0, 8),
+          });
+          return null;
+        });
+
+        const results = await Promise.all(resolvePromises);
+        for (const result of results) {
+          if (result) {
+            discovered.push(result);
+            if (result.isToken2022) {
+              log.debug("Token2022 discovered", {
+                mint: result.mint.toBase58().slice(0, 8),
+              });
+            }
+          }
+        }
+
+        // Small delay between batches
+        if (i + BATCH_SIZE < accounts.length) {
+          await new Promise(r => setTimeout(r, 100));
         }
       }
 
-      log.debug("getProgramAccounts found", { count: discovered.length });
+      log.info("Token discovery complete", {
+        total: discovered.length,
+        token2022: discovered.filter(t => (t as any).isToken2022).length,
+      });
     } catch (error) {
       log.warn("getProgramAccounts failed", {
         error: (error as Error).message,
@@ -250,7 +323,12 @@ export class TokenManager {
 
   /**
    * Parse bonding curve account data to extract token info
-   * Layout: [8 discriminator][32 mint][8 virtual_token][8 virtual_sol][8 real_token][8 real_sol][8 supply][32 creator]
+   *
+   * IMPORTANT: Two BC formats exist:
+   * - OLD (81-82 bytes): Mint stored at offset 8 → parse directly
+   * - NEW (151 bytes): Mint NOT stored → resolve via token accounts
+   *
+   * Token2022 tokens use the new 151-byte format.
    */
   private parseBondingCurveAccount(
     pubkey: PublicKey,
@@ -258,27 +336,38 @@ export class TokenManager {
   ): DiscoveredToken | null {
     try {
       const data = account.data;
+      const size = data.length;
 
-      // Bonding curve layout:
-      // 0-8: discriminator (8 bytes)
-      // 8-40: mint (32 bytes)
-      // 40-48: virtual_token_reserves (8 bytes)
-      // 48-49: virtual_sol_reserves partial...
-      // Actually: mint is at offset 8-40
-
-      if (data.length < 81) {
-        return null;
+      // OLD FORMAT: 81-82 bytes - mint at offset 8
+      if (size === 81 || size === 82) {
+        const mint = new PublicKey(data.slice(8, 40));
+        return {
+          mint,
+          bondingCurve: pubkey,
+          poolType: "bonding_curve",
+          discoveredAt: Date.now(),
+        };
       }
 
-      // Mint is at offset 8 (after 8-byte discriminator)
-      const mint = new PublicKey(data.slice(8, 40));
+      // NEW FORMAT: 151 bytes (Token2022) - need async resolution
+      // Mark for later resolution, return placeholder with BC address
+      if (size === 151) {
+        log.debug("Token2022 BC detected, needs async resolution", {
+          bondingCurve: pubkey.toBase58().slice(0, 8),
+        });
+        // Return a special marker - mint will be resolved in discoverFromProgramAccounts
+        return {
+          mint: pubkey, // Temporary: use BC as placeholder, will be resolved
+          bondingCurve: pubkey,
+          poolType: "bonding_curve",
+          discoveredAt: Date.now(),
+          needsMintResolution: true, // Flag for resolution
+        } as DiscoveredToken & { needsMintResolution?: boolean };
+      }
 
-      return {
-        mint,
-        bondingCurve: pubkey,
-        poolType: "bonding_curve",
-        discoveredAt: Date.now(),
-      };
+      // Unknown format
+      log.warn("Unknown bonding curve size", { pubkey: pubkey.toBase58(), size });
+      return null;
     } catch (error) {
       log.warn("Failed to parse bonding curve", {
         pubkey: pubkey.toBase58(),

@@ -72,6 +72,10 @@ const MAYHEM_FEE_RECIPIENT = new PublicKey(
 const SPL_FEE_RECIPIENT = new PublicKey(
   "6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"
 );
+// NOTE: On devnet, Pump.fun uses SPL_FEE_RECIPIENT for both SPL and Token2022 tokens.
+// The Token2022-specific fee recipient (68yFSZxz...) does NOT exist on devnet.
+// For mainnet: verify if Token2022 tokens need a different fee recipient.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const TOKEN2022_FEE_RECIPIENT = new PublicKey(
   "68yFSZxzLWP8YhzPV32Yz5k1WpYE2kNiWoL6n8cKzsHd"
 );
@@ -379,8 +383,8 @@ export class TransactionBuilder {
     const instructions: TransactionInstruction[] = [];
     const { token, allocation, datState, datAuthority, tokenStats, datTokenAccount, tokenProgram, rootTreasury } = params;
 
-    // Creator vault PDA
-    const creatorVault = getBcCreatorVault(token.creator);
+    // Creator vault PDA - use datAuthority as creator (DAT is the creator for fee collection)
+    const creatorVault = getBcCreatorVault(datAuthority);
 
     // Event authority
     const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
@@ -430,10 +434,12 @@ export class TransactionBuilder {
       FEE_PROGRAM
     );
 
-    // Protocol fee recipient
+    // Protocol fee recipient - Token2022 uses different recipient than SPL Token
     const protocolFeeRecipient = token.mayhemMode
       ? MAYHEM_FEE_RECIPIENT
-      : SPL_FEE_RECIPIENT;
+      : token.isToken2022
+        ? TOKEN2022_FEE_RECIPIENT
+        : SPL_FEE_RECIPIENT;
 
     // Buy instruction
     const buyIx = await this.program.methods
@@ -487,9 +493,9 @@ export class TransactionBuilder {
       ASSOCIATED_TOKEN_PROGRAM
     );
 
-    // AMM creator vault accounts
-    const [creatorVaultAuthority] = deriveAmmCreatorVaultAuthority(token.creator);
-    const creatorVaultAta = getAmmCreatorVaultAta(token.creator);
+    // AMM creator vault accounts - use datAuthority as creator (DAT is the creator for fee collection)
+    const [creatorVaultAuthority] = deriveAmmCreatorVaultAuthority(datAuthority);
+    const creatorVaultAta = getAmmCreatorVaultAta(datAuthority);
 
     const pool = token.bondingCurve; // For AMM, bondingCurve is the pool address
 
@@ -628,7 +634,8 @@ export class TransactionBuilder {
     const instructions: TransactionInstruction[] = [];
     const { token, allocation, datState, datAuthority, tokenStats, datTokenAccount, tokenProgram, rootTreasury } = params;
 
-    const creatorVault = getBcCreatorVault(token.creator);
+    // Creator vault PDA - use datAuthority as creator (DAT is the creator for fee collection)
+    const creatorVault = getBcCreatorVault(datAuthority);
 
     const [pumpEventAuthority] = PublicKey.findProgramAddressSync(
       [Buffer.from("__event_authority")],
@@ -676,8 +683,7 @@ export class TransactionBuilder {
       FEE_PROGRAM
     );
 
-    // Select protocol fee recipient based on token type
-    // Token2022 tokens use a different fee recipient than SPL tokens
+    // Protocol fee recipient - Token2022 uses different recipient than SPL Token
     const protocolFeeRecipient = token.mayhemMode
       ? MAYHEM_FEE_RECIPIENT
       : token.isToken2022

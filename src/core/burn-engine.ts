@@ -562,12 +562,19 @@ export class BurnEngine {
   // ============================================================================
 
   private trackedToConfig(token: TrackedToken): TokenConfig {
+    // Derive DAT Authority PDA - this is the token creator for all tokens
+    // The creator vault is derived from datAuthority, NOT bondingCurve
+    const [datAuthority] = PublicKey.findProgramAddressSync(
+      [DAT_AUTHORITY_SEED],
+      PROGRAM_ID
+    );
+
     const config = {
       mint: token.mint,
       symbol: token.symbol,
       bondingCurve: token.bondingCurve,
       poolType: token.poolType,
-      creator: token.bondingCurve, // Derived from BC in Phase 1
+      creator: datAuthority, // DAT Authority is the creator (owns creator-vault)
       isToken2022: token.isToken2022 ?? false, // Use tracked value
       mayhemMode: false, // TODO: Detect from BC
     };

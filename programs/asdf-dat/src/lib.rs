@@ -11,6 +11,10 @@ use anchor_spl::{
 #[cfg(test)]
 mod tests;
 
+// Formal verification & property-based tests (based on docs/FORMAL_SPEC.md)
+#[cfg(test)]
+mod formal_verification;
+
 // Modular architecture (Phase 2 ready)
 pub mod constants;
 pub mod contexts;

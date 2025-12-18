@@ -100,8 +100,11 @@ export const LAMPORTS_PER_SOL = 1_000_000_000n;
 /** Minimum fees to participate in cycle (~0.0055 SOL) */
 export const MIN_FEES_FOR_SPLIT = 5_500_000n;
 
-/** Minimum threshold for flush cycle (0.01 SOL) */
-export const FLUSH_THRESHOLD = 10_000_000n;
+/**
+ * Minimum threshold for flush cycle (0.1 SOL)
+ * MUST match Rust constant: programs/asdf-dat/src/constants.rs:191
+ */
+export const FLUSH_THRESHOLD = 100_000_000n;
 
 /** Transaction fee reserve per token (~0.007 SOL) */
 export const TX_FEE_RESERVE_PER_TOKEN = 7_000_000n;
