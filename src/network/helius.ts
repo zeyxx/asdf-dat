@@ -363,10 +363,13 @@ export class HeliusGeyser {
   private network: "devnet" | "mainnet-beta";
   private ws: WebSocket | null = null;
   private subscriptions: Map<string, number> = new Map(); // pubkey -> subscription id
+  private pendingSubscriptions: Map<number, string> = new Map(); // request id -> pubkey
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private reconnectDelay = 1000;
   private isConnected = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private connectionTimeout = 10_000; // 10s connection timeout
 
   private onAccountChange?: (update: GeyserAccountUpdate) => void;
   private onError?: (error: Error) => void;
@@ -401,7 +404,18 @@ export class HeliusGeyser {
       return;
     }
 
+    // Clear any pending reconnect
+    this.clearReconnectTimer();
+
     return new Promise((resolve, reject) => {
+      // Connection timeout
+      const timeoutId = setTimeout(() => {
+        if (!this.isConnected) {
+          this.ws?.close();
+          reject(new Error(`Connection timeout after ${this.connectionTimeout}ms`));
+        }
+      }, this.connectionTimeout);
+
       try {
         const wsUrl = this.getWsUrl();
         log.info("Connecting to Helius Geyser...", { network: this.network });
@@ -409,6 +423,7 @@ export class HeliusGeyser {
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
+          clearTimeout(timeoutId);
           this.isConnected = true;
           this.reconnectAttempts = 0;
           log.info("Connected to Helius Geyser");
@@ -417,6 +432,7 @@ export class HeliusGeyser {
         };
 
         this.ws.onclose = () => {
+          clearTimeout(timeoutId);
           this.isConnected = false;
           log.warn("Disconnected from Helius Geyser");
           this.onDisconnect?.();
@@ -424,6 +440,7 @@ export class HeliusGeyser {
         };
 
         this.ws.onerror = (event) => {
+          clearTimeout(timeoutId);
           const error = new Error("WebSocket error");
           log.error("Geyser WebSocket error", { error: error.message });
           this.onError?.(error);
@@ -437,6 +454,7 @@ export class HeliusGeyser {
         };
 
       } catch (error) {
+        clearTimeout(timeoutId);
         reject(error);
       }
     });
@@ -450,8 +468,18 @@ export class HeliusGeyser {
       const message = JSON.parse(data);
 
       // Handle subscription confirmations
+      // Server returns { id: requestId, result: subscriptionId }
       if (message.result !== undefined && message.id) {
-        log.debug("Subscription confirmed", { id: message.id, result: message.result });
+        const pubkey = this.pendingSubscriptions.get(message.id);
+        if (pubkey) {
+          // Update subscription mapping with server's subscription ID
+          this.subscriptions.set(pubkey, message.result);
+          this.pendingSubscriptions.delete(message.id);
+          log.debug("Subscription confirmed", {
+            pubkey: pubkey.slice(0, 8),
+            subscriptionId: message.result,
+          });
+        }
         return;
       }
 
@@ -503,10 +531,16 @@ export class HeliusGeyser {
       throw new Error("Not connected to Geyser");
     }
 
-    const id = Date.now();
+    // Check if already subscribed
+    if (this.subscriptions.has(pubkey)) {
+      log.debug("Already subscribed to account", { pubkey: pubkey.slice(0, 8) });
+      return this.subscriptions.get(pubkey)!;
+    }
+
+    const requestId = Date.now() + Math.random(); // Unique request ID
     const request = {
       jsonrpc: "2.0",
-      id,
+      id: requestId,
       method: "accountSubscribe",
       params: [
         pubkey,
@@ -517,11 +551,13 @@ export class HeliusGeyser {
       ],
     };
 
-    this.ws.send(JSON.stringify(request));
-    this.subscriptions.set(pubkey, id);
+    // Track pending subscription
+    this.pendingSubscriptions.set(requestId, pubkey);
 
-    log.info("Subscribed to account", { pubkey: pubkey.slice(0, 8) });
-    return id;
+    this.ws.send(JSON.stringify(request));
+
+    log.info("Subscribing to account", { pubkey: pubkey.slice(0, 8), requestId });
+    return requestId;
   }
 
   /**
@@ -551,11 +587,22 @@ export class HeliusGeyser {
   }
 
   /**
+   * Clear reconnect timer
+   */
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
+  /**
    * Attempt to reconnect after disconnect
    */
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       log.error("Max reconnect attempts reached, giving up");
+      this.onError?.(new Error("Max reconnect attempts reached"));
       return;
     }
 
@@ -564,16 +611,24 @@ export class HeliusGeyser {
 
     log.info("Attempting reconnect...", {
       attempt: this.reconnectAttempts,
+      maxAttempts: this.maxReconnectAttempts,
       delay,
     });
 
-    setTimeout(async () => {
+    // Store timer reference to allow cleanup
+    this.reconnectTimer = setTimeout(async () => {
+      this.reconnectTimer = null;
       try {
         await this.connect();
-        // Resubscribe to all accounts
-        for (const pubkey of this.subscriptions.keys()) {
+        // Resubscribe to all accounts (use saved pubkeys, not stale subscription IDs)
+        const pubkeys = Array.from(this.subscriptions.keys());
+        this.subscriptions.clear(); // Clear old subscription IDs
+        this.pendingSubscriptions.clear();
+
+        for (const pubkey of pubkeys) {
           await this.subscribeAccount(pubkey);
         }
+        log.info("Reconnected and resubscribed", { accounts: pubkeys.length });
       } catch (error) {
         log.warn("Reconnect failed", { error: (error as Error).message });
       }
@@ -581,16 +636,27 @@ export class HeliusGeyser {
   }
 
   /**
-   * Disconnect from Geyser
+   * Disconnect from Geyser (clean shutdown)
    */
   disconnect(): void {
+    // Clear reconnect timer to prevent reconnection attempts
+    this.clearReconnectTimer();
+
+    // Clear all subscriptions
+    this.subscriptions.clear();
+    this.pendingSubscriptions.clear();
+
+    // Close WebSocket
     if (this.ws) {
+      this.ws.onclose = null; // Prevent reconnect attempt
       this.ws.close();
       this.ws = null;
     }
+
     this.isConnected = false;
-    this.subscriptions.clear();
-    log.info("Disconnected from Helius Geyser");
+    this.reconnectAttempts = 0;
+
+    log.info("Disconnected from Helius Geyser (clean shutdown)");
   }
 
   /**

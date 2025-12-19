@@ -64,6 +64,9 @@ class LRUCache<K, V> {
   }
 
   has(key: K): boolean {
+    // Note: We intentionally don't update position on has()
+    // because dedup checks shouldn't affect eviction order
+    // Only actual processing (set) should update position
     return this.cache.has(key);
   }
 
@@ -160,9 +163,23 @@ export class FeeAggregator extends EventEmitter {
 
   /**
    * Process a fee event
-   * Returns true if processed, false if duplicate
+   * Returns true if processed, false if duplicate or invalid
    */
   async process(event: FeeEvent): Promise<boolean> {
+    // Input validation
+    if (event.amountLamports <= 0n) {
+      log.debug("Skipping zero/negative fee", {
+        signature: event.signature.slice(0, 12),
+        amount: Number(event.amountLamports),
+      });
+      return false;
+    }
+
+    if (!event.signature || event.signature.length < 32) {
+      log.warn("Invalid signature in fee event");
+      return false;
+    }
+
     this.totalEventsReceived++;
 
     // Track source
@@ -219,15 +236,23 @@ export class FeeAggregator extends EventEmitter {
     tokenState.lastSlot = event.slot;
     tokenState.lastTimestamp = event.timestamp;
 
-    // Record in PoH chain
+    // Record in PoH chain (non-blocking, log errors)
     if (this.history) {
-      await this.history.recordFeeDetected(
-        mintStr,
-        tokenState.symbol,
-        Number(event.amountLamports),
-        "aggregator",
-        event.slot
-      );
+      try {
+        await this.history.recordFeeDetected(
+          mintStr,
+          tokenState.symbol,
+          Number(event.amountLamports),
+          "aggregator",
+          event.slot
+        );
+      } catch (pohError) {
+        // Don't fail fee processing if PoH recording fails
+        log.warn("PoH recording failed (non-fatal)", {
+          error: (pohError as Error).message,
+          signature: event.signature.slice(0, 12),
+        });
+      }
     }
 
     log.debug("Fee processed", {
@@ -427,4 +452,14 @@ export function initFeeAggregator(config?: FeeAggregatorConfig): FeeAggregator {
 
 export function getFeeAggregator(): FeeAggregator | null {
   return aggregatorInstance;
+}
+
+/**
+ * Reset singleton (for testing only)
+ */
+export function resetFeeAggregator(): void {
+  if (aggregatorInstance) {
+    aggregatorInstance.clear();
+    aggregatorInstance = null;
+  }
 }

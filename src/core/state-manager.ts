@@ -194,7 +194,8 @@ export class StateManager {
 
     try {
       const content = JSON.stringify(this.state, null, 2);
-      const tempFile = `${this.stateFile}.tmp`;
+      // Use PID for unique temp file (prevents race if multiple processes)
+      const tempFile = `${this.stateFile}.tmp.${process.pid}`;
 
       // Write to temp file first
       fs.writeFileSync(tempFile, content);
