@@ -329,3 +329,310 @@ export function getHeliusRpcUrl(network: "devnet" | "mainnet-beta" = "devnet"): 
   if (!apiKey) return null;
   return `https://${network}.helius-rpc.com/?api-key=${apiKey}`;
 }
+
+// ============================================================================
+// HELIUS GEYSER WEBSOCKET (Phase 2)
+// ============================================================================
+
+export interface GeyserAccountUpdate {
+  pubkey: string;
+  lamports: number;
+  slot: number;
+  data: string; // base64 encoded
+}
+
+export interface GeyserConfig {
+  apiKey: string;
+  network?: "devnet" | "mainnet-beta";
+  onAccountChange?: (update: GeyserAccountUpdate) => void;
+  onError?: (error: Error) => void;
+  onConnect?: () => void;
+  onDisconnect?: () => void;
+}
+
+/**
+ * Helius Geyser WebSocket Client
+ *
+ * Phase 2 feature for real-time account change notifications.
+ * Provides ~100-400ms latency from Solana confirmation.
+ *
+ * Requires Helius paid plan for Geyser access.
+ */
+export class HeliusGeyser {
+  private apiKey: string;
+  private network: "devnet" | "mainnet-beta";
+  private ws: WebSocket | null = null;
+  private subscriptions: Map<string, number> = new Map(); // pubkey -> subscription id
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000;
+  private isConnected = false;
+
+  private onAccountChange?: (update: GeyserAccountUpdate) => void;
+  private onError?: (error: Error) => void;
+  private onConnect?: () => void;
+  private onDisconnect?: () => void;
+
+  constructor(config: GeyserConfig) {
+    this.apiKey = config.apiKey;
+    this.network = config.network || "devnet";
+    this.onAccountChange = config.onAccountChange;
+    this.onError = config.onError;
+    this.onConnect = config.onConnect;
+    this.onDisconnect = config.onDisconnect;
+
+    log.info("HeliusGeyser initialized", { network: this.network });
+  }
+
+  /**
+   * Get WebSocket URL for Helius Geyser
+   */
+  private getWsUrl(): string {
+    // Helius Geyser WebSocket endpoint
+    return `wss://${this.network}.helius-rpc.com/?api-key=${this.apiKey}`;
+  }
+
+  /**
+   * Connect to Helius Geyser WebSocket
+   */
+  async connect(): Promise<void> {
+    if (this.isConnected) {
+      log.debug("Already connected to Geyser");
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        const wsUrl = this.getWsUrl();
+        log.info("Connecting to Helius Geyser...", { network: this.network });
+
+        this.ws = new WebSocket(wsUrl);
+
+        this.ws.onopen = () => {
+          this.isConnected = true;
+          this.reconnectAttempts = 0;
+          log.info("Connected to Helius Geyser");
+          this.onConnect?.();
+          resolve();
+        };
+
+        this.ws.onclose = () => {
+          this.isConnected = false;
+          log.warn("Disconnected from Helius Geyser");
+          this.onDisconnect?.();
+          this.attemptReconnect();
+        };
+
+        this.ws.onerror = (event) => {
+          const error = new Error("WebSocket error");
+          log.error("Geyser WebSocket error", { error: error.message });
+          this.onError?.(error);
+          if (!this.isConnected) {
+            reject(error);
+          }
+        };
+
+        this.ws.onmessage = (event) => {
+          this.handleMessage(event.data);
+        };
+
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Handle incoming WebSocket message
+   */
+  private handleMessage(data: string): void {
+    try {
+      const message = JSON.parse(data);
+
+      // Handle subscription confirmations
+      if (message.result !== undefined && message.id) {
+        log.debug("Subscription confirmed", { id: message.id, result: message.result });
+        return;
+      }
+
+      // Handle account notifications
+      if (message.method === "accountNotification" && message.params) {
+        const { subscription, result } = message.params;
+        const accountData = result.value;
+
+        if (accountData) {
+          const update: GeyserAccountUpdate = {
+            pubkey: this.getPublicKeyForSubscription(subscription),
+            lamports: accountData.lamports,
+            slot: result.context.slot,
+            data: accountData.data[0], // base64
+          };
+
+          log.debug("Account update received", {
+            pubkey: update.pubkey.slice(0, 8),
+            lamports: update.lamports,
+            slot: update.slot,
+          });
+
+          this.onAccountChange?.(update);
+        }
+      }
+
+    } catch (error) {
+      log.warn("Failed to parse Geyser message", { error: (error as Error).message });
+    }
+  }
+
+  /**
+   * Get public key for a subscription ID
+   */
+  private getPublicKeyForSubscription(subscriptionId: number): string {
+    for (const [pubkey, id] of this.subscriptions) {
+      if (id === subscriptionId) {
+        return pubkey;
+      }
+    }
+    return "unknown";
+  }
+
+  /**
+   * Subscribe to account changes
+   */
+  async subscribeAccount(pubkey: string): Promise<number> {
+    if (!this.isConnected || !this.ws) {
+      throw new Error("Not connected to Geyser");
+    }
+
+    const id = Date.now();
+    const request = {
+      jsonrpc: "2.0",
+      id,
+      method: "accountSubscribe",
+      params: [
+        pubkey,
+        {
+          encoding: "base64",
+          commitment: "confirmed",
+        },
+      ],
+    };
+
+    this.ws.send(JSON.stringify(request));
+    this.subscriptions.set(pubkey, id);
+
+    log.info("Subscribed to account", { pubkey: pubkey.slice(0, 8) });
+    return id;
+  }
+
+  /**
+   * Unsubscribe from account
+   */
+  async unsubscribeAccount(pubkey: string): Promise<void> {
+    if (!this.isConnected || !this.ws) {
+      return;
+    }
+
+    const subscriptionId = this.subscriptions.get(pubkey);
+    if (!subscriptionId) {
+      return;
+    }
+
+    const request = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "accountUnsubscribe",
+      params: [subscriptionId],
+    };
+
+    this.ws.send(JSON.stringify(request));
+    this.subscriptions.delete(pubkey);
+
+    log.info("Unsubscribed from account", { pubkey: pubkey.slice(0, 8) });
+  }
+
+  /**
+   * Attempt to reconnect after disconnect
+   */
+  private attemptReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      log.error("Max reconnect attempts reached, giving up");
+      return;
+    }
+
+    this.reconnectAttempts++;
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1);
+
+    log.info("Attempting reconnect...", {
+      attempt: this.reconnectAttempts,
+      delay,
+    });
+
+    setTimeout(async () => {
+      try {
+        await this.connect();
+        // Resubscribe to all accounts
+        for (const pubkey of this.subscriptions.keys()) {
+          await this.subscribeAccount(pubkey);
+        }
+      } catch (error) {
+        log.warn("Reconnect failed", { error: (error as Error).message });
+      }
+    }, delay);
+  }
+
+  /**
+   * Disconnect from Geyser
+   */
+  disconnect(): void {
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.isConnected = false;
+    this.subscriptions.clear();
+    log.info("Disconnected from Helius Geyser");
+  }
+
+  /**
+   * Check if connected
+   */
+  isConnectedToGeyser(): boolean {
+    return this.isConnected;
+  }
+
+  /**
+   * Get subscription count
+   */
+  getSubscriptionCount(): number {
+    return this.subscriptions.size;
+  }
+}
+
+// Singleton instance
+let geyserInstance: HeliusGeyser | null = null;
+
+/**
+ * Initialize Helius Geyser (Phase 2)
+ */
+export function initHeliusGeyser(config?: Partial<GeyserConfig>): HeliusGeyser | null {
+  const apiKey = config?.apiKey || process.env.HELIUS_API_KEY;
+  if (!apiKey) {
+    log.debug("Helius API key not configured, Geyser disabled");
+    return null;
+  }
+
+  geyserInstance = new HeliusGeyser({
+    apiKey,
+    network: config?.network || (process.env.NETWORK as "devnet" | "mainnet-beta") || "devnet",
+    ...config,
+  });
+
+  return geyserInstance;
+}
+
+/**
+ * Get Helius Geyser instance
+ */
+export function getHeliusGeyser(): HeliusGeyser | null {
+  return geyserInstance;
+}
