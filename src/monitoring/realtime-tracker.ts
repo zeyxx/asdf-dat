@@ -1,10 +1,42 @@
 /**
- * Real-time Fee Tracker
+ * Real-time Fee Tracker (Phase 2 Feature)
  *
  * WebSocket-based fee detection with ~400ms latency.
  * Monitors vault account changes and attributes fees to tokens.
  *
- * Inspired by asdf-validator RealtimeTracker.
+ * STATUS: NOT CURRENTLY USED IN PRODUCTION
+ * The daemon uses FeeTracker (polling) instead for Phase 1.
+ *
+ * ============================================================================
+ * COMPARISON: RealtimeTracker vs FeeTracker
+ * ============================================================================
+ *
+ * | Feature              | RealtimeTracker      | FeeTracker           |
+ * |----------------------|----------------------|----------------------|
+ * | Detection Method     | WebSocket            | Polling (5s default) |
+ * | Latency              | ~400ms               | 5-30 seconds         |
+ * | Crash Recovery       | ❌ No state persist  | ✅ Signature cache   |
+ * | Backfill             | ❌ No                | ✅ Via Helius        |
+ * | Connection Stability | ❌ WS can disconnect | ✅ HTTP more stable  |
+ * | RPC Compatibility    | Limited (needs WS)   | Universal (HTTP)     |
+ * | State Reconciliation | ❌ No                | ✅ Pre-cycle verify  |
+ *
+ * ============================================================================
+ * PHASE 2 PLANS
+ * ============================================================================
+ *
+ * In Phase 2 (multi-tenant), RealtimeTracker becomes valuable for:
+ * 1. Real-time dashboard updates (instant fee visibility)
+ * 2. Event streaming for external integrations
+ * 3. Hybrid mode: WS for speed + polling for recovery
+ *
+ * TODO Phase 2:
+ * - [ ] Add state persistence (save lastSlot on shutdown)
+ * - [ ] Add Helius WebSocket integration for enhanced parsing
+ * - [ ] Implement hybrid mode: WS primary, polling fallback
+ * - [ ] Add automatic reconnection with backfill
+ *
+ * ============================================================================
  *
  * Flow:
  * 1. Subscribe to vault account changes via WebSocket
