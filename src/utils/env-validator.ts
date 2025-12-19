@@ -64,7 +64,7 @@ export const DaemonEnvSchema = z.object({
 
   // Monitoring configuration
   UPDATE_INTERVAL: z.coerce.number().min(5000).max(300000).default(30000),
-  VERBOSE: z.enum(['true', 'false']).transform(v => v === 'true').default('false'),
+  VERBOSE: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
 });
 
 /**
@@ -89,7 +89,7 @@ export const OrchestratorEnvSchema = z.object({
   DAEMON_API_KEY: z.string().optional(),
 
   // Testing mode (MUST be false on mainnet)
-  TESTING_MODE: z.enum(['true', 'false']).transform(v => v === 'true').default('false'),
+  TESTING_MODE: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
 });
 
 export type DaemonEnv = z.infer<typeof DaemonEnvSchema>;
@@ -128,7 +128,7 @@ export const AlertingEnvSchema = z.object({
   WEBHOOK_TYPE: z.enum(['discord', 'slack', 'auto']).default('auto'),
 
   // Enable/disable alerting (default: false - only enabled when explicitly configured)
-  ALERT_ENABLED: z.enum(['true', 'false']).transform(v => v === 'true').default('false'),
+  ALERT_ENABLED: z.enum(['true', 'false']).default('false').transform(v => v === 'true'),
 
   // Threshold configuration
   ALERT_ERROR_RATE_THRESHOLD: z.coerce.number().min(1).max(100).default(10),
@@ -153,7 +153,7 @@ export type AlertingEnv = z.infer<typeof AlertingEnvSchema>;
  */
 export const MetricsPersistenceEnvSchema = z.object({
   // Enable/disable persistence
-  METRICS_ENABLED: z.enum(['true', 'false']).transform(v => v === 'true').default('true'),
+  METRICS_ENABLED: z.enum(['true', 'false']).default('true').transform(v => v === 'true'),
 
   // Storage configuration
   METRICS_DATA_DIR: z.string().default('./data/metrics'),
@@ -171,8 +171,8 @@ export function validateDaemonEnv(): DaemonEnv {
   const result = DaemonEnvSchema.safeParse(process.env);
 
   if (!result.success) {
-    const errors = result.error.errors
-      .map(e => `  - ${e.path.join('.')}: ${e.message}`)
+    const errors = result.error.issues
+      .map((e: any) => `  - ${e.path.join('.')}: ${e.message}`)
       .join('\n');
 
     throw new Error(
@@ -200,8 +200,8 @@ export function validateOrchestratorEnv(): OrchestratorEnv {
   const result = OrchestratorEnvSchema.safeParse(process.env);
 
   if (!result.success) {
-    const errors = result.error.errors
-      .map(e => `  - ${e.path.join('.')}: ${e.message}`)
+    const errors = result.error.issues
+      .map((e: any) => `  - ${e.path.join('.')}: ${e.message}`)
       .join('\n');
 
     throw new Error(
@@ -226,8 +226,8 @@ export function validateAlertingEnv(): AlertingEnv {
   const result = AlertingEnvSchema.safeParse(process.env);
 
   if (!result.success) {
-    const errors = result.error.errors
-      .map(e => `  - ${e.path.join('.')}: ${e.message}`)
+    const errors = result.error.issues
+      .map((e: any) => `  - ${e.path.join('.')}: ${e.message}`)
       .join('\n');
 
     console.warn(
@@ -255,8 +255,8 @@ export function validateMetricsPersistenceEnv(): MetricsPersistenceEnv {
   const result = MetricsPersistenceEnvSchema.safeParse(process.env);
 
   if (!result.success) {
-    const errors = result.error.errors
-      .map(e => `  - ${e.path.join('.')}: ${e.message}`)
+    const errors = result.error.issues
+      .map((e: any) => `  - ${e.path.join('.')}: ${e.message}`)
       .join('\n');
 
     console.warn(

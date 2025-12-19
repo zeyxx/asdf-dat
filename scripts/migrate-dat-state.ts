@@ -11,7 +11,7 @@ import path from "path";
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");
 
 function loadIdl(): any {
-  const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
+  const idlPath = path.join(__dirname, "../target/idl/asdf_burn_engine.json");
   const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8"));
   idl.metadata = { address: PROGRAM_ID.toString() };
   idl.address = PROGRAM_ID.toString();

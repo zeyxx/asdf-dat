@@ -27,6 +27,8 @@ import {
   PUMP_PROGRAM,
   PUMPSWAP_PROGRAM,
   WSOL_MINT,
+  getProtocolFeeRecipient,
+  PUMPSWAP_PROTOCOL_FEE_RECIPIENT,
 } from "./constants";
 import {
   getBcCreatorVault,
@@ -42,6 +44,10 @@ const log = createLogger("tx-builder");
 // External Program Constants
 // ============================================================================
 
+// ============================================================================
+// Pump.fun Program Constants
+// ============================================================================
+
 const PUMP_GLOBAL_CONFIG = new PublicKey(
   "4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf"
 );
@@ -50,9 +56,6 @@ const PUMP_EVENT_AUTHORITY = new PublicKey(
 );
 const FEE_PROGRAM = new PublicKey(
   "pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ"
-);
-const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey(
-  "6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"
 );
 const ASSOCIATED_TOKEN_PROGRAM = new PublicKey(
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
@@ -64,21 +67,9 @@ const DEV_WALLET = new PublicKey(
   "dcW5uy7wKdKFxkhyBfPv3MyvrCkDcv1rWucoat13KH4"
 );
 
-// Protocol fee recipients vary by token type
-// Pump.fun uses different recipients for SPL vs Token2022
-const MAYHEM_FEE_RECIPIENT = new PublicKey(
-  "GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS"
-);
-const SPL_FEE_RECIPIENT = new PublicKey(
-  "6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"
-);
-// NOTE: On devnet, Pump.fun uses SPL_FEE_RECIPIENT for both SPL and Token2022 tokens.
-// The Token2022-specific fee recipient (68yFSZxz...) does NOT exist on devnet.
-// For mainnet: verify if Token2022 tokens need a different fee recipient.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const TOKEN2022_FEE_RECIPIENT = new PublicKey(
-  "68yFSZxzLWP8YhzPV32Yz5k1WpYE2kNiWoL6n8cKzsHd"
-);
+// NOTE: Protocol fee recipients are now centralized in constants.ts
+// Use getProtocolFeeRecipient(token, network) instead of hardcoded values
+// See: PUMP_FEE_RECIPIENTS in constants.ts for documentation
 
 // ============================================================================
 // Types
@@ -112,7 +103,18 @@ export interface BuildRootBatchParams {
 // ============================================================================
 
 export class TransactionBuilder {
-  constructor(private program: Program) {}
+  /**
+   * Transaction builder for ASDF Burn Engine cycles
+   *
+   * @param program - Anchor program instance
+   * @param network - Network for fee recipient selection
+   *                  CRITICAL: devnet uses SPL recipient for ALL tokens
+   *                  Using wrong recipient causes Custom:3012 or Custom:6000 errors
+   */
+  constructor(
+    private program: Program,
+    private network: 'devnet' | 'mainnet' = 'devnet'
+  ) {}
 
   /**
    * Build batch transaction for secondary token
@@ -434,12 +436,10 @@ export class TransactionBuilder {
       FEE_PROGRAM
     );
 
-    // Protocol fee recipient - Token2022 uses different recipient than SPL Token
-    const protocolFeeRecipient = token.mayhemMode
-      ? MAYHEM_FEE_RECIPIENT
-      : token.isToken2022
-        ? TOKEN2022_FEE_RECIPIENT
-        : SPL_FEE_RECIPIENT;
+    // Protocol fee recipient - network-aware selection
+    // CRITICAL: Devnet uses SPL recipient for ALL tokens (Token2022 recipient doesn't exist)
+    // Using wrong recipient causes Custom:3012 or Custom:6000 errors
+    const protocolFeeRecipient = getProtocolFeeRecipient(token, this.network);
 
     // Buy instruction
     const buyIx = await this.program.methods
@@ -683,12 +683,10 @@ export class TransactionBuilder {
       FEE_PROGRAM
     );
 
-    // Protocol fee recipient - Token2022 uses different recipient than SPL Token
-    const protocolFeeRecipient = token.mayhemMode
-      ? MAYHEM_FEE_RECIPIENT
-      : token.isToken2022
-        ? TOKEN2022_FEE_RECIPIENT
-        : SPL_FEE_RECIPIENT;
+    // Protocol fee recipient - network-aware selection
+    // CRITICAL: Devnet uses SPL recipient for ALL tokens (Token2022 recipient doesn't exist)
+    // Using wrong recipient causes Custom:3012 or Custom:6000 errors
+    const protocolFeeRecipient = getProtocolFeeRecipient(token, this.network);
 
     // ROOT TOKEN: Use executeBuy (not executeBuySecondary) - 100% burn, no split
     // Note: execute_buy does NOT take rootTreasury (that's for secondaries only)

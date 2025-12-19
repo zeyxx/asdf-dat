@@ -21,7 +21,7 @@ import {
   TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import fs from "fs";
-import idl from "../target/idl/asdf_dat.json";
+import idl from "../target/idl/asdf_burn_engine.json";
 import { getNetworkConfig, printNetworkBanner } from "../src/network/config";
 
 const PROGRAM_ID = new PublicKey("ASDFc5hkEM2MF8mrAAtCPieV6x6h1B5BwjgztFt7Xbui");

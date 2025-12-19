@@ -105,7 +105,7 @@ export class CycleManager {
       });
 
       // Load IDL
-      const idlPath = path.join(__dirname, "../../target/idl/asdf_dat.json");
+      const idlPath = path.join(__dirname, "../../target/idl/asdf_burn_engine.json");
       if (!fs.existsSync(idlPath)) {
         log.warn("IDL not found, BurnEngine disabled until IDL available", {
           path: idlPath,

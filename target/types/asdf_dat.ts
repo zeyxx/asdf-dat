@@ -10,7 +10,7 @@ export type AsdfDat = {
     "name": "asdfDat",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "ASDF DAT"
+    "description": "ASDF Burn Engine - Optimistic Burn Protocol"
   },
   "instructions": [
     {

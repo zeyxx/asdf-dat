@@ -54,7 +54,7 @@ function log(emoji: string, message: string, color = colors.reset) {
 }
 
 function loadIdl(): Idl {
-  const idlPath = path.join(__dirname, "../target/idl/asdf_dat.json");
+  const idlPath = path.join(__dirname, "../target/idl/asdf_burn_engine.json");
   const idl = JSON.parse(fs.readFileSync(idlPath, "utf-8")) as Idl;
   if (idl.metadata) {
     (idl.metadata as any).address = PROGRAM_ID.toString();

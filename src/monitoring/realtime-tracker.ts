@@ -455,11 +455,7 @@ export class RealtimeTracker extends EventEmitter {
         }
       }
 
-      // Record discovery in history
-      if (this.history) {
-        await this.history.recordTokenDiscovered(mint, tokenInfo.symbol, tokenInfo.name);
-      }
-
+      // Note: Token discovery no longer recorded in PoH (redundant - on-chain TokenStats init)
       this.logger.info(`Discovered new token: ${tokenInfo.symbol} (${mint.slice(0, 8)}...)`);
       this.emit("token_discovered", tokenInfo);
 
@@ -491,16 +487,7 @@ export class RealtimeTracker extends EventEmitter {
 
     this.totalAttributed += amount;
 
-    // Record in history
-    if (this.history) {
-      await this.history.recordFeeAttributed(
-        token.mint,
-        token.symbol,
-        amount,
-        signature,
-        slot
-      );
-    }
+    // Note: Fee attribution no longer recorded in PoH (redundant - on-chain signature)
 
     const event: FeeEvent = {
       type: "fee_attributed",

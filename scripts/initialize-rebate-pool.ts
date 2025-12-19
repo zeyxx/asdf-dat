@@ -23,7 +23,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 // Import IDL
-import idlJson from '../target/idl/asdf_dat.json';
+import idlJson from '../target/idl/asdf_burn_engine.json';
 
 const IDL = idlJson as any;
 

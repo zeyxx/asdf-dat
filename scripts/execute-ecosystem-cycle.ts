@@ -1098,7 +1098,7 @@ async function main() {
   });
 
   const idl = JSON.parse(
-    fs.readFileSync('./target/idl/asdf_dat.json', 'utf-8')
+    fs.readFileSync('./target/idl/asdf_burn_engine.json', 'utf-8')
   );
   const program = new Program(idl, provider);
 

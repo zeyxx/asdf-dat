@@ -33,14 +33,19 @@ import { TokenConfig, validateTokenConfig } from "../core/types";
 export const PUMP_PROGRAM = new PublicKey("6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P");
 export const FEE_PROGRAM = new PublicKey("pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ");
 
-// Fee recipients - based on token type
+// NOTE: Fee recipients are now centralized in core/constants.ts
+// Import PUMP_FEE_RECIPIENTS and getProtocolFeeRecipient from there
+// The FEE_RECIPIENTS export below is deprecated but kept for backward compatibility
+import { PUMP_FEE_RECIPIENTS, getProtocolFeeRecipient } from "../core/constants";
+
+/**
+ * @deprecated Use PUMP_FEE_RECIPIENTS from core/constants.ts
+ * Kept for backward compatibility with existing code
+ */
 export const FEE_RECIPIENTS = {
-  // Standard SPL tokens use this recipient
-  SPL: new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"),
-  // Token2022 with Mayhem Mode uses this recipient
-  MAYHEM: new PublicKey("GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS"),
-  // Token2022 WITHOUT Mayhem Mode - same as SPL (standard create_v2)
-  TOKEN2022_STANDARD: new PublicKey("6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs"),
+  SPL: PUMP_FEE_RECIPIENTS.SPL,
+  MAYHEM: PUMP_FEE_RECIPIENTS.MAYHEM,
+  TOKEN2022_STANDARD: PUMP_FEE_RECIPIENTS.SPL, // Same as SPL
 };
 
 // ============================================================================
@@ -93,13 +98,25 @@ export function getTokenProgram(config: TokenConfig): PublicKey {
 
 /**
  * Get the correct fee recipient for a token
+ *
+ * @deprecated Use getProtocolFeeRecipient from core/constants.ts with network param
+ *             This function assumes devnet-safe behavior (uses SPL for all tokens)
+ *
+ * @example
+ * // Preferred approach:
+ * import { getProtocolFeeRecipient } from '../core/constants';
+ * const recipient = getProtocolFeeRecipient(token, 'devnet');
  */
 export function getFeeRecipient(config: TokenConfig): PublicKey {
-  if (config.mayhemMode) {
-    return FEE_RECIPIENTS.MAYHEM;
-  }
-  // Both SPL and Token2022 (non-mayhem) use the same recipient
-  return FEE_RECIPIENTS.SPL;
+  // Use centralized helper with devnet as safe default
+  // For network-aware selection, use getProtocolFeeRecipient directly
+  return getProtocolFeeRecipient(
+    {
+      isToken2022: config.tokenProgram === 'Token2022',
+      mayhemMode: config.mayhemMode
+    },
+    'devnet' // Safe default - callers should use getProtocolFeeRecipient directly
+  );
 }
 
 /**

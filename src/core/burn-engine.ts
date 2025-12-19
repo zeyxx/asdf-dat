@@ -93,7 +93,9 @@ export class BurnEngine {
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
     this.allocator = new AllocationCalculator();
-    this.txBuilder = new TransactionBuilder(program);
+    // Pass network to TransactionBuilder for correct fee recipient selection
+    // CRITICAL: devnet uses SPL recipient for ALL tokens
+    this.txBuilder = new TransactionBuilder(program, this.config.network);
   }
 
   /**

@@ -36,20 +36,15 @@
     "@pump-fun/pump-swap-sdk": "^1.7.7",
     "@solana/spl-token": "^0.4.0",
     "@solana/web3.js": "^1.91.0",
-    "axios": "^1.13.2",
     "dotenv": "^16.4.1",
-    "express": "^5.1.0",
     "mime-types": "^3.0.2",
-    "nft.storage": "^7.2.0",
-    "socket.io": "^4.8.1",
     "ws": "^8.18.3",
-    "zod": "^3.23.8"
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/bn.js": "^5.2.0",
     "@types/chai": "^5.2.3",
     "@types/cors": "^2.8.19",
-    "@types/express": "^5.0.5",
     "@types/mime-types": "^3.0.1",
     "@types/mocha": "^10.0.10",
     "@types/node": "^20.11.5",

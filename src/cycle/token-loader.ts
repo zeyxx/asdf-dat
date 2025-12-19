@@ -25,6 +25,7 @@ import { getTypedAccounts } from '../core/types';
 const DAEMON_API_URL = process.env.DAEMON_API_URL || 'http://localhost:3030';
 const STATE_FILE = '.asdf-state.json';
 const DAT_STATE_SEED = Buffer.from('dat_v3');
+const DAT_AUTH_SEED = Buffer.from('auth_v3');
 
 /**
  * Token Loader
@@ -198,8 +199,8 @@ export class TokenLoader {
           bondingCurve: new PublicKey(t.bondingCurve),
           creator: new PublicKey('11111111111111111111111111111111'), // Not needed from state
           isRoot: t.isRoot === true,
-          isToken2022: false,
-          mayhemMode: false,
+          isToken2022: t.isToken2022 === true,
+          mayhemMode: t.mayhemMode === true || t.isMayhemMode === true,
           poolType,
           pendingFeesFromState: pendingFees,
         });
@@ -319,7 +320,7 @@ export class TokenLoader {
       );
 
       // Load IDL
-      const idlPath = path.join(this.projectRoot, 'target', 'idl', 'asdf_dat.json');
+      const idlPath = path.join(this.projectRoot, 'target', 'idl', 'asdf_burn_engine.json');
       if (!fs.existsSync(idlPath)) {
         log('❌', 'IDL not found, cannot perform trustless discovery', colors.red);
         return [];
@@ -335,18 +336,25 @@ export class TokenLoader {
       const provider = new AnchorProvider(connection, dummyWallet as any, {});
       const program = new Program(idl, provider);
 
-      // Fetch DATState to get admin (creator) and root token
-      let creator: PublicKey;
+      // Derive DAT Authority PDA - this is the ACTUAL creator of tokens on pump.fun
+      // Note: datState.admin is the administrator wallet, NOT the token creator
+      const [datAuthority] = PublicKey.findProgramAddressSync(
+        [DAT_AUTH_SEED],
+        this.programId
+      );
+      const creator = datAuthority;
+
+      log(
+        '✓',
+        `DAT Authority (creator): ${creator.toBase58().slice(0, 8)}...`,
+        colors.green
+      );
+
+      // Fetch DATState to get root token
       let rootTokenMint: PublicKey | null = null;
       try {
         const datState = await getTypedAccounts(program).datState.fetch(datStatePda);
-        creator = datState.admin;
         rootTokenMint = datState.rootTokenMint;
-        log(
-          '✓',
-          `Creator from DATState: ${creator.toBase58().slice(0, 8)}...`,
-          colors.green
-        );
         if (rootTokenMint) {
           log(
             '✓',
@@ -355,8 +363,8 @@ export class TokenLoader {
           );
         }
       } catch (error) {
-        log('❌', `Failed to fetch DATState: ${(error as Error).message}`, colors.red);
-        return [];
+        log('⚠️', `Could not fetch DATState: ${(error as Error).message}`, colors.yellow);
+        // Continue without root token - discovery will still work
       }
 
       // Discover and verify tokens

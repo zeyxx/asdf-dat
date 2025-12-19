@@ -72,3 +72,4 @@ See `docs/` for detailed documentation:
 ---
 
 *Collect. Burn. This is fine.* 🔥
+- Security be design, and no single point of failure.

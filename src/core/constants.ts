@@ -159,3 +159,94 @@ export const DEFAULT_STATE_FILE = '.asdf-state.json';
 
 /** Default poll interval in ms */
 export const DEFAULT_POLL_INTERVAL_MS = 5000;
+
+// ============================================================================
+// Pump.fun Protocol Fee Recipients
+// ============================================================================
+
+/**
+ * Protocol fee recipients for Pump.fun buy/sell operations.
+ *
+ * CRITICAL NETWORK NOTES:
+ * - DEVNET: Uses SPL_FEE_RECIPIENT for ALL tokens (SPL and Token2022)
+ * - MAINNET: Token2022 non-mayhem may need TOKEN2022_MAINNET (verify before launch)
+ *
+ * Error codes if wrong recipient:
+ * - Custom:3012 - Invalid fee recipient account
+ * - Custom:6000 - Account not initialized
+ *
+ * @see getProtocolFeeRecipient() for network-aware selection
+ */
+export const PUMP_FEE_RECIPIENTS = {
+  /** Standard SPL tokens and Token2022 on devnet */
+  SPL: new PublicKey('6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs'),
+
+  /** Token2022 with Mayhem Mode enabled (any network) */
+  MAYHEM: new PublicKey('GesfTA3X2arioaHp8bbKdjG9vJtskViWACZoYvxp4twS'),
+
+  /**
+   * Token2022 on mainnet (non-mayhem) - UNVERIFIED
+   * TODO: Verify this exists and works before mainnet launch
+   * Currently unused - see getProtocolFeeRecipient()
+   */
+  TOKEN2022_MAINNET: new PublicKey('68yFSZxzLWP8YhzPV32Yz5k1WpYE2kNiWoL6n8cKzsHd'),
+} as const;
+
+/** PumpSwap AMM protocol fee recipient (same as SPL) */
+export const PUMPSWAP_PROTOCOL_FEE_RECIPIENT = new PublicKey(
+  '6QgPshH1egekJ2TURfakiiApDdv98qfRuRe7RectX8xs'
+);
+
+/**
+ * Get the correct protocol fee recipient for a Pump.fun buy/sell
+ *
+ * This is the SINGLE SOURCE OF TRUTH for fee recipient selection.
+ * All code should use this function instead of hardcoding recipients.
+ *
+ * @param token - Token config with isToken2022 and mayhemMode flags
+ * @param network - Current network (devnet uses SPL for all tokens)
+ * @returns The correct fee recipient PublicKey
+ *
+ * ARCHITECTURE NOTES:
+ * - Mayhem Mode always uses MAYHEM recipient (any network)
+ * - Devnet uses SPL for all tokens (TOKEN2022_MAINNET doesn't exist on devnet)
+ * - Mainnet Token2022 behavior: TBD, currently uses SPL (safe default)
+ *
+ * WHY THIS MATTERS:
+ * - Wrong recipient on devnet → Custom:3012 or Custom:6000 error
+ * - Pump.fun validates the recipient account exists on-chain
+ *
+ * @example
+ * const feeRecipient = getProtocolFeeRecipient(
+ *   { isToken2022: true, mayhemMode: false },
+ *   "devnet"
+ * );
+ */
+export function getProtocolFeeRecipient(
+  token: { isToken2022?: boolean; mayhemMode?: boolean },
+  network: 'devnet' | 'mainnet'
+): PublicKey {
+  // Mayhem Mode always uses special recipient (network-independent)
+  // This is the only mode that uses a different recipient
+  if (token.mayhemMode) {
+    return PUMP_FEE_RECIPIENTS.MAYHEM;
+  }
+
+  // DEVNET: Pump.fun uses SPL_FEE_RECIPIENT for ALL tokens
+  // The Token2022 recipient (68yFSZxz...) does NOT exist on devnet
+  // This was the root cause of Custom:3012 and Custom:6000 errors
+  if (network === 'devnet') {
+    return PUMP_FEE_RECIPIENTS.SPL;
+  }
+
+  // MAINNET: Token2022 might need different recipient
+  // TODO: Verify TOKEN2022_MAINNET works before enabling
+  // For now, use SPL as safe default (matches devnet behavior)
+  //
+  // When verified on mainnet, change to:
+  // return token.isToken2022
+  //   ? PUMP_FEE_RECIPIENTS.TOKEN2022_MAINNET
+  //   : PUMP_FEE_RECIPIENTS.SPL;
+
+  return PUMP_FEE_RECIPIENTS.SPL;
+}

@@ -18,20 +18,20 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as crypto from "crypto";
-import { createLogger, Logger } from "../observability/logger";
+import { createLogger, Logger } from "./logger";
 
 // Genesis hash - foundation of the chain
 const GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000";
 
 export type EventType =
-  | "fee_detected"      // Off-chain fee attribution (needs PoH proof)
-  | "fee_attributed"    // Fee attributed to on-chain TokenStats
-  | "flush_executed"    // Flush cycle executed
-  | "token_discovered"  // New token discovered
-  | "daemon_start"      // Daemon started
-  | "daemon_stop"       // Daemon stopped
-  | "error";            // Error event
-// Note: burn_completed NOT included - burns are on-chain with TX signatures
+  | "fee_detected"           // Off-chain fee attribution (needs PoH proof)
+  | "cycle_token_burn"       // Token selected and burned in cycle (NEW)
+  | "daemon_start"           // Daemon started (rare = significant)
+  | "daemon_stop"            // Daemon stopped (rare = significant)
+  | "error";                 // Error event
+// REMOVED: fee_attributed (redundant - on-chain signature)
+// REMOVED: flush_executed (redundant - on-chain TX signatures)
+// REMOVED: token_discovered (redundant - on-chain TokenStats init)
 
 export interface HistoryEntry {
   sequence: number;
@@ -91,10 +91,7 @@ export class HistoryManager {
     this.historyFile = config.historyFile ?? path.join(this.dataDir, "chain.jsonl");
     this.metadataFile = config.metadataFile ?? path.join(this.dataDir, "metadata.json");
     this.maxEntriesInMemory = config.maxEntriesInMemory ?? 1000;
-    this.logger = createLogger("history", {
-      level: config.verbose ? "debug" : "info",
-      console: true,
-    });
+    this.logger = createLogger("history");
 
     // Initialize metadata with defaults
     this.metadata = {
@@ -199,7 +196,7 @@ export class HistoryManager {
     this.metadata.lastUpdated = timestamp;
 
     // Update totals based on event type
-    if (event === "fee_detected" || event === "fee_attributed") {
+    if (event === "fee_detected") {
       this.metadata.totalFeesDetected += data.amount ?? 0;
     }
     // Note: Burns tracked on-chain, not in PoH
@@ -399,57 +396,29 @@ export class HistoryManager {
   }
 
   /**
-   * Record fee attribution event
+   * Record cycle token burn event (per-token granularity)
+   * Called when a token is selected and burned in a cycle
    */
-  async recordFeeAttributed(
+  async recordCycleTokenBurn(
     mint: string,
     symbol: string,
-    amount: number,
+    solAmount: number,
+    tokensBurned: number,
     signature: string,
-    slot: number
+    isRoot: boolean
   ): Promise<HistoryEntry> {
-    return this.append("fee_attributed", {
+    return this.append("cycle_token_burn", {
       mint,
       symbol,
-      amount,
+      solAmount,
+      tokensBurned,
       signature,
-    }, slot);
-  }
-
-  /**
-   * Record flush execution
-   */
-  async recordFlushExecuted(
-    tokensUpdated: number,
-    totalFlushed: number,
-    signature?: string
-  ): Promise<HistoryEntry> {
-    return this.append("flush_executed", {
-      tokensUpdated,
-      totalFlushed,
-      signature,
-    });
-  }
-
-  // Note: recordBurnCompleted removed - burns are on-chain with TX signatures
-
-  /**
-   * Record token discovery
-   */
-  async recordTokenDiscovered(
-    mint: string,
-    symbol: string,
-    name: string
-  ): Promise<HistoryEntry> {
-    return this.append("token_discovered", {
-      mint,
-      symbol,
-      name,
+      isRoot,
     });
   }
 
   /**
-   * Record daemon lifecycle events
+   * Record daemon lifecycle events (rare = significant for audit)
    */
   async recordDaemonStart(): Promise<HistoryEntry> {
     return this.append("daemon_start", {

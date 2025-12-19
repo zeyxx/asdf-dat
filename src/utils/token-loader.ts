@@ -12,7 +12,6 @@
 
 import * as fs from "fs";
 import * as path from "path";
-import axios from "axios";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { TokenConfig, PoolType, TokenProgramType } from "../core/types";
 import { SerializedToken } from "../types";
@@ -144,15 +143,24 @@ export class TokenLoader {
    */
   private async loadFromApi(): Promise<TokenConfig[]> {
     try {
-      const response = await axios.get(`${this.apiUrl}/tokens`, { timeout: 5000 });
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-      if (!response.data?.tokens || !Array.isArray(response.data.tokens)) {
+      const response = await fetch(`${this.apiUrl}/tokens`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!response.ok) return [];
+      const data = await response.json();
+
+      if (!data?.tokens || !Array.isArray(data.tokens)) {
         return [];
       }
 
       // API returns TrackedToken format, convert to TokenConfig
       const configs = await Promise.all(
-        response.data.tokens.map((t: any) => this.apiTokenToConfig(t))
+        data.tokens.map((t: any) => this.apiTokenToConfig(t))
       );
 
       return configs.filter((c): c is TokenConfig => c !== null);
